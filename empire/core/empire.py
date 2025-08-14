@@ -12,15 +12,18 @@ from empire.utils import get_name_of_last_folder_in_path
 from pyomo.common.tempfiles import TempfileManager
 from pyomo.environ import *
 
+from lopf_madule import LOPFMethod
+
 logger = logging.getLogger(__name__)
 
 
 def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_path,
                solver, temp_dir, FirstHoursOfRegSeason, FirstHoursOfPeakSeason, lengthRegSeason,
                lengthPeakSeason, Period, Operationalhour, Scenario, Season, HoursOfSeason,
-               discountrate, WACC, LeapYearsInvestment, IAMC_PRINT, WRITE_LP, USE_LOPF: bool = False,
+               discountrate, WACC, LeapYearsInvestment, IAMC_PRINT, WRITE_LP,
                PICKLE_INSTANCE, EMISSION_CAP, USE_TEMP_DIR, LOADCHANGEMODULE, OPERATIONAL_DUALS, north_sea, 
-               OUT_OF_SAMPLE: bool = False, sample_file_path: Path | None = None) -> None | float:
+               OUT_OF_SAMPLE: bool = False, sample_file_path: Path | None = None,
+               USE_LOPF: bool = False, LOPF_METHOD: str = LOPFMethod.KIRCHHOFF, LOPF_KWARGS: dict | None = None) -> None | float:
 
     if USE_TEMP_DIR:
         TempfileManager.tempdir = temp_dir
@@ -801,7 +804,8 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
     if USE_LOPF:
         from lopf_madule import add_lopf_constraints
-        add_lopf_constraints(model)
+        kw = {} if LOPF_KWARGS is None else dict(LOPF_KWARGS)
+        add_lopf_constraints(model, method=LOPF_METHOD, **kw)
 
     #################################################################
 
