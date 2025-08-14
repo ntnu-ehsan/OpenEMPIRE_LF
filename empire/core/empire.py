@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_path,
                solver, temp_dir, FirstHoursOfRegSeason, FirstHoursOfPeakSeason, lengthRegSeason,
                lengthPeakSeason, Period, Operationalhour, Scenario, Season, HoursOfSeason,
-               discountrate, WACC, LeapYearsInvestment, IAMC_PRINT, WRITE_LP,
+               discountrate, WACC, LeapYearsInvestment, IAMC_PRINT, WRITE_LP, USE_LOPF: bool = False,
                PICKLE_INSTANCE, EMISSION_CAP, USE_TEMP_DIR, LOADCHANGEMODULE, OPERATIONAL_DUALS, north_sea, 
                OUT_OF_SAMPLE: bool = False, sample_file_path: Path | None = None) -> None | float:
 
@@ -796,6 +796,12 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             else:
                 return Constraint.Skip
         model.power_energy_relate = Constraint(model.StoragesOfNode, model.PeriodActive, rule=power_energy_relate_rule)
+
+    #################################################################
+
+    if USE_LOPF:
+        from lopf_madule import add_lopf_constraints
+        add_lopf_constraints(model)
 
     #################################################################
 
