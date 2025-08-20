@@ -31,7 +31,8 @@ time_format: "%d/%m/%Y %H:%M"                          # Time format for scenari
 USE_LOPF: True
 LOPF_METHOD: "kirchhoff"
 LOPF_KWARGS:
-  existing_flow_candidates: ["transmisionOperational"]
+  couple_to_existing_flows: false
+  # existing_flow_candidates: ["transmisionOperational"]
   reactance_param_name: "lineReactance"   # <— matches your .tab
   reactance_from_susceptance: false       # we’re providing reactance directly
   # OR if you only have susceptance:

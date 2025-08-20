@@ -1,5 +1,5 @@
 from __future__ import annotations
-from pyomo.environ import (Var, Constraint, NonNegativeReals, value, Param, Expression, Reals)
+from pyomo.environ import (Set, Var, Constraint, NonNegativeReals, value, Param, Expression, Reals, ConstraintList)
 from collections import defaultdict, deque
 from typing import  Dict,List, Tuple, Optional, Callable
 
@@ -55,35 +55,38 @@ def add_lopf_constraints(model, method: str = LOPFMethod.KIRCHHOFF, **kwargs):
 # ---------------------------
 def _infer_capacity_expr(model):
     """Return (m,i,j,p) -> capacity expression for undirected (i,j)."""
-    # Prefer installed cap variable
-    for name in ("transmissionInstalledCap", "installedTransmissionCap", "TransInstalledCap"):
-        if hasattr(model, name):
-            cap = getattr(model, name)
-            return lambda m, i, j, p, _cap=cap: _cap[i, j, p]
+    # helper: look up component by name on the instance
+    def _by_name(name: str):
+        return lambda m, i, j, p, _n=name: getattr(m, _n)[i, j, p]
 
-    # Build from init + built
-    init = getattr(model, "transmissionInitCap", None)
-    built = None
-    for name in ("transmissionBuilt", "TransBuilt", "lineExpansion"):
+    # Prefer an installed-capacity variable if it exists
+    for name in ("transmissionInstalledCap", "installedTransmissionCap", "TransInstalledCap", 'Transmission_InitialCapacity'):
         if hasattr(model, name):
-            built = getattr(model, name)
-            break
-    if init is not None and built is not None:
-        def _cap_from_init_plus_built(m, i, j, p, _init=init, _built=built):
-            total = _init[i, j, p] if (i, j, p) in _init else 0.0
+            return _by_name(name)
+
+    # Build from init + built (if both exist)
+    init_name = "transmissionInitCap" if hasattr(model, "transmissionInitCap") else None
+    built_name = next((nm for nm in ("transmissionBuilt", "TransBuilt", "lineExpansion")
+                       if hasattr(model, nm)), None)
+
+    if init_name and built_name:
+        def _cap_from_init_plus_built(m, i, j, p, _init=init_name, _built=built_name):
+            init = getattr(m, _init)
+            built = getattr(m, _built)
+            total = init[i, j, p] if (i, j, p) in init else 0.0
             for pp in m.PeriodActive:
-                if pp <= p and (i, j, pp) in _built:
-                    total = total + _built[i, j, pp]
+                if pp <= p and (i, j, pp) in built:
+                    total += built[i, j, pp]
             return total
         return _cap_from_init_plus_built
 
-    # Fallback params
-    for name in ("transmissionInitCap", "transmissionMaxInstalledCap"):
+    # Safe fallbacks — note: these are *params* loaded from .tab
+    for name in ("transmissionMaxInstalledCap", "transmissionMaxInstalledCapRaw", "transmissionInitCap", 'Transmission_InitialCapacity'):
         if hasattr(model, name):
-            cap = getattr(model, name)
-            return lambda m, i, j, p, _cap=cap: _cap[i, j, p]
+            return _by_name(name)
 
     raise RuntimeError("Cannot infer transmission capacity; pass capacity_expr=... to add_lopf_constraints().")
+
 
 
 def _bind_to_existing_flows(model, flow_dc_like, existing_flow_candidates=()):
@@ -120,15 +123,33 @@ def _bind_to_existing_flows(model, flow_dc_like, existing_flow_candidates=()):
 def _add_kirchhoff_constraints(
     model,
     *,
-    reactance_param_name: str = "lineReactance", # on BidirectionalArc
-    susceptance_param_name: str = "lineSusceptance", # alt source if reactance missing
+    reactance_param_name: str = "lineReactance",
+    susceptance_param_name: str = "lineSusceptance",
     reactance_from_susceptance: bool = False,
+    store_debug: bool = False,
     capacity_expr: Optional[Callable] = None,
     couple_to_existing_flows: bool = True,
-    existing_flow_candidates: ("transmisionOperational"),
-    store_debug: bool = False,
+    existing_flow_candidates: tuple[str, ...] = (
+        "transmissionOperational",   # EMPIRE’s usual name
+        "transmisionOperational",    # common misspelling in some code paths
+        "transFlow",
+        "lineFlow",
+        "flow",
+    ),
+    # (any remaining kwargs)
 ):
-    #Required model sets
+    """
+    Cycle-based DC-OPF (Kirchhoff) without voltage angles:
+      - Variables: undirected net flow on each corridor (i,j) ∈ BidirectionalArc
+      - KCL is satisfied by EMPIRE's existing directed flow variables in FlowBalance;
+        we link our net-flow to those directed flows linearly: F_ij^dir - F_ji^dir = F_ij^net
+      - KVL is enforced on a fundamental cycle basis: Σ s_c,ij * x_ij * F_ij^net = 0
+      - Capacity: |F_ij^net| ≤ cap_ij(p) (cap inferred unless provided)
+
+    All declarations are done with Pyomo rules/initializers so this works with AbstractModel.
+    """
+
+    # ---- Guard required sets (Abstract) ---------------------------------------
     for s in ("BidirectionalArc", "DirectionalLink", "Node", "Operationalhour", "Scenario", "PeriodActive"):
         if not hasattr(model, s):
             raise ValueError(f"Model is missing required set: {s}")
@@ -136,52 +157,105 @@ def _add_kirchhoff_constraints(
     L = model.BidirectionalArc
     H, W, P = model.Operationalhour, model.Scenario, model.PeriodActive
 
-    # Reactance X[i,j]
+    # ---- Reactance X[i,j] selection/derivation (Abstract-safe) ----------------
+    # If a reactance Param exists, use it. Else, if asked, derive X = 1/B from susceptance.
+    # Otherwise, error out with a clear message.
     if hasattr(model, reactance_param_name):
         X = getattr(model, reactance_param_name)
     elif reactance_from_susceptance:
         if not hasattr(model, susceptance_param_name):
-            raise RuntimeError(f"Need '{reactance_param_name}' or '{susceptance_param_name}'")
+            raise RuntimeError(
+                f"Need '{reactance_param_name}' or '{susceptance_param_name}', "
+                f"or set reactance_from_susceptance=True with the latter present."
+            )
         B = getattr(model, susceptance_param_name)
-        eps = 1e-7
-        def _x_rule(m, i, j):
-            bij = B[i, j]
-            return 1.0 / (bij if abs(bij) > eps else (eps if bij >= 0 else -eps))
-        model.LOPF_Reactance = Expression(L, rule=_x_rule)
-        X = model.LOPF_Reactance
+        eps = 1e-9  # guard against divide-by-zero
+        def _x_init(m, i, j):
+            bij = float(B[i, j])
+            if abs(bij) < eps:
+                return 1.0 / eps
+            return 1.0 / bij
+        # Create a derived reactance Param on BidirectionalArc
+        model._lopf_reactance = Param(L, initialize=_x_init, within=PositiveReals)
+        X = model._lopf_reactance
     else:
         raise RuntimeError(f"Provide '{reactance_param_name}' or set reactance_from_susceptance=True.")
 
-    # flow on undirected arc (i,j) in period p
-    model.FlowK = Var(L, H, W, P, domain=Reals)
-    
-    # Capacity expression
-    if capacity_expr is None:
-        capacity_expr = _infer_capacity_expr(model)
-    model.LineCapacity = Expression(L, P, rule=lambda m, i, j, p: capacity_expr(m, i, j, p))
+    # ---- Capacity expression ---------------------------------------------------
+    # If none is supplied, infer from model components (init + built etc.).
+    cap_rule = capacity_expr or _infer_capacity_expr(model)  # returns (m,i,j,p) -> cap
 
-    # Thermal limits
-    model.KVL_flowCapUp = Constraint(L, H, W, P, rule=lambda m, i, j, h, w, p:
-        m.FlowK[i, j, h, w, p] <= m.LineCapacity[i, j, p] 
-    )
-    model.KVL_FlowCapLo = Constraint(L, H, W, P, rule=lambda m,i,j,h,w,p: 
-    -m.LineCapacity[i,j,p] <= m.FlowK[i,j,h,w,p]
-    )
+    # ---- Lazy cycle-basis construction (Abstract-safe) -------------------------
+    # We compute cycles & their edge signs when the instance is constructed.
+    model._lopf_edge_signs = {}  # {cycle_idx: {(i,j): -1/0/+1}}
 
-    # Bind to existing directed flow (so KCL stays unchanged)
-    if couple_to_existing_flows:
-        _bind_to_existing_flows(model, model.FlowK, existing_flow_candidates)
+    def _cycles_index_init(m):
+        cycles, edge_signs = _fundamental_cycles(m.Node, m.BidirectionalArc)
+        m._lopf_edge_signs = edge_signs
+        return range(1, len(cycles) + 1)
 
-    # Build fundamental cycles and add KVL
-    cycles, edge_signs = _fundamental_cycles(model.Node, L)
+    model.Cycle = Set(ordered=True, initialize=_cycles_index_init)
+
+    def _sign_init(m, c, i, j):
+        return m._lopf_edge_signs.get(c, {}).get((i, j), 0)
+
+    model.CycleEdgeSign = Param(model.Cycle, L, initialize=_sign_init, within=Reals, default=0)
+
     if store_debug:
-        model._KVL_cycles = cycles
-        model._KVL_edge_signs = edge_signs
-    model.KVL_Index = range(len(cycles))
-    def _kvl_rule(m, c_idx, h, w, p):
-        cyc = cycles[c_idx]
-        return sum(edge_signs[(c_idx, e)] * X[e] * m.FlowK[e[0], e[1], h, w, p] for e in cyc) == 0.0
-    model.KVL_Constraints = Constraint(model.KVL_Index, H, W, P, rule=_kvl_rule)
+        # Optional: expose number of cycles and a quick check for missing reverse arcs
+        def _missing_rev_init(m):
+            missing = []
+            for (i, j) in m.BidirectionalArc:
+                if (i, j) not in model.DirectionalLink or (j, i) not in model.DirectionalLink:
+                    missing.append((i, j))
+            return tuple(missing)
+        model.LOPF_MissingReverseArcs = Set(dimen=2, initialize=_missing_rev_init)
+
+    # ---- Decision var: undirected NET flow on each corridor --------------------
+    model.FlowK = Var(L, H, W, P, domain=Reals)
+
+    # ---- Bind to existing directed flow variables (linear, net-flow mapping) ---
+    # We map EMPIRE's directional, nonnegative flows F_ij^dir and F_ji^dir to our
+    # net flow: F_ij^dir - F_ji^dir = FlowK_ij (works with NonNegativeReals).
+    if couple_to_existing_flows:
+        FlowDir = None
+        for name in existing_flow_candidates:
+            if hasattr(model, name):
+                FlowDir = getattr(model, name)
+                break
+        if FlowDir is None:
+            raise ValueError(
+                "Could not find an existing directed flow variable to bind to. "
+                f"Tried: {existing_flow_candidates}"
+            )
+
+        def _net_bind(m, i, j, h, w, p):
+            # Require both directions to exist in DirectionalLink
+            if (i, j) not in m.DirectionalLink or (j, i) not in m.DirectionalLink:
+                # If a direction is missing, best to fail fast with a clear message
+                raise KeyError(f"DirectionalLink missing ({i},{j}) or ({j},{i}) needed for net-flow binding.")
+            return FlowDir[i, j, h, w, p] - FlowDir[j, i, h, w, p] == m.FlowK[i, j, h, w, p]
+
+
+        model.LOPF_NetBinding = Constraint(L, H, W, P, rule=_net_bind)
+
+    # ---- KVL on cycles: sum s_c,ij * X_ij * FlowK_ij = 0 -----------------------
+    def _kvl_rule(m, c, h, w, p):
+        return sum(m.CycleEdgeSign[c, i, j] * X[i, j] * m.FlowK[i, j, h, w, p]
+                   for (i, j) in m.BidirectionalArc) == 0
+    model.KVL = Constraint(model.Cycle, H, W, P, rule=_kvl_rule)
+
+    # ---- Thermal capacity on corridors: |FlowK_ij| <= cap_ij(p) ----------------
+    def _cap_pos(m, i, j, h, w, p):
+        return m.FlowK[i, j, h, w, p] <= cap_rule(m, i, j, p)
+    def _cap_neg(m, i, j, h, w, p):
+        return -m.FlowK[i, j, h, w, p] <= cap_rule(m, i, j, p)
+
+    model.K_CapacityPos = Constraint(L, H, W, P, rule=_cap_pos)
+    model.K_CapacityNeg = Constraint(L, H, W, P, rule=_cap_neg)
+
+    # Done.
+    return model
 
 
 def _fundamental_cycles(NodeSet, LineSet) -> Tuple[List[List[Tuple]], Dict[Tuple[int, Tuple], int]]:
