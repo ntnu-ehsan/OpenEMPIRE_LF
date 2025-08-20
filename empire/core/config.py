@@ -48,6 +48,9 @@ class EmpireConfiguration:
         len_peak_season: int = 24,
         leap_years_investment: int = 5,
         time_format: str = "%d/%m/%Y %H:%M",
+        USE_LOPF: bool = False,
+        LOPF_METHOD: str = "kirchhoff",
+        LOPF_KWARGS: dict | None = None,
         **kwargs,
     ):
         """
@@ -121,6 +124,11 @@ class EmpireConfiguration:
         self.n_reg_season = len(regular_seasons)
         self.periods = [i + 1 for i in range(int((self.forecast_horizon_year - 2020) / self.leap_years_investment))]
         self.n_periods = len(self.periods)
+
+        # OPF
+        self.USE_LOPF = bool(USE_LOPF)
+        self.LOPF_METHOD = str(LOPF_METHOD)
+        self.LOPF_KWARGS = {} if LOPF_KWARGS is None else dict(LOPF_KWARGS)
 
         # Validate the configuration
         self.validate()

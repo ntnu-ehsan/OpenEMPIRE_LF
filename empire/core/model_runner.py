@@ -119,6 +119,7 @@ def run_empire_model(
 
     generate_tab_files(file_path=workbook_path, tab_file_path=tab_file_path)
 
+    obj_value = None
     if not test_run:
         obj_value = run_empire(
             name=run_config.run_name,
@@ -148,7 +149,11 @@ def run_empire_model(
             OPERATIONAL_DUALS=empire_config.compute_operational_duals,
             north_sea=empire_config.north_sea,
             OUT_OF_SAMPLE=OUT_OF_SAMPLE, 
-            sample_file_path=sample_file_path
+            sample_file_path=sample_file_path,
+
+            USE_LOPF=empire_config.USE_LOPF,
+            LOPF_METHOD=empire_config.LOPF_METHOD,
+            LOPF_KWARGS=getattr(empire_config, "LOPF_KWARGS", {}),
             )
 
     config_path = run_config.dataset_path / "config.txt"

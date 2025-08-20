@@ -21,7 +21,7 @@ class LOPFMethod:
 # Public entrypoint (router)
 # ---------------------------
 def add_lopf_constraints(model, method: str = LOPFMethod.KIRCHHOFF, **kwargs):
-"""
+    """
     method:
       - "kirchhoff": cycle-based DC power flow (KCL + KVL, no angles)
       - "angle":     classic DC-OPF with bus angles
@@ -125,7 +125,7 @@ def _add_kirchhoff_constraints(
     reactance_from_susceptance: bool = False,
     capacity_expr: Optional[Callable] = None,
     couple_to_existing_flows: bool = True,
-    existing_flow_candidates: ("transmissionOperational", "TransFlow", "lineFlow", "flow"),
+    existing_flow_candidates: ("transmisionOperational"),
     store_debug: bool = False,
 ):
     #Required model sets
@@ -170,7 +170,7 @@ def _add_kirchhoff_constraints(
 
     # Bind to existing directed flow (so KCL stays unchanged)
     if couple_to_existing_flows:
-        _bind_to_existing_flow(model, model.FlowK, existing_flow_candidates)
+        _bind_to_existing_flows(model, model.FlowK, existing_flow_candidates)
 
     # Build fundamental cycles and add KVL
     cycles, edge_signs = _fundamental_cycles(model.Node, L)

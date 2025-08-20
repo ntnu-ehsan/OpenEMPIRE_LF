@@ -3,6 +3,7 @@ from __future__ import division
 import csv
 import logging
 import os
+from pyexpat import model
 import sys
 import time
 from pathlib import Path
@@ -12,7 +13,9 @@ from empire.utils import get_name_of_last_folder_in_path
 from pyomo.common.tempfiles import TempfileManager
 from pyomo.environ import *
 
-from lopf_madule import LOPFMethod
+# from lopf_madule import LOPFMethod
+
+from empire.core.lopf_madule import LOPFMethod
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +223,8 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     model.storageLifetime = Param(model.Storage, default=0.0, mutable=True)
     model.genEfficiency = Param(model.Generator, model.Period, default=1.0, mutable=True)
     model.lineEfficiency = Param(model.DirectionalLink, default=0.97, mutable=True)
+    model.lineReactance   = Param(model.BidirectionalArc, default=0.0, mutable=True)
+    model.lineSusceptance = Param(model.BidirectionalArc, default=0.0, mutable=True)
     model.storageChargeEff = Param(model.Storage, default=1.0, mutable=True)
     model.storageDischargeEff = Param(model.Storage, default=1.0, mutable=True)
     model.storageBleedEff = Param(model.Storage, default=1.0, mutable=True)
@@ -275,6 +280,25 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     data.load(filename=str(tab_file_path / 'Transmission_TypeFixedOMCost.tab'), param=model.transmissionTypeFixedOMCost, format="table")
     data.load(filename=str(tab_file_path / 'Transmission_lineEfficiency.tab'), param=model.lineEfficiency, format="table")
     data.load(filename=str(tab_file_path / 'Transmission_Lifetime.tab'), param=model.transmissionLifetime, format="table")
+    # Load electrical data for LOPF if requested
+    if USE_LOPF:
+        # Read kwargs to see whether we should derive X from B
+        rx_from_b = bool(LOPF_KWARGS and LOPF_KWARGS.get("reactance_from_susceptance", False))
+
+        # Try to load reactance (preferred for Kirchhoff formulation)
+        reactance_tab = tab_file_path / 'Transmission_lineReactance.tab'
+        susceptance_tab = tab_file_path / 'Transmission_lineSusceptance.tab'
+
+        if reactance_tab.exists() and not rx_from_b:
+            data.load(filename=str(reactance_tab), param=model.lineReactance, format="table")
+            logger.info("Loaded Transmission_lineReactance.tab for DC-OPF.")
+        elif susceptance_tab.exists():
+            data.load(filename=str(susceptance_tab), param=model.lineSusceptance, format="table")
+            logger.info("Loaded Transmission_lineSusceptance.tab for DC-OPF (will invert to reactance if configured).")
+        else:
+            logger.warning("No electrical line parameter (.tab) found for DC-OPF (reactance/susceptance). "
+                        "If using Kirchhoff, set LOPF_KWARGS.reactance_from_susceptance=True and provide susceptance, "
+                        "or provide Transmission_lineReactance.tab.")
 
     logger.info("Reading parameters for Storage...")
     data.load(filename=str(tab_file_path / 'Storage_StorageBleedEfficiency.tab'), param=model.storageBleedEff, format="table")
@@ -803,9 +827,12 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     #################################################################
 
     if USE_LOPF:
-        from lopf_madule import add_lopf_constraints
+        logger.info("LOPF constraints activated using method: %s", LOPF_METHOD)
+        from empire.core.lopf_madule import add_lopf_constraints
         kw = {} if LOPF_KWARGS is None else dict(LOPF_KWARGS)
         add_lopf_constraints(model, method=LOPF_METHOD, **kw)
+    else:
+        logger.warning("LOPF constraints not activated: %s", LOPF_METHOD)
 
     #################################################################
 

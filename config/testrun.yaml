@@ -28,3 +28,12 @@ serialize_instance: False                              # Serialize the data stru
 north_sea: False                                       # Whether the north sea is modelled or not
 leap_years_investment: 5                               # Number of years per period (default: 5)
 time_format: "%d/%m/%Y %H:%M"                          # Time format for scenario data files
+USE_LOPF: True
+LOPF_METHOD: "kirchhoff"
+LOPF_KWARGS:
+  existing_flow_candidates: ["transmisionOperational"]
+  reactance_param_name: "lineReactance"   # <— matches your .tab
+  reactance_from_susceptance: false       # we’re providing reactance directly
+  # OR if you only have susceptance:
+  # reactance_from_susceptance: true
+  # susceptance_param_name: "lineSusceptance"
