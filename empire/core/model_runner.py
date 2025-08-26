@@ -150,7 +150,6 @@ def run_empire_model(
             north_sea=empire_config.north_sea,
             OUT_OF_SAMPLE=OUT_OF_SAMPLE, 
             sample_file_path=sample_file_path,
-
             USE_LOPF=empire_config.USE_LOPF,
             LOPF_METHOD=empire_config.LOPF_METHOD,
             LOPF_KWARGS=getattr(empire_config, "LOPF_KWARGS", {}),

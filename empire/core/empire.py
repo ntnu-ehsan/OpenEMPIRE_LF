@@ -509,61 +509,6 @@ def run_empire(name,
 
     model.build_storPWMaxInstalledCap = BuildAction(rule=storPWMaxInstalledCap_rule)
 
-    def prepRegHydro_rule(model):
-        #Build hydrolimits for all periods
-
-        for n in model.Node:
-            for s in model.Season:
-                for i in model.PeriodActive:
-                    for sce in model.Scenario:
-                        model.maxRegHydroGen[n,i,s,sce]=sum(model.maxRegHydroGenRaw[n,i,s,h,sce] for h in model.Operationalhour if (s,h) in model.HoursOfSeason)
-
-    model.build_maxRegHydroGen = BuildAction(rule=prepRegHydro_rule)
-
-    def prepGenCapAvail_rule(model):
-        #Build generator availability for all periods
-
-        for (n,g) in model.GeneratorsOfNode:
-            for h in model.Operationalhour:
-                for s in model.Scenario:
-                    for i in model.PeriodActive:
-                        if value(model.genCapAvailTypeRaw[g]) == 0:
-                            model.genCapAvail[n,g,h,s,i]=model.genCapAvailStochRaw[n,g,h,s,i]
-                        else:
-                            model.genCapAvail[n,g,h,s,i]=model.genCapAvailTypeRaw[g]
-
-    model.build_genCapAvail = BuildAction(rule=prepGenCapAvail_rule)
-
-    def prepSload_rule(model):
-        #Build load profiles for all periods
-
-        counter = 0
-        f = open(result_file_path / f"AdjustedNegativeLoad_{name}.txt", 'w')
-        for n in model.Node:
-            for i in model.PeriodActive:
-                noderawdemand = 0
-                for (s,h) in model.HoursOfSeason:
-                    if value(h) < value(FirstHoursOfRegSeason[-1] + model.lengthRegSeason):
-                        for sce in model.Scenario:
-                                noderawdemand += value(model.sceProbab[sce]*model.seasScale[s]*model.sloadRaw[n,h,sce,i])
-                if value(model.sloadAnnualDemand[n,i]) < 1:
-                    hourlyscale = 0
-                else:
-                    hourlyscale = value(model.sloadAnnualDemand[n,i]) / noderawdemand
-                for h in model.Operationalhour:
-                    for sce in model.Scenario:
-                        model.sload[n, h, i, sce] = model.sloadRaw[n,h,sce,i]*hourlyscale
-                        if LOADCHANGEMODULE:
-                            model.sload[n,h,i,sce] = model.sload[n,h,i,sce] + model.sloadMod[n,h,sce,i]
-                        if value(model.sload[n,h,i,sce]) < 0:
-                            f.write('Adjusted electricity load: ' + str(value(model.sload[n,h,i,sce])) + ', 10 MW for hour ' + str(h) + ' and scenario ' + str(sce) + ' in ' + str(n) + "\n")
-                            model.sload[n,h,i,sce] = 10
-                            counter += 1
-
-        f.write('Hours with too small raw electricity load: ' + str(counter))
-        f.close()
-
-    model.build_sload = BuildAction(rule=prepSload_rule)
 
     logger.info("Sets and parameters declared and read...")
 
@@ -652,7 +597,7 @@ def run_empire(name,
     ##CONSTRAINTS##
     ###############
 
-    define_operational_constraints(model, EMISSION_CAP_FLAG)
+    define_operational_constraints(model, EMISSION_CAP_FLAG, FirstHoursOfRegSeason, load_change_module_flag=LOADCHANGEMODULE)
     if north_sea:
         def wind_farm_tranmission_cap_rule(model, n1, n2, i):
             if n1 in model.OffshoreNode or n2 in model.OffshoreNode:
