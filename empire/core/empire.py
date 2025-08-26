@@ -40,7 +40,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                solver, temp_dir, FirstHoursOfRegSeason, FirstHoursOfPeakSeason, lengthRegSeason,
                lengthPeakSeason, Period, Operationalhour, Scenario, Season, HoursOfSeason,
                discountrate, WACC, LeapYearsInvestment, IAMC_PRINT, WRITE_LP,
-               PICKLE_INSTANCE, EMISSION_CAP, USE_TEMP_DIR, LOADCHANGEMODULE, OPERATIONAL_DUALS, north_sea, 
+               PICKLE_INSTANCE, EMISSION_CAP_FLAG, USE_TEMP_DIR, LOADCHANGEMODULE, OPERATIONAL_DUALS, north_sea, 
                OUT_OF_SAMPLE: bool = False, sample_file_path: Path | None = None,
                USE_LOPF: bool = False, LOPF_METHOD: str = LOPFMethod.KIRCHHOFF, LOPF_KWARGS: dict | None = None) -> None | float:
 
@@ -77,7 +77,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     if PICKLE_INSTANCE:
         logger.info("Will pickle instance...")
 
-    if EMISSION_CAP:
+    if EMISSION_CAP_FLAG:
         logger.info("Absolute emission cap in each scenario...")
     else:
         logger.info("No absolute emission cap...")
@@ -261,7 +261,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     model.maxHydroNode = Param(model.Node, default=0.0, mutable=True)
     model.storOperationalInit = Param(model.Storage, default=0.0, mutable=True) #Percentage of installed energy capacity initially
 
-    if EMISSION_CAP:
+    if EMISSION_CAP_FLAG:
         model.CO2cap = Param(model.Period, default=5000.0, mutable=True)
     
     if LOADCHANGEMODULE:
@@ -357,7 +357,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     logger.info("Reading parameters for General...")
     data.load(filename=str(tab_file_path / 'General_seasonScale.tab'), param=model.seasScale, format="table") 
 
-    if EMISSION_CAP:
+    if EMISSION_CAP_FLAG:
         data.load(filename=str(tab_file_path / 'General_CO2Cap.tab'), param=model.CO2cap, format="table")
     else:
         data.load(filename=str(tab_file_path / 'General_CO2Price.tab'), param=model.CO2price, format="table")
@@ -627,97 +627,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     ##CONSTRAINTS##
     ###############
 
-    def FlowBalance_rule(model, n, h, i, w):
-        return sum(model.genOperational[n,g,h,i,w] for g in model.Generator if (n,g) in model.GeneratorsOfNode) \
-            + sum((model.storageDischargeEff[b]*model.storDischarge[n,b,h,i,w]-model.storCharge[n,b,h,i,w]) for b in model.Storage if (n,b) in model.StoragesOfNode) \
-            + sum((model.lineEfficiency[link,n]*model.transmisionOperational[link,n,h,i,w] - model.transmisionOperational[n,link,h,i,w]) for link in model.NodesLinked[n]) \
-            - model.sload[n,h,i,w] + model.loadShed[n,h,i,w] \
-            == 0
-    model.FlowBalance = Constraint(model.Node, model.Operationalhour, model.PeriodActive, model.Scenario, rule=FlowBalance_rule)
-
-    #################################################################
-
-    def genMaxProd_rule(model, n, g, h, i, w):
-            return model.genOperational[n,g,h,i,w] - model.genCapAvail[n,g,h,w,i]*model.genInstalledCap[n,g,i] <= 0
-    model.maxGenProduction = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=genMaxProd_rule)
-
-    #################################################################
-
-    def ramping_rule(model, n, g, h, i, w):
-        if h in model.FirstHoursOfRegSeason or h in model.FirstHoursOfPeakSeason:
-            return Constraint.Skip
-        else:
-            if g in model.ThermalGenerators:
-                return model.genOperational[n,g,h,i,w]-model.genOperational[n,g,(h-1),i,w] - model.genRampUpCap[g]*model.genInstalledCap[n,g,i] <= 0   #
-            else:
-                return Constraint.Skip
-    model.ramping = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=ramping_rule)
-
-    #################################################################
-
-    def storage_energy_balance_rule(model, n, b, h, i, w):
-        if h in model.FirstHoursOfRegSeason or h in model.FirstHoursOfPeakSeason:
-            return model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] == 0   #
-        else:
-            return model.storageBleedEff[b]*model.storOperational[n,b,(h-1),i,w] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] == 0   #
-    model.storage_energy_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_energy_balance_rule)
-
-    #################################################################
-
-    def storage_seasonal_net_zero_balance_rule(model, n, b, h, i, w):
-        if h in model.FirstHoursOfRegSeason:
-            return model.storOperational[n,b,h+value(model.lengthRegSeason)-1,i,w] - model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] == 0  #
-        elif h in model.FirstHoursOfPeakSeason:
-            return model.storOperational[n,b,h+value(model.lengthPeakSeason)-1,i,w] - model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] == 0  #
-        else:
-            return Constraint.Skip
-    model.storage_seasonal_net_zero_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_seasonal_net_zero_balance_rule)
-
-    #################################################################
-
-    def storage_operational_cap_rule(model, n, b, h, i, w):
-        return model.storOperational[n,b,h,i,w] - model.storENInstalledCap[n,b,i]  <= 0   #
-    model.storage_operational_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_operational_cap_rule)
-
-    #################################################################
-
-    def storage_power_discharg_cap_rule(model, n, b, h, i, w):
-        return model.storDischarge[n,b,h,i,w] - model.storageDiscToCharRatio[b]*model.storPWInstalledCap[n,b,i] <= 0   #
-    model.storage_power_discharg_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_power_discharg_cap_rule)
-
-    #################################################################
-
-    def storage_power_charg_cap_rule(model, n, b, h, i, w):
-        return model.storCharge[n,b,h,i,w] - model.storPWInstalledCap[n,b,i] <= 0   #
-    model.storage_power_charg_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_power_charg_cap_rule)
-
-    #################################################################
-
-    def hydro_gen_limit_rule(model, n, g, s, i, w):
-        if g in model.RegHydroGenerator:
-            return sum(model.genOperational[n,g,h,i,w] for h in model.Operationalhour if (s,h) in model.HoursOfSeason) - model.maxRegHydroGen[n,i,s,w] <= 0
-        else:
-            return Constraint.Skip  #
-    model.hydro_gen_limit = Constraint(model.GeneratorsOfNode, model.Season, model.PeriodActive, model.Scenario, rule=hydro_gen_limit_rule)
-
-    #################################################################
-
-    def hydro_node_limit_rule(model, n, i):
-        return sum(model.genOperational[n,g,h,i,w]*model.seasScale[s]*model.sceProbab[w] for g in model.HydroGenerator if (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason for w in model.Scenario) - model.maxHydroNode[n] <= 0   #
-    model.hydro_node_limit = Constraint(model.Node, model.PeriodActive, rule=hydro_node_limit_rule)
-
-
-    #################################################################
-
-    def transmission_cap_rule(model, n1, n2, h, i, w):
-        if (n1,n2) in model.BidirectionalArc:
-            return model.transmisionOperational[(n1,n2),h,i,w]  - model.transmissionInstalledCap[(n1,n2),i] <= 0
-        elif (n2,n1) in model.BidirectionalArc:
-            return model.transmisionOperational[(n1,n2),h,i,w]  - model.transmissionInstalledCap[(n2,n1),i] <= 0
-    model.transmission_cap = Constraint(model.DirectionalLink, model.Operationalhour, model.PeriodActive, model.Scenario, rule=transmission_cap_rule)
-
-    #################################################################
-
+    define_operational_constraints(model, EMISSION_CAP_FLAG)
     if north_sea:
         def wind_farm_tranmission_cap_rule(model, n1, n2, i):
             if n1 in model.OffshoreNode or n2 in model.OffshoreNode:
@@ -1198,7 +1108,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         for w in instance.Scenario:
             my_string=[inv_per[int(i-1)],w, 
             value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w]*instance.genCO2TypeFactor[g]*(3.6/instance.genEfficiency[g,i]) for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason))]
-            if EMISSION_CAP:
+            if EMISSION_CAP_FLAG:
                 my_string.extend([value(instance.dual[instance.emission_cap[i,w]]/(instance.operationalDiscountrate*instance.sceProbab[w]*1e6)),value(instance.CO2cap[i]*1e6)])
             else:
                 my_string.extend([value(instance.CO2price[i]),0])
@@ -1505,7 +1415,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             for w in instance.Scenario:
                 my_string=[inv_per[int(i-1)],w, 
                 value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w]*instance.genCO2TypeFactor[g]*(3.6/instance.genEfficiency[g,i]) for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason))]
-                if EMISSION_CAP:
+                if EMISSION_CAP_FLAG:
                     my_string.extend([value(instance.dual[instance.emission_cap[i,w]]/(instance.operationalDiscountrate*instance.sceProbab[w]*1e6)),value(instance.CO2cap[i]*1e6)])
                 else:
                     my_string.extend([value(instance.CO2price[i]),0])

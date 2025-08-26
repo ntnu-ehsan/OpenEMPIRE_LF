@@ -143,7 +143,7 @@ def run_empire_model(
             IAMC_PRINT=empire_config.print_in_iamc_format,
             WRITE_LP=empire_config.write_in_lp_format,
             PICKLE_INSTANCE=empire_config.serialize_instance,
-            EMISSION_CAP=empire_config.use_emission_cap,
+            EMISSION_CAP_FLAG=empire_config.use_emission_cap,
             USE_TEMP_DIR=empire_config.use_temporary_directory,
             LOADCHANGEMODULE=empire_config.load_change_module,
             OPERATIONAL_DUALS=empire_config.compute_operational_duals,
