@@ -673,13 +673,7 @@ def run_empire(name,
         model.wind_farm_transmission_cap = Constraint(model.Node, model.Node, model.PeriodActive, rule=wind_farm_tranmission_cap_rule)
     #################################################################
 
-    if EMISSION_CAP:
-        def emission_cap_rule(model, i, w):
-            return sum(model.seasScale[s]*model.genCO2TypeFactor[g]*(3.6/model.genEfficiency[g,i])*model.genOperational[n,g,h,i,w] for (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason)/1000000 \
-                - model.CO2cap[i] <= 0   #
-        model.emission_cap = Constraint(model.PeriodActive, model.Scenario, rule=emission_cap_rule)
 
-    #################################################################
 
     if not OUT_OF_SAMPLE:
         # All constraints exclusively for investment decisions inactive when out_of_sample
