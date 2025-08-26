@@ -36,13 +36,38 @@ from empire.core.lopf_madule import LOPFMethod
 logger = logging.getLogger(__name__)
 
 
-def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_path,
-               solver, temp_dir, FirstHoursOfRegSeason, FirstHoursOfPeakSeason, lengthRegSeason,
-               lengthPeakSeason, Period, Operationalhour, Scenario, Season, HoursOfSeason,
-               discountrate, WACC, LeapYearsInvestment, IAMC_PRINT, WRITE_LP,
-               PICKLE_INSTANCE, EMISSION_CAP_FLAG, USE_TEMP_DIR, LOADCHANGEMODULE, OPERATIONAL_DUALS, north_sea, 
-               OUT_OF_SAMPLE: bool = False, sample_file_path: Path | None = None,
-               USE_LOPF: bool = False, LOPF_METHOD: str = LOPFMethod.KIRCHHOFF, LOPF_KWARGS: dict | None = None) -> None | float:
+def run_empire(name, 
+               tab_file_path: Path, 
+               result_file_path: Path, 
+               scenario_data_path,
+               solver, 
+               temp_dir, 
+               FirstHoursOfRegSeason, 
+               FirstHoursOfPeakSeason, 
+               lengthRegSeason,
+               lengthPeakSeason, 
+               Period, 
+               Operationalhour, 
+               Scenario, 
+               Season, 
+               HoursOfSeason,
+               discountrate, 
+               WACC, 
+               LeapYearsInvestment, 
+               IAMC_PRINT, 
+               WRITE_LP,
+               PICKLE_INSTANCE, 
+               EMISSION_CAP_FLAG, 
+               USE_TEMP_DIR, 
+               LOADCHANGEMODULE, 
+               OPERATIONAL_DUALS, 
+               north_sea, 
+               OUT_OF_SAMPLE: bool = False, 
+               sample_file_path: Path | None = None,
+               USE_LOPF: bool = False, 
+               LOPF_METHOD: str = LOPFMethod.KIRCHHOFF, 
+               LOPF_KWARGS: dict | None = None
+               ) -> None | float:
 
     if USE_TEMP_DIR:
         TempfileManager.tempdir = temp_dir
