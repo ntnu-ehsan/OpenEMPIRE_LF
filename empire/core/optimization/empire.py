@@ -28,7 +28,7 @@ from pyomo.environ import (
     SolverFactory,
 )
 from .operational_constraints import define_operational_constraints
-from .lopf_madule import LOPFMethod
+from .lopf_module import LOPFMethod
 
 
 
@@ -712,7 +712,7 @@ def run_empire(name,
 
     if USE_LOPF:
         logger.info("LOPF constraints activated using method: %s", LOPF_METHOD)
-        from .lopf_madule import add_lopf_constraints
+        from .lopf_module import add_lopf_constraints
         kw = {} if LOPF_KWARGS is None else dict(LOPF_KWARGS)
         add_lopf_constraints(model, method=LOPF_METHOD, **kw)
     else:
