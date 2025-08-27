@@ -3,7 +3,6 @@ from __future__ import division
 import csv
 import logging
 import os
-from pyexpat import model
 import sys
 import time
 from pathlib import Path
