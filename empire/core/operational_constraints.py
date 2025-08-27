@@ -1,4 +1,4 @@
-from pyomo.environ import Constraint, value, BuildAction
+from pyomo.environ import Constraint, value, BuildAction, Expression
 
 
 def define_operational_constraints(
@@ -8,6 +8,16 @@ def define_operational_constraints(
         load_change_module_flag=False,
         ) -> None:
     # Define operational constraints for the model
+
+    def shed_component_rule(model,i):
+        return sum(model.operationalDiscountrate*model.seasScale[s]*model.sceProbab[w]*model.nodeLostLoadCost[n,i]*model.loadShed[n,h,i,w] for n in model.Node for w in model.Scenario for (s,h) in model.HoursOfSeason)
+    model.shedcomponent=Expression(model.PeriodActive,rule=shed_component_rule)
+
+    def operational_cost_rule(model,i):
+        return sum(model.operationalDiscountrate*model.seasScale[s]*model.sceProbab[w]*model.genMargCost[g,i]*model.genOperational[n,g,h,i,w] for (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason for w in model.Scenario)
+    model.operationalcost=Expression(model.PeriodActive,rule=operational_cost_rule)
+
+
     def FlowBalance_rule(model, n, h, i, w):
         return sum(model.genOperational[n,g,h,i,w] for g in model.Generator if (n,g) in model.GeneratorsOfNode) \
             + sum((model.storageDischargeEff[b]*model.storDischarge[n,b,h,i,w]-model.storCharge[n,b,h,i,w]) for b in model.Storage if (n,b) in model.StoragesOfNode) \

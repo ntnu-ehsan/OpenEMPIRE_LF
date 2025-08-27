@@ -572,13 +572,7 @@ def run_empire(name,
         return coeff
     model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)
 
-    def shed_component_rule(model,i):
-        return sum(model.operationalDiscountrate*model.seasScale[s]*model.sceProbab[w]*model.nodeLostLoadCost[n,i]*model.loadShed[n,h,i,w] for n in model.Node for w in model.Scenario for (s,h) in model.HoursOfSeason)
-    model.shedcomponent=Expression(model.PeriodActive,rule=shed_component_rule)
-
-    def operational_cost_rule(model,i):
-        return sum(model.operationalDiscountrate*model.seasScale[s]*model.sceProbab[w]*model.genMargCost[g,i]*model.genOperational[n,g,h,i,w] for (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason for w in model.Scenario)
-    model.operationalcost=Expression(model.PeriodActive,rule=operational_cost_rule)
+    define_operational_constraints(model, EMISSION_CAP_FLAG, FirstHoursOfRegSeason, load_change_module_flag=LOADCHANGEMODULE)
 
     #############
     ##OBJECTIVE##
@@ -597,7 +591,7 @@ def run_empire(name,
     ##CONSTRAINTS##
     ###############
 
-    define_operational_constraints(model, EMISSION_CAP_FLAG, FirstHoursOfRegSeason, load_change_module_flag=LOADCHANGEMODULE)
+
     if north_sea:
         def wind_farm_tranmission_cap_rule(model, n1, n2, i):
             if n1 in model.OffshoreNode or n2 in model.OffshoreNode:
