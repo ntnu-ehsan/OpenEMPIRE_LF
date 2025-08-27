@@ -572,7 +572,7 @@ def run_empire(name,
         return coeff
     model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)
 
-    define_operational_constraints(model, EMISSION_CAP_FLAG, FirstHoursOfRegSeason, load_change_module_flag=LOADCHANGEMODULE)
+    define_operational_constraints(model, logger, EMISSION_CAP_FLAG, FirstHoursOfRegSeason, load_change_module_flag=LOADCHANGEMODULE)
 
     #############
     ##OBJECTIVE##
