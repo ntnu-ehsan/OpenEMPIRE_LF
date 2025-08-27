@@ -1,10 +1,14 @@
-from pyomo.environ import Constraint, value, BuildAction, Expression
+from pyomo.environ import Constraint, value, BuildAction, Expression, AbstractModel
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def define_operational_constraints(
-        model, 
-        emission_cap_flag, 
-        FirstHoursOfRegSeason,
+        model: AbstractModel, 
+        logger: logging.Logger,
+        emission_cap_flag: bool, 
+        FirstHoursOfRegSeason: list[int],
         load_change_module_flag=False,
         ) -> None:
     # Define operational constraints for the model
@@ -137,31 +141,30 @@ def define_operational_constraints(
     breakpoint()
     def prepSload_rule(model):
         #Build load profiles for all periods
-
         counter = 0
-        with open(model.result_file_path / "AdjustedNegativeLoad.txt", 'w') as f:
-            for n in model.Node:
-                for i in model.PeriodActive:
-                    noderawdemand = 0
-                    for (s,h) in model.HoursOfSeason:
-                        if value(h) < value(FirstHoursOfRegSeason[-1] + model.lengthRegSeason):
-                            for sce in model.Scenario:
-                                    noderawdemand += value(model.sceProbab[sce]*model.seasScale[s]*model.sloadRaw[n,h,sce,i])
-                    if value(model.sloadAnnualDemand[n,i]) < 1:
-                        hourlyscale = 0
-                    else:
-                        hourlyscale = value(model.sloadAnnualDemand[n,i]) / noderawdemand
-                    for h in model.Operationalhour:
-                        for sce in model.Scenario:
-                            model.sload[n, h, i, sce] = model.sloadRaw[n,h,sce,i]*hourlyscale
-                            if load_change_module_flag:
-                                model.sload[n,h,i,sce] = model.sload[n,h,i,sce] + model.sloadMod[n,h,sce,i]
-                            if value(model.sload[n,h,i,sce]) < 0:
-                                f.write('Adjusted electricity load: ' + str(value(model.sload[n,h,i,sce])) + ', 10 MW for hour ' + str(h) + ' and scenario ' + str(sce) + ' in ' + str(n) + "\n")
-                                model.sload[n,h,i,sce] = 10
-                                counter += 1
 
-            f.write('Hours with too small raw electricity load: ' + str(counter))
+        for n in model.Node:
+            for i in model.PeriodActive:
+                noderawdemand = 0
+                for (s,h) in model.HoursOfSeason:
+                    if value(h) < value(FirstHoursOfRegSeason[-1] + model.lengthRegSeason):
+                        for sce in model.Scenario:
+                                noderawdemand += value(model.sceProbab[sce]*model.seasScale[s]*model.sloadRaw[n,h,sce,i])
+                if value(model.sloadAnnualDemand[n,i]) < 1:
+                    hourlyscale = 0
+                else:
+                    hourlyscale = value(model.sloadAnnualDemand[n,i]) / noderawdemand
+                for h in model.Operationalhour:
+                    for sce in model.Scenario:
+                        model.sload[n, h, i, sce] = model.sloadRaw[n,h,sce,i]*hourlyscale
+                        if load_change_module_flag:
+                            model.sload[n,h,i,sce] = model.sload[n,h,i,sce] + model.sloadMod[n,h,sce,i]
+                        if value(model.sload[n,h,i,sce]) < 0:
+                            logger.warning('Adjusted electricity load: ' + str(value(model.sload[n,h,i,sce])) + ', 10 MW for hour ' + str(h) + ' and scenario ' + str(sce) + ' in ' + str(n))
+                            model.sload[n,h,i,sce] = 10
+                            counter += 1
+
+        logger.info('Hours with too small raw electricity load: ' + str(counter))
 
 
     model.build_sload = BuildAction(rule=prepSload_rule)
