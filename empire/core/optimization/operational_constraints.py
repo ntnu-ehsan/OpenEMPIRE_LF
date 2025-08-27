@@ -138,7 +138,7 @@ def define_operational_constraints(
 
     model.build_genCapAvail = BuildAction(rule=prepGenCapAvail_rule)
 
-    breakpoint()
+
     def prepSload_rule(model):
         #Build load profiles for all periods
         counter = 0
@@ -165,8 +165,6 @@ def define_operational_constraints(
                             counter += 1
 
         logger.info('Hours with too small raw electricity load: ' + str(counter))
-
-
     model.build_sload = BuildAction(rule=prepSload_rule)
 
     if emission_cap_flag:
