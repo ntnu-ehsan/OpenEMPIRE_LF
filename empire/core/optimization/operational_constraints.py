@@ -1,4 +1,4 @@
-from pyomo.environ import Constraint, value, BuildAction, Expression, AbstractModel
+from pyomo.environ import Constraint, Set, Var, value, BuildAction, Expression, AbstractModel, NonNegativeReals
 import logging
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,40 @@ def prep_operational_parameters(model, load_change_module_flag) -> None:
         logger.info('Hours with too small raw electricity load: ' + str(counter))
     model.build_sload = BuildAction(rule=prepSload_rule)
 
+    def prepOperationalCostGen_rule(model):
+        #Build generator short term marginal costs
+
+        for g in model.Generator:
+            for i in model.PeriodActive:
+                if ('CCS',g) in model.GeneratorsOfTechnology:
+                    costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+(1-model.CCSRemFrac)*model.genCO2TypeFactor[g]*model.CO2price[i])+ \
+                    (3.6/model.genEfficiency[g,i])*(model.CCSRemFrac*model.genCO2TypeFactor[g]*model.CCSCostTSVariable[i])+ \
+                    model.genVariableOMCost[g]
+                else:
+                    costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+model.genCO2TypeFactor[g]*model.CO2price[i])+ \
+                    model.genVariableOMCost[g]
+                model.genMargCost[g,i]=costperenergyunit
+
+    model.build_OperationalCostGen = BuildAction(rule=prepOperationalCostGen_rule)
+    
+    def prepOperationalDiscountrate_rule(model):
+        #Build operational discount rate
+
+        model.operationalDiscountrate = sum((1+model.discountrate)**(-j) for j in list(range(0,value(model.LeapYearsInvestment))))
+
+    model.build_operationalDiscountrate = BuildAction(rule=prepOperationalDiscountrate_rule)     
+
+    def prepSceProbab_rule(model):
+        #Build an equiprobable probability distribution for scenarios
+
+        for sce in model.Scenario:
+            model.sceProbab[sce] = value(1/len(model.Scenario))
+
+    model.build_SceProbab = BuildAction(rule=prepSceProbab_rule)
+
+    return 
+
+
 def define_operational_constraints(
         model: AbstractModel, 
         logger: logging.Logger,
@@ -81,6 +115,13 @@ def define_operational_constraints(
         return sum(model.operationalDiscountrate*model.seasScale[s]*model.sceProbab[w]*model.genMargCost[g,i]*model.genOperational[n,g,h,i,w] for (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason for w in model.Scenario)
     model.operationalcost=Expression(model.PeriodActive,rule=operational_cost_rule)
 
+    # note: this cannot be included in the Benders
+    if include_hydro_node_limit_constraint_flag:
+        def hydro_node_limit_rule(model, n, i):
+            return sum(model.genOperational[n,g,h,i,w]*model.seasScale[s]*model.sceProbab[w] for g in model.HydroGenerator if (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason for w in model.Scenario) - model.maxHydroNode[n] <= 0   #
+        model.hydro_node_limit = Constraint(model.Node, model.PeriodActive, rule=hydro_node_limit_rule)
+
+    # scenario-dependent constraints:
 
     def FlowBalance_rule(model, n, h, i, w):
         return sum(model.genOperational[n,g,h,i,w] for g in model.Generator if (n,g) in model.GeneratorsOfNode) \
@@ -165,14 +206,6 @@ def define_operational_constraints(
     model.transmission_cap = Constraint(model.DirectionalLink, model.Operationalhour, model.PeriodActive, model.Scenario, rule=transmission_cap_rule)
 
     #################################################################
-    
-        
-    # note: this cannot be included in the Benders
-    def hydro_node_limit_rule(model, n, i):
-        return sum(model.genOperational[n,g,h,i,w]*model.seasScale[s]*model.sceProbab[w] for g in model.HydroGenerator if (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason for w in model.Scenario) - model.maxHydroNode[n] <= 0   #
-    model.hydro_node_limit = Constraint(model.Node, model.PeriodActive, rule=hydro_node_limit_rule)
-
-    
 
     if emission_cap_flag:
         def emission_cap_rule(model, i, w):

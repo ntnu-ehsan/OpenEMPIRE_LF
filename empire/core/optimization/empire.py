@@ -379,23 +379,6 @@ def run_empire(instance_name: str,
     if load_change_module_flag:
         data.load(filename=scenario_data_path / 'LoadchangeModule/Stochastic_ElectricLoadMod.tab', param=model.sloadMod, format="table")
 
-    def prepSceProbab_rule(model):
-        #Build an equiprobable probability distribution for scenarios
-
-        for sce in model.Scenario:
-            model.sceProbab[sce] = value(1/len(model.Scenario))
-
-    model.build_SceProbab = BuildAction(rule=prepSceProbab_rule)
-
-    
-    def prepOperationalCostGen_rule(model):
-        #Build generator short term marginal costs
-
-        for g in model.Generator:
-            for i in model.PeriodActive:
-                if ('CCS',g) in model.GeneratorsOfTechnology:
-                    costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+(1-model.CCSRemFrac)*model.genCO2TypeFactor[g]*model.CO2price[i])+ \
-                    (3.6/model.genEfficiency[g,i])*(model.CCSRemFrac*model.genCO2TypeFactor[g]*model.CCSCostTSVariable[i])+ \
                     model.genVariableOMCost[g]
                 else:
                     costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+model.genCO2TypeFactor[g]*model.CO2price[i])+ \
@@ -403,7 +386,6 @@ def run_empire(instance_name: str,
                 model.genMargCost[g,i]=costperenergyunit
 
     model.build_OperationalCostGen = BuildAction(rule=prepOperationalCostGen_rule)
-
 
     def prepInvCost_rule(model):
         #Build investment cost for generators, storages and transmission. Annual cost is calculated for the lifetime of the generator and discounted for a year.
@@ -462,12 +444,6 @@ def run_empire(instance_name: str,
 
     model.build_InitialCapacityTransmission = BuildAction(rule=prepInitialCapacityTransmission_rule)
 
-    def prepOperationalDiscountrate_rule(model):
-        #Build operational discount rate
-
-        model.operationalDiscountrate = sum((1+model.discountrate)**(-j) for j in list(range(0,value(model.LeapYearsInvestment))))
-
-    model.build_operationalDiscountrate = BuildAction(rule=prepOperationalDiscountrate_rule)     
 
     def prepGenMaxInstalledCap_rule(model):
         #Build resource limit (installed limit) for all periods. Avoid infeasibility if installed limit lower than initially installed cap.
