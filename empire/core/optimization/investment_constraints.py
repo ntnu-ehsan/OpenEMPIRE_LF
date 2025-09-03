@@ -3,6 +3,7 @@ from pyomo.environ import AbstractModel, Constraint, value
 
 def define_investment_constraints(
     model: AbstractModel,
+    north_sea_flag: bool
     ):
     def lifetime_rule_gen(model, n, g, i):
         startPeriod=1
@@ -94,4 +95,24 @@ def define_investment_constraints(
         else:
             return Constraint.Skip
     model.power_energy_relate = Constraint(model.StoragesOfNode, model.PeriodActive, rule=power_energy_relate_rule)
+
+
+    if north_sea_flag:
+        def wind_farm_tranmission_cap_rule(model, n1, n2, i):
+            if n1 in model.OffshoreNode or n2 in model.OffshoreNode:
+                if (n1,n2) in model.BidirectionalArc:
+                    if n1 in model.OffshoreNode:
+                        return model.transmissionInstalledCap[(n1,n2),i] <= sum(model.genInstalledCap[n1,g,i] for g in model.Generator if (n1,g) in model.GeneratorsOfNode)
+                    else:
+                        return model.transmissionInstalledCap[(n1,n2),i] <= sum(model.genInstalledCap[n2,g,i] for g in model.Generator if (n2,g) in model.GeneratorsOfNode)
+                elif (n2,n1) in model.BidirectionalArc:
+                    if n1 in model.OffshoreNode:
+                        return model.transmissionInstalledCap[(n2,n1),i] <= sum(model.genInstalledCap[n1,g,i] for g in model.Generator if (n1,g) in model.GeneratorsOfNode)
+                    else:
+                        return model.transmissionInstalledCap[(n2,n1),i] <= sum(model.genInstalledCap[n2,g,i] for g in model.Generator if (n2,g) in model.GeneratorsOfNode)
+                else:
+                    return Constraint.Skip
+            else:
+                return Constraint.Skip
+        model.wind_farm_transmission_cap = Constraint(model.Node, model.Node, model.PeriodActive, rule=wind_farm_tranmission_cap_rule)
     return 
