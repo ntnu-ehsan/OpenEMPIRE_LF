@@ -364,13 +364,6 @@ def run_empire(instance_name: str,
     if load_change_module_flag:
         data.load(filename=scenario_data_path / 'LoadchangeModule/Stochastic_ElectricLoadMod.tab', param=model.sloadMod, format="table")
 
-                    model.genVariableOMCost[g]
-                else:
-                    costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+model.genCO2TypeFactor[g]*model.CO2price[i])+ \
-                    model.genVariableOMCost[g]
-                model.genMargCost[g,i]=costperenergyunit
-
-    model.build_OperationalCostGen = BuildAction(rule=prepOperationalCostGen_rule)
 
     def prepInvCost_rule(model):
         #Build investment cost for generators, storages and transmission. Annual cost is calculated for the lifetime of the generator and discounted for a year.
