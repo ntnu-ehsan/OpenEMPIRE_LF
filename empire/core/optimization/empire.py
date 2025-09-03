@@ -77,21 +77,6 @@ def run_empire(instance_name: str,
 
     model = AbstractModel()
 
-    ###########
-    ##SOLVERS##
-    ###########
-
-    if solver_name == "CPLEX":
-        logger.info("Solver: CPLEX")
-    elif solver_name == "Xpress":
-        logger.info("Solver: Xpress")
-    elif solver_name == "Gurobi":
-        logger.info("Solver: Gurobi")
-    elif solver_name == "GLPK":
-        logger.info("Solver: GLPK")
-    else:
-        sys.exit("ERROR! Invalid solver! Options: CPLEX, Xpress, Gurobi")
-
     ##########
     ##MODULE##
     ##########
@@ -608,11 +593,8 @@ def run_empire(instance_name: str,
         )
         
 
-
+    opt = set_solver(solver_name, logger)
     logger.info("Solving...")
-
-    opt = set_solver(solver_name)
-
     opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{instance_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
 
     if pickle_instance_flag:

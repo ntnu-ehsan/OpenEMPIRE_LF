@@ -1,8 +1,8 @@
 from pyomo.environ import SolverFactory
+import sys
 
 
-
-def set_solver(solver):
+def set_solver(solver_name, logger):
     """Set the solver for the optimization problem and set the parameters (solver dependent). 
     Solver parameters are currently hardcoded!
     Solver options:
@@ -12,27 +12,34 @@ def set_solver(solver):
     - GLPK
 
     Args:
-        solver (str): The name of the solver to use.
+        solver_name (str): The name of the solver to use.
 
     Returns:
         SolverFactoryClass: The solver instance.
     """
-    if solver == "CPLEX":
+    
+    if solver_name == "CPLEX":
         opt = SolverFactory("cplex", Verbose=True)
         opt.options["lpmethod"] = 4
         opt.options["solutiontype"] = 2
+        logger.info("CPLEX solver is being used.")
         #instance.display('outputs_cplex.txt')
-    if solver == "Xpress":
+    elif solver_name == "Xpress":
         opt = SolverFactory("xpress") #Verbose=True
         opt.options["defaultAlg"] = 4
         opt.options["crossover"] = 0
         opt.options["lpLog"] = 1
         opt.options["Trace"] = 1
+        logger.info("Xpress solver is being used.")
         #instance.display('outputs_xpress.txt')
-    if solver == "Gurobi":
+    elif solver_name == "Gurobi":
         opt = SolverFactory('gurobi', Verbose=True)
         opt.options["Crossover"]=0
         opt.options["Method"]=2
-    if solver == "GLPK":
+        logger.info("Gurobi solver is being used.")
+    elif solver_name == "GLPK":
         opt = SolverFactory("glpk", Verbose=True)
+        logger.info("GLPK solver is being used.")
+    else:
+        sys.exit(f"ERROR! Invalid solver_name: {solver_name} Options: CPLEX, Xpress, Gurobi, GLPK")
     return opt
