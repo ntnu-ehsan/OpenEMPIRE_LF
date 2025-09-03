@@ -58,14 +58,14 @@ def run_empire(name,
                IAMC_PRINT, 
                WRITE_LP,
                PICKLE_INSTANCE, 
-               EMISSION_CAP_FLAG, 
+               emission_cap_flag, 
                USE_TEMP_DIR, 
                LOADCHANGEMODULE, 
-               OPERATIONAL_DUALS, 
-               north_sea, 
-               OUT_OF_SAMPLE: bool = False, 
+               compute_operational_duals_flag, 
+               north_sea_flag, 
+               out_of_sample_flag: bool = False, 
                sample_file_path: Path | None = None,
-               USE_LOPF: bool = False, 
+               lopf_flag: bool = False, 
                LOPF_METHOD: str = LOPFMethod.KIRCHHOFF, 
                LOPF_KWARGS: dict | None = None
                ) -> None | float:
@@ -103,7 +103,7 @@ def run_empire(name,
     if PICKLE_INSTANCE:
         logger.info("Will pickle instance...")
 
-    if EMISSION_CAP_FLAG:
+    if emission_cap_flag:
         logger.info("Absolute emission cap in each scenario...")
     else:
         logger.info("No absolute emission cap...")
@@ -129,7 +129,7 @@ def run_empire(name,
 
     #Spatial sets
     model.Node = Set(ordered=True) #n
-    if north_sea:
+    if north_sea_flag:
         model.OffshoreNode = Set(ordered=True, within=model.Node) #n
     model.DirectionalLink = Set(dimen=2, within=model.Node*model.Node, ordered=True) #a
     model.TransmissionType = Set(ordered=True)
@@ -163,7 +163,7 @@ def run_empire(name,
     data.load(filename=str(tab_file_path / 'Sets_DependentStorage.tab'),format="set", set=model.DependentStorage)
     data.load(filename=str(tab_file_path / 'Sets_Technology.tab'),format="set", set=model.Technology)
     data.load(filename=str(tab_file_path / 'Sets_Node.tab'),format="set", set=model.Node)
-    if north_sea:
+    if north_sea_flag:
         data.load(filename=str(tab_file_path / 'Sets_OffshoreNode.tab'),format="set", set=model.OffshoreNode)
     data.load(filename=str(tab_file_path / 'Sets_Horizon.tab'),format="set", set=model.Period)
     data.load(filename=str(tab_file_path / 'Sets_DirectionalLines.tab'),format="set", set=model.DirectionalLink)
@@ -287,7 +287,7 @@ def run_empire(name,
     model.maxHydroNode = Param(model.Node, default=0.0, mutable=True)
     model.storOperationalInit = Param(model.Storage, default=0.0, mutable=True) #Percentage of installed energy capacity initially
 
-    if EMISSION_CAP_FLAG:
+    if emission_cap_flag:
         model.CO2cap = Param(model.Period, default=5000.0, mutable=True)
     
     if LOADCHANGEMODULE:
@@ -323,7 +323,7 @@ def run_empire(name,
     data.load(filename=str(tab_file_path / 'Transmission_lineEfficiency.tab'), param=model.lineEfficiency, format="table")
     data.load(filename=str(tab_file_path / 'Transmission_Lifetime.tab'), param=model.transmissionLifetime, format="table")
     # Load electrical data for LOPF if requested
-    if USE_LOPF:
+    if lopf_flag:
         # Read kwargs to see whether we should derive X from B
         rx_from_b = bool(LOPF_KWARGS and LOPF_KWARGS.get("reactance_from_susceptance", False))
 
@@ -367,14 +367,14 @@ def run_empire(name,
     
     logger.info("Reading parameters for Stochastic...")
 
-    if OUT_OF_SAMPLE:
+    if out_of_sample_flag:
         if sample_file_path:
             # Load operational input data EMPIRE has not seen when optimizing (in-sample)
             data.load(filename=str(sample_file_path / 'Stochastic_HydroGenMaxSeasonalProduction.tab'), param=model.maxRegHydroGenRaw, format="table")
             data.load(filename=str(sample_file_path / 'Stochastic_StochasticAvailability.tab'), param=model.genCapAvailStochRaw, format="table") 
             data.load(filename=str(sample_file_path / 'Stochastic_ElectricLoadRaw.tab'), param=model.sloadRaw, format="table")
         else:
-            raise ValueError("'OUT_OF_SAMPLE = True' needs to be run with existing 'sample_file_path'")
+            raise ValueError("'out_of_sample_flag = True' needs to be run with existing 'sample_file_path'")
     else:
         data.load(filename=str(tab_file_path / 'Stochastic_HydroGenMaxSeasonalProduction.tab'), param=model.maxRegHydroGenRaw, format="table")
         data.load(filename=str(tab_file_path / 'Stochastic_StochasticAvailability.tab'), param=model.genCapAvailStochRaw, format="table") 
@@ -383,7 +383,7 @@ def run_empire(name,
     logger.info("Reading parameters for General...")
     data.load(filename=str(tab_file_path / 'General_seasonScale.tab'), param=model.seasScale, format="table") 
 
-    if EMISSION_CAP_FLAG:
+    if emission_cap_flag:
         data.load(filename=str(tab_file_path / 'General_CO2Cap.tab'), param=model.CO2cap, format="table")
     else:
         data.load(filename=str(tab_file_path / 'General_CO2Price.tab'), param=model.CO2price, format="table")
@@ -519,7 +519,7 @@ def run_empire(name,
 
     logger.info("Declaring variables...")
 
-    if OUT_OF_SAMPLE:
+    if out_of_sample_flag:
         # Redefine investment vars as input parameters
         model.genInvCap = Param(model.GeneratorsOfNode, model.PeriodActive, domain=NonNegativeReals)
         model.transmisionInvCap = Param(model.BidirectionalArc, model.PeriodActive, domain=NonNegativeReals)
@@ -573,7 +573,7 @@ def run_empire(name,
         return coeff
     model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)
 
-    define_operational_constraints(model, logger, EMISSION_CAP_FLAG, load_change_module_flag=LOADCHANGEMODULE)
+    define_operational_constraints(model, logger, emission_cap_flag, load_change_module_flag=LOADCHANGEMODULE)
 
     #############
     ##OBJECTIVE##
@@ -594,14 +594,12 @@ def run_empire(name,
 
 
 
-    if not OUT_OF_SAMPLE:
-        # All constraints exclusively for investment decisions inactive when out_of_sample
-        define_investment_constraints(model, north_sea)
+    if not out_of_sample_flag:
+        # All constraints exclusively for investment decisions inactive when out_of_sample_flag
+        define_investment_constraints(model, north_sea_flag)
 
 
-    #################################################################
-
-    if USE_LOPF:
+    if lopf_flag:
         logger.info("LOPF constraints activated using method: %s", LOPF_METHOD)
         from .lopf_module import add_lopf_constraints
         kw = {} if LOPF_KWARGS is None else dict(LOPF_KWARGS)
@@ -629,7 +627,7 @@ def run_empire(name,
 
     #import pdb; pdb.set_trace()
     #instance.CO2price.pprint()
-    if not OUT_OF_SAMPLE:	
+    if not out_of_sample_flag:	
         logger.info("----------------------Problem Statistics---------------------")
         logger.info("Nodes: %s", len(instance.Node))
         logger.info("Lines: %s", len(instance.BidirectionalArc))
@@ -678,11 +676,11 @@ def run_empire(name,
 
     #import pdb; pdb.set_trace()
 
-    write_results(instance, result_file_path, name, OUT_OF_SAMPLE, EMISSION_CAP_FLAG, IAMC_PRINT, logger)
+    write_results(instance, result_file_path, name, out_of_sample_flag, emission_cap_flag, IAMC_PRINT, logger)
 
-    if OPERATIONAL_DUALS and not OUT_OF_SAMPLE:
+    if compute_operational_duals_flag and not out_of_sample_flag:
         run_operational_model(instance, opt, result_file_path, name, logger)
-        write_operational_results(instance, result_file_path, EMISSION_CAP_FLAG, logger)
+        write_operational_results(instance, result_file_path, emission_cap_flag, logger)
 
 
 def pickle_instance(
