@@ -782,14 +782,7 @@ def run_empire(name,
     opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{name}.log")#, keepfiles=True, symbolic_solver_labels=True)
 
     if PICKLE_INSTANCE:
-        start = time.time()
-        picklestring = f"instance{name}.pkl"
-        if USE_TEMP_DIR:
-            picklestring = temp_dir / picklestring
-        with open(picklestring, mode='wb') as file:
-            cloudpickle.dump(instance, file)
-        end = time.time()
-        logger.info("Pickling instance took [sec]: %d", end - start)
+        pickle_instance()
                 
     #instance.display('outputs_gurobi.txt')
 
@@ -800,6 +793,23 @@ def run_empire(name,
     if OPERATIONAL_DUALS and not OUT_OF_SAMPLE:
         run_operational_model(instance, opt, result_file_path, name, logger)
         write_operational_results(instance, result_file_path, EMISSION_CAP_FLAG, logger)
+
+
+def pickle_instance(
+        instance,
+        instance_name: str, 
+        use_temp_dir_flag: bool,
+        temp_dir: None | Path = None
+        ):
+    """Pickle the Pyomo model instance to a hardcoded location"""
+    start = time.time()
+    picklestring = f"instance{instance_name}.pkl"
+    if use_temp_dir_flag:
+        picklestring = temp_dir / picklestring
+    with open(picklestring, mode='wb') as file:
+        cloudpickle.dump(instance, file)
+    end = time.time()
+    logger.info("Pickling instance took [sec]: %d", end - start)
 
 def set_solver(solver):
     """Set the solver for the optimization problem and set the parameters (solver dependent). 
