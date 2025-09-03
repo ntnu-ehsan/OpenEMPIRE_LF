@@ -25,7 +25,7 @@ from pyomo.environ import (
     Suffix, 
 )
 
-from .operational_constraints import define_operational_constraints
+from .operational_constraints import define_operational_constraints, prep_operational_parameters
 from .investment_constraints import define_investment_constraints
 from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
@@ -366,7 +366,7 @@ def run_empire(instance_name: str,
         data.load(filename=str(tab_file_path / 'Stochastic_HydroGenMaxSeasonalProduction.tab'), param=model.maxRegHydroGenRaw, format="table")
         data.load(filename=str(tab_file_path / 'Stochastic_StochasticAvailability.tab'), param=model.genCapAvailStochRaw, format="table") 
         data.load(filename=str(tab_file_path / 'Stochastic_ElectricLoadRaw.tab'), param=model.sloadRaw, format="table") 
-
+        
     logger.info("Reading parameters for General...")
     data.load(filename=str(tab_file_path / 'General_seasonScale.tab'), param=model.seasScale, format="table") 
 
@@ -562,8 +562,8 @@ def run_empire(instance_name: str,
             coeff=pow(1.0+model.discountrate,(-LeapYearsInvestment*(int(period)-1)))
         return coeff
     model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)
-
-    define_operational_constraints(model, logger, emission_cap_flag, load_change_module_flag=load_change_module_flag)
+    prep_operational_parameters(model, load_change_module_flag)
+    define_operational_constraints(model, logger, emission_cap_flag)
 
     #############
     ##OBJECTIVE##
