@@ -8,7 +8,6 @@ def define_operational_constraints(
         model: AbstractModel, 
         logger: logging.Logger,
         emission_cap_flag: bool, 
-        FirstHoursOfRegSeason: list[int],
         load_change_module_flag=False,
         ) -> None:
     # Define operational constraints for the model
@@ -147,7 +146,7 @@ def define_operational_constraints(
             for i in model.PeriodActive:
                 noderawdemand = 0
                 for (s,h) in model.HoursOfSeason:
-                    if value(h) < value(FirstHoursOfRegSeason[-1] + model.lengthRegSeason):
+                    if value(h) < value(list(model.FirstHoursOfRegSeason)[-1] + model.lengthRegSeason):
                         for sce in model.Scenario:
                                 noderawdemand += value(model.sceProbab[sce]*model.seasScale[s]*model.sloadRaw[n,h,sce,i])
                 if value(model.sloadAnnualDemand[n,i]) < 1:
