@@ -25,7 +25,7 @@ from pyomo.environ import (
     Suffix, 
 )
 
-from .operational_constraints import define_operational_constraints, prep_operational_parameters
+from .operational_constraints import define_operational_constraints, prep_operational_parameters, define_operational_variables
 from .investment_constraints import define_investment_constraints
 from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
@@ -491,7 +491,8 @@ def run_empire(instance_name: str,
         return coeff
     model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)
     prep_operational_parameters(model, load_change_module_flag)
-    define_operational_constraints(model, logger, emission_cap_flag)
+    define_operational_variables(model)
+    define_operational_constraints(model, logger, emission_cap_flag, include_hydro_node_limit_constraint_flag=True)
 
     #############
     ##OBJECTIVE##
