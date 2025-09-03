@@ -4,6 +4,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def define_operational_variables(
+        model: AbstractModel
+) -> AbstractModel:
+    # Define operational variables for the model
+    model.genOperational = Var(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
+    model.storOperational = Var(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
+    model.transmisionOperational = Var(model.DirectionalLink, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals) #flow
+    model.storCharge = Var(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
+    model.storDischarge = Var(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
+    model.loadShed = Var(model.Node, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
+
+
+
 def prep_operational_parameters(model, load_change_module_flag) -> None:
     """Prepare operational parameters for the model. 
     load_change_module_flag (bool): Flag indicating if load changes should be considered.
