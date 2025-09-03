@@ -55,8 +55,8 @@ def run_empire(name,
                discountrate, 
                WACC, 
                LeapYearsInvestment, 
-               IAMC_PRINT, 
-               WRITE_LP,
+               print_iamc_flag, 
+               write_lp_flag,
                PICKLE_INSTANCE, 
                emission_cap_flag, 
                USE_TEMP_DIR, 
@@ -97,7 +97,7 @@ def run_empire(name,
     ##MODULE##
     ##########
 
-    if WRITE_LP:
+    if write_lp_flag:
         logger.info("Will write LP-file...")
 
     if PICKLE_INSTANCE:
@@ -655,7 +655,7 @@ def run_empire(name,
             instance,
             result_file_path,
             name, 
-            WRITE_LP,
+            write_lp_flag,
             USE_TEMP_DIR,
             temp_dir,
             logger
@@ -676,7 +676,7 @@ def run_empire(name,
 
     #import pdb; pdb.set_trace()
 
-    write_results(instance, result_file_path, name, out_of_sample_flag, emission_cap_flag, IAMC_PRINT, logger)
+    write_results(instance, result_file_path, name, out_of_sample_flag, emission_cap_flag, print_iamc_flag, logger)
 
     if compute_operational_duals_flag and not out_of_sample_flag:
         run_operational_model(instance, opt, result_file_path, name, logger)
