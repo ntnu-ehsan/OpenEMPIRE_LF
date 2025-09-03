@@ -29,7 +29,7 @@ from pyomo.environ import (
 
 from .operational_constraints import define_operational_constraints
 from .lopf_module import LOPFMethod
-from .results import write_results, run_operational_model, write_operational_results
+from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
 
 
 
@@ -763,35 +763,17 @@ def run_empire(name,
         logger.info("Operational discount scale: %s", value(instance.operationalDiscountrate))
         logger.info("--------------------------------------------------------------")
         
-        if WRITE_LP:
-            logger.info("Writing LP-file...")
-            start = time.time()
-            lpstring = f"LP_{name}.lp"
-            if USE_TEMP_DIR:
-                lpstring = temp_dir / lpstring
-            instance.write(str(lpstring), io_options={'symbolic_solver_labels': True})
-            end = time.time()
-            logger.info("Writing LP-file took [sec]: %d", end - start)
-
-        # Write marginal costs to results folder
-        f = open(result_file_path / 'marginal_costs.csv', 'w', newline='')
-        writer = csv.writer(f)
-        writer.writerow(["Generator","Period","MarginalCost_EurperMWh"])
-        for g in instance.Generator:
-            for i in instance.PeriodActive:
-                writer.writerow([g, i, value(instance.genMargCost[g,i])])
-
-        f.close()
+        write_pre_solve(
+            instance,
+            result_file_path,
+            name, 
+            WRITE_LP,
+            USE_TEMP_DIR,
+            temp_dir,
+            logger
+        )
         
-        # Write investment costs to results folder
-        f = open(result_file_path / 'investment_costs.csv', 'w', newline='')
-        writer = csv.writer(f)
-        writer.writerow(["Generator","Period","InvestmentCost_EurperMW"])
-        for g in instance.Generator:
-            for i in instance.PeriodActive:
-                writer.writerow([g, i, value(instance.genInvCost[g,i])])
 
-        f.close()
 
     logger.info("Solving...")
 

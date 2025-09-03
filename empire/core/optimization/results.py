@@ -1,6 +1,7 @@
 from pathlib import Path
 import csv
 import os
+import time
 
 from pyomo.environ import value
 
@@ -13,14 +14,61 @@ def get_investment_periods(instance):
         inv_per.append(my_string)
     return inv_per
 
-def write_results(instance, 
-                   result_file_path: Path,
-                   OUT_OF_SAMPLE: bool,
-                   EMISSION_CAP_FLAG: bool, 
-                   IAMC_PRINT: bool,
-                   logger,
-                   ) -> None:
+
+def write_pre_solve(
+    instance,
+    result_file_path,
+    instance_name, 
+    write_lp,
+    use_temp_dir,
+    temp_dir,
+    logger
+):
+    if write_lp:
+        logger.info("Writing LP-file...")
+        start = time.time()
+        lpstring = f"LP_{instance_name}.lp"
+        if use_temp_dir:
+            lpstring = temp_dir / lpstring
+        instance.write(str(lpstring), io_options={'symbolic_solver_labels': True})
+        end = time.time()
+        logger.info("Writing LP-file took [sec]: %d", end - start)
+
+    # Write marginal costs to results folder
+    f = open(result_file_path / 'marginal_costs.csv', 'w', newline='')
+    writer = csv.writer(f)
+    writer.writerow(["Generator","Period","MarginalCost_EurperMWh"])
+    for g in instance.Generator:
+        for i in instance.PeriodActive:
+            writer.writerow([g, i, value(instance.genMargCost[g,i])])
+
+    f.close()
+    
+    # Write investment costs to results folder
+    f = open(result_file_path / 'investment_costs.csv', 'w', newline='')
+    writer = csv.writer(f)
+    writer.writerow(["Generator","Period","InvestmentCost_EurperMW"])
+    for g in instance.Generator:
+        for i in instance.PeriodActive:
+            writer.writerow([g, i, value(instance.genInvCost[g,i])])
+
+    f.close()
+    return 
+
+
+def write_results(
+        instance, 
+        result_file_path: Path,
+        instance_name: str,
+        OUT_OF_SAMPLE: bool,
+        EMISSION_CAP_FLAG: bool, 
+        IAMC_PRINT: bool,
+        logger,
+        ) -> None:
     # Export the results to the specified file path
+
+    
+
     ###########
     ##RESULTS##
     ###########
