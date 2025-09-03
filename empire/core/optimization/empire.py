@@ -788,7 +788,7 @@ def run_empire(name,
 
     #import pdb; pdb.set_trace()
 
-    write_results(instance, result_file_path, OUT_OF_SAMPLE, EMISSION_CAP_FLAG, IAMC_PRINT, logger)
+    write_results(instance, result_file_path, name, OUT_OF_SAMPLE, EMISSION_CAP_FLAG, IAMC_PRINT, logger)
 
     if OPERATIONAL_DUALS and not OUT_OF_SAMPLE:
         run_operational_model(instance, opt, result_file_path, name, logger)
