@@ -392,3 +392,32 @@ def _add_angle_opf(
                 break
         if FlowDir is not None:
             model.DC_Bind = Constraint(A, H, W, P, rule=lambda m,i,j,h,w,p: FlowDir[i,j,h,w,p] == m.FlowDC[i,j,h,w,p])
+
+
+def load_line_parameters(model, tab_file_path, data, lopf_kwargs, logger):
+    """Load line parameters for linear OPF
+    Read kwargs to see whether we should derive X from B
+
+    Args:
+        model (_type_): _description_
+        tab_file_path (_type_): _description_
+        data (_type_): _description_
+        LOPF_KWARGS (_type_): _description_
+        logger (_type_): _description_
+    """
+    rx_from_b = bool(lopf_kwargs and lopf_kwargs.get("reactance_from_susceptance", False))
+
+    # Try to load reactance (preferred for Kirchhoff formulation)
+    reactance_tab = tab_file_path / 'Transmission_lineReactance.tab'
+    susceptance_tab = tab_file_path / 'Transmission_lineSusceptance.tab'
+
+    if reactance_tab.exists() and not rx_from_b:
+        data.load(filename=str(reactance_tab), param=model.lineReactance, format="table")
+        logger.info("Loaded Transmission_lineReactance.tab for DC-OPF.")
+    elif susceptance_tab.exists():
+        data.load(filename=str(susceptance_tab), param=model.lineSusceptance, format="table")
+        logger.info("Loaded Transmission_lineSusceptance.tab for DC-OPF (will invert to reactance if configured).")
+    else:
+        logger.warning("No electrical line parameter (.tab) found for DC-OPF (reactance/susceptance). "
+                    "If using Kirchhoff, set lopf_kwargs.reactance_from_susceptance=True and provide susceptance, "
+                    "or provide Transmission_lineReactance.tab.")

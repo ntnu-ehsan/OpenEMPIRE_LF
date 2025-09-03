@@ -23,12 +23,11 @@ from pyomo.environ import (
     DataPortal,
     AbstractModel,
     Suffix, 
-    SolverFactory,
 )
 
 from .operational_constraints import define_operational_constraints
 from .investment_constraints import define_investment_constraints
-from .lopf_module import LOPFMethod
+from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
 from .solver import set_solver
 
@@ -37,11 +36,11 @@ from .solver import set_solver
 logger = logging.getLogger(__name__)
 
 
-def run_empire(name, 
+def run_empire(instance_name: str, 
                tab_file_path: Path, 
                result_file_path: Path, 
                scenario_data_path,
-               solver, 
+               solver_name, 
                temp_dir, 
                FirstHoursOfRegSeason, 
                FirstHoursOfPeakSeason, 
@@ -53,24 +52,24 @@ def run_empire(name,
                Season, 
                HoursOfSeason,
                discountrate, 
-               WACC, 
+               wacc, 
                LeapYearsInvestment, 
                print_iamc_flag, 
                write_lp_flag,
-               PICKLE_INSTANCE, 
+               pickle_instance_flag, 
                emission_cap_flag, 
-               USE_TEMP_DIR, 
-               LOADCHANGEMODULE, 
+               use_temp_dir_flag, 
+               load_change_module_flag, 
                compute_operational_duals_flag, 
                north_sea_flag, 
                out_of_sample_flag: bool = False, 
                sample_file_path: Path | None = None,
                lopf_flag: bool = False, 
-               LOPF_METHOD: str = LOPFMethod.KIRCHHOFF, 
-               LOPF_KWARGS: dict | None = None
+               lopf_method: str = LOPFMethod.KIRCHHOFF, 
+               lopf_kwargs: dict | None = None
                ) -> None | float:
 
-    if USE_TEMP_DIR:
+    if use_temp_dir_flag:
         TempfileManager.tempdir = temp_dir
 
     if not os.path.exists(result_file_path):
@@ -82,13 +81,13 @@ def run_empire(name,
     ##SOLVERS##
     ###########
 
-    if solver == "CPLEX":
+    if solver_name == "CPLEX":
         logger.info("Solver: CPLEX")
-    elif solver == "Xpress":
+    elif solver_name == "Xpress":
         logger.info("Solver: Xpress")
-    elif solver == "Gurobi":
+    elif solver_name == "Gurobi":
         logger.info("Solver: Gurobi")
-    elif solver == "GLPK":
+    elif solver_name == "GLPK":
         logger.info("Solver: GLPK")
     else:
         sys.exit("ERROR! Invalid solver! Options: CPLEX, Xpress, Gurobi")
@@ -100,7 +99,7 @@ def run_empire(name,
     if write_lp_flag:
         logger.info("Will write LP-file...")
 
-    if PICKLE_INSTANCE:
+    if pickle_instance_flag:
         logger.info("Will pickle instance...")
 
     if emission_cap_flag:
@@ -204,7 +203,7 @@ def run_empire(name,
     #Scaling
 
     model.discountrate = Param(initialize=discountrate) 
-    model.WACC = Param(initialize=WACC) 
+    model.WACC = Param(initialize=wacc) 
     model.LeapYearsInvestment = Param(initialize=LeapYearsInvestment)
     model.operationalDiscountrate = Param(mutable=True)
     model.sceProbab = Param(model.Scenario, mutable=True)
@@ -260,9 +259,12 @@ def run_empire(name,
 
     #Type dependent technology limitations
 
+    # investment 
     model.genLifetime = Param(model.Generator, default=0.0, mutable=True)
     model.transmissionLifetime = Param(model.BidirectionalArc, default=40.0, mutable=True)
     model.storageLifetime = Param(model.Storage, default=0.0, mutable=True)
+
+    # operational
     model.genEfficiency = Param(model.Generator, model.Period, default=1.0, mutable=True)
     model.lineEfficiency = Param(model.DirectionalLink, default=0.97, mutable=True)
     model.lineReactance   = Param(model.BidirectionalArc, default=0.0, mutable=True)
@@ -290,7 +292,7 @@ def run_empire(name,
     if emission_cap_flag:
         model.CO2cap = Param(model.Period, default=5000.0, mutable=True)
     
-    if LOADCHANGEMODULE:
+    if load_change_module_flag:
         model.sloadMod = Param(model.Node, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
 
     #Load the parameters
@@ -324,23 +326,8 @@ def run_empire(name,
     data.load(filename=str(tab_file_path / 'Transmission_Lifetime.tab'), param=model.transmissionLifetime, format="table")
     # Load electrical data for LOPF if requested
     if lopf_flag:
-        # Read kwargs to see whether we should derive X from B
-        rx_from_b = bool(LOPF_KWARGS and LOPF_KWARGS.get("reactance_from_susceptance", False))
+        load_line_parameters(model, tab_file_path, data, lopf_kwargs, logger) 
 
-        # Try to load reactance (preferred for Kirchhoff formulation)
-        reactance_tab = tab_file_path / 'Transmission_lineReactance.tab'
-        susceptance_tab = tab_file_path / 'Transmission_lineSusceptance.tab'
-
-        if reactance_tab.exists() and not rx_from_b:
-            data.load(filename=str(reactance_tab), param=model.lineReactance, format="table")
-            logger.info("Loaded Transmission_lineReactance.tab for DC-OPF.")
-        elif susceptance_tab.exists():
-            data.load(filename=str(susceptance_tab), param=model.lineSusceptance, format="table")
-            logger.info("Loaded Transmission_lineSusceptance.tab for DC-OPF (will invert to reactance if configured).")
-        else:
-            logger.warning("No electrical line parameter (.tab) found for DC-OPF (reactance/susceptance). "
-                        "If using Kirchhoff, set LOPF_KWARGS.reactance_from_susceptance=True and provide susceptance, "
-                        "or provide Transmission_lineReactance.tab.")
 
     logger.info("Reading parameters for Storage...")
     data.load(filename=str(tab_file_path / 'Storage_StorageBleedEfficiency.tab'), param=model.storageBleedEff, format="table")
@@ -389,7 +376,7 @@ def run_empire(name,
         data.load(filename=str(tab_file_path / 'General_CO2Price.tab'), param=model.CO2price, format="table")
 
     logger.info("Constructing parameter values...")
-    if LOADCHANGEMODULE:
+    if load_change_module_flag:
         data.load(filename=scenario_data_path / 'LoadchangeModule/Stochastic_ElectricLoadMod.tab', param=model.sloadMod, format="table")
 
     def prepSceProbab_rule(model):
@@ -399,6 +386,24 @@ def run_empire(name,
             model.sceProbab[sce] = value(1/len(model.Scenario))
 
     model.build_SceProbab = BuildAction(rule=prepSceProbab_rule)
+
+    
+    def prepOperationalCostGen_rule(model):
+        #Build generator short term marginal costs
+
+        for g in model.Generator:
+            for i in model.PeriodActive:
+                if ('CCS',g) in model.GeneratorsOfTechnology:
+                    costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+(1-model.CCSRemFrac)*model.genCO2TypeFactor[g]*model.CO2price[i])+ \
+                    (3.6/model.genEfficiency[g,i])*(model.CCSRemFrac*model.genCO2TypeFactor[g]*model.CCSCostTSVariable[i])+ \
+                    model.genVariableOMCost[g]
+                else:
+                    costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+model.genCO2TypeFactor[g]*model.CO2price[i])+ \
+                    model.genVariableOMCost[g]
+                model.genMargCost[g,i]=costperenergyunit
+
+    model.build_OperationalCostGen = BuildAction(rule=prepOperationalCostGen_rule)
+
 
     def prepInvCost_rule(model):
         #Build investment cost for generators, storages and transmission. Annual cost is calculated for the lifetime of the generator and discounted for a year.
@@ -434,21 +439,6 @@ def run_empire(name,
 
     model.build_InvCost = BuildAction(rule=prepInvCost_rule)
 
-    def prepOperationalCostGen_rule(model):
-        #Build generator short term marginal costs
-
-        for g in model.Generator:
-            for i in model.PeriodActive:
-                if ('CCS',g) in model.GeneratorsOfTechnology:
-                    costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+(1-model.CCSRemFrac)*model.genCO2TypeFactor[g]*model.CO2price[i])+ \
-                    (3.6/model.genEfficiency[g,i])*(model.CCSRemFrac*model.genCO2TypeFactor[g]*model.CCSCostTSVariable[i])+ \
-                    model.genVariableOMCost[g]
-                else:
-                    costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+model.genCO2TypeFactor[g]*model.CO2price[i])+ \
-                    model.genVariableOMCost[g]
-                model.genMargCost[g,i]=costperenergyunit
-
-    model.build_OperationalCostGen = BuildAction(rule=prepOperationalCostGen_rule)
 
     def prepInitialCapacityNodeGen_rule(model):
         #Build initial capacity for generator type in node
@@ -573,7 +563,7 @@ def run_empire(name,
         return coeff
     model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)
 
-    define_operational_constraints(model, logger, emission_cap_flag, load_change_module_flag=LOADCHANGEMODULE)
+    define_operational_constraints(model, logger, emission_cap_flag, load_change_module_flag=load_change_module_flag)
 
     #############
     ##OBJECTIVE##
@@ -600,12 +590,12 @@ def run_empire(name,
 
 
     if lopf_flag:
-        logger.info("LOPF constraints activated using method: %s", LOPF_METHOD)
+        logger.info("LOPF constraints activated using method: %s", lopf_method)
         from .lopf_module import add_lopf_constraints
-        kw = {} if LOPF_KWARGS is None else dict(LOPF_KWARGS)
-        add_lopf_constraints(model, method=LOPF_METHOD, **kw)
+        kw = {} if lopf_kwargs is None else dict(lopf_kwargs)
+        add_lopf_constraints(model, method=lopf_method, **kw)
     else:
-        logger.warning("LOPF constraints not activated: %s", LOPF_METHOD)
+        logger.warning("LOPF constraints not activated: %s", lopf_method)
 
     #################################################################
 
@@ -654,9 +644,9 @@ def run_empire(name,
         write_pre_solve(
             instance,
             result_file_path,
-            name, 
+            instance_name, 
             write_lp_flag,
-            USE_TEMP_DIR,
+            use_temp_dir_flag,
             temp_dir,
             logger
         )
@@ -665,21 +655,21 @@ def run_empire(name,
 
     logger.info("Solving...")
 
-    opt = set_solver(solver)
+    opt = set_solver(solver_name)
 
-    opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{name}.log")#, keepfiles=True, symbolic_solver_labels=True)
+    opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{instance_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
 
-    if PICKLE_INSTANCE:
+    if pickle_instance_flag:
         pickle_instance()
                 
     #instance.display('outputs_gurobi.txt')
 
     #import pdb; pdb.set_trace()
 
-    write_results(instance, result_file_path, name, out_of_sample_flag, emission_cap_flag, print_iamc_flag, logger)
+    write_results(instance, result_file_path, instance_name, out_of_sample_flag, emission_cap_flag, print_iamc_flag, logger)
 
     if compute_operational_duals_flag and not out_of_sample_flag:
-        run_operational_model(instance, opt, result_file_path, name, logger)
+        run_operational_model(instance, opt, result_file_path, instance_name, logger)
         write_operational_results(instance, result_file_path, emission_cap_flag, logger)
 
 
