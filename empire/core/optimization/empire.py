@@ -188,15 +188,10 @@ def run_empire(instance_name: str,
     #Scaling
 
     model.discountrate = Param(initialize=discountrate) 
-    model.WACC = Param(initialize=wacc) 
     model.LeapYearsInvestment = Param(initialize=LeapYearsInvestment)
-    model.operationalDiscountrate = Param(mutable=True)
-    model.sceProbab = Param(model.Scenario, mutable=True)
-    model.seasScale = Param(model.Season, initialize=1.0, mutable=True)
-    model.lengthRegSeason = Param(initialize=lengthRegSeason) 
-    model.lengthPeakSeason = Param(initialize=lengthPeakSeason) 
 
     #Cost
+    model.WACC = Param(initialize=wacc) # investment only
 
     model.genCapitalCost = Param(model.Generator, model.Period, default=0, mutable=True)
     model.transmissionTypeCapitalCost = Param(model.TransmissionType, model.Period, default=0, mutable=True)
@@ -242,11 +237,7 @@ def run_empire(instance_name: str,
     model.storageLifetime = Param(model.Storage, default=0.0, mutable=True)
 
 
-    if emission_cap_flag:
-        model.CO2cap = Param(model.Period, default=5000.0, mutable=True)
-    
-    if load_change_module_flag:
-        model.sloadMod = Param(model.Node, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
+    define_operational_parameters(model, lengthRegSeason, lengthPeakSeason, emission_cap_flag, load_change_module_flag)
 
     #Load the parameters
 

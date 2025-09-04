@@ -17,8 +17,19 @@ def define_operational_variables(
 
 
 def define_operational_parameters(
-        model: AbstractModel
+        model: AbstractModel,
+        lengthRegSeason: int,
+        lengthPeakSeason: int,
+        emission_cap_flag: bool,
+        load_change_module_flag: bool
     ):
+    # operational deterministic parameters 
+    model.operationalDiscountrate = Param(mutable=True)
+    model.sceProbab = Param(model.Scenario, mutable=True)
+    model.seasScale = Param(model.Season, initialize=1.0, mutable=True)
+    model.lengthRegSeason = Param(initialize=lengthRegSeason, mutable=True)
+    model.lengthPeakSeason = Param(initialize=lengthPeakSeason, mutable=True)
+
     model.genEfficiency = Param(model.Generator, model.Period, default=1.0, mutable=True)
     model.lineEfficiency = Param(model.DirectionalLink, default=0.97, mutable=True)
     model.lineReactance   = Param(model.BidirectionalArc, default=0.0, mutable=True)
@@ -40,8 +51,13 @@ def define_operational_parameters(
     model.genVariableOMCost = Param(model.Generator, default=0.0, mutable=True)
     model.CCSRemFrac = Param(initialize=0.9)
 
-    #Stochastic input
+    if emission_cap_flag:
+        model.CO2cap = Param(model.Period, default=5000.0, mutable=True)
+    
+    if load_change_module_flag:
+        model.sloadMod = Param(model.Node, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
 
+    #Stochastic input
     model.sloadRaw = Param(model.Node, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
     model.sloadAnnualDemand = Param(model.Node, model.Period, default=0.0, mutable=True)
     model.sload = Param(model.Node, model.Operationalhour, model.Period, model.Scenario, default=0.0, mutable=True)
