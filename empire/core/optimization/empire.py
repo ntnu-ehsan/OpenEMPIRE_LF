@@ -24,7 +24,7 @@ from pyomo.environ import (
     Suffix, 
 )
 
-from .operational_constraints import define_operational_constraints, prep_operational_parameters, define_operational_variables, define_operational_parameters
+from .operational_constraints import define_operational_constraints, prep_operational_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters
 from .investment_constraints import define_investment_constraints, prep_investment_parameters
 from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
@@ -235,6 +235,7 @@ def run_empire(instance_name: str,
 
 
     define_operational_parameters(model, lengthRegSeason, lengthPeakSeason, emission_cap_flag, load_change_module_flag)
+    load_operational_parameters(model, data, tab_file_path)
 
     #Load the parameters
     # investment
