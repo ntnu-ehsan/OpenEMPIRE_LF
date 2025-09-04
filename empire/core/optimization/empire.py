@@ -211,14 +211,7 @@ def run_empire(instance_name: str,
     model.storPWInvCost = Param(model.Storage, model.Period, default=1000000, mutable=True)
     model.storENInvCost = Param(model.Storage, model.Period, default=800000, mutable=True)
     model.transmissionLength = Param(model.BidirectionalArc, default=0, mutable=True)
-    model.genVariableOMCost = Param(model.Generator, default=0.0, mutable=True)
-    model.genFuelCost = Param(model.Generator, model.Period, default=0.0, mutable=True)
-    model.genMargCost = Param(model.Generator, model.Period, default=600, mutable=True)
-    model.genCO2TypeFactor = Param(model.Generator, default=0.0, mutable=True)
-    model.nodeLostLoadCost = Param(model.Node, model.Period, default=22000.0)
-    model.CO2price = Param(model.Period, default=0.0, mutable=True)
-    model.CCSCostTSVariable = Param(model.Period, default=0.0, mutable=True)
-    model.CCSRemFrac = Param(initialize=0.9)
+
 
     #Node dependent technology limitations
 

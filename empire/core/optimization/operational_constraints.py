@@ -30,6 +30,16 @@ def define_operational_parameters(
     model.storageDiscToCharRatio = Param(model.Storage, default=1.0, mutable=True) #NB! Hard-coded
     model.storagePowToEnergy = Param(model.DependentStorage, default=1.0, mutable=True)
 
+
+    model.genMargCost = Param(model.Generator, model.Period, default=600, mutable=True)
+    model.CO2price = Param(model.Period, default=0.0, mutable=True)
+    model.genCO2TypeFactor = Param(model.Generator, default=0.0, mutable=True)
+    model.nodeLostLoadCost = Param(model.Node, model.Period, default=22000.0)
+    model.CCSCostTSVariable = Param(model.Period, default=0.0, mutable=True)
+    model.genFuelCost = Param(model.Generator, model.Period, default=0.0, mutable=True)
+    model.genVariableOMCost = Param(model.Generator, default=0.0, mutable=True)
+    model.CCSRemFrac = Param(initialize=0.9)
+
     #Stochastic input
 
     model.sloadRaw = Param(model.Node, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
