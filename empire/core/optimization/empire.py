@@ -25,7 +25,7 @@ from pyomo.environ import (
 )
 
 from .operational_constraints import define_operational_constraints, prep_operational_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters
-from .investment_constraints import define_investment_constraints, prep_investment_parameters
+from .investment_constraints import define_investment_constraints, prep_investment_parameters, load_investment_parameters
 from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
 from .solver import set_solver
@@ -185,8 +185,9 @@ def run_empire(instance_name: str,
 
     logger.info("Declaring parameters...")
 
-    #Scaling
 
+
+    # investment and operations
     model.discountrate = Param(initialize=discountrate) 
     model.LeapYearsInvestment = Param(initialize=LeapYearsInvestment)
 
@@ -202,6 +203,7 @@ def run_empire(instance_name: str,
     model.storPWFixedOMCost = Param(model.Storage, model.Period, default=0, mutable=True)
     model.storENFixedOMCost = Param(model.Storage, model.Period, default=0, mutable=True)
     model.genInvCost = Param(model.Generator, model.Period, default=9000000, mutable=True)
+    
     model.transmissionInvCost = Param(model.BidirectionalArc, model.Period, default=3000000, mutable=True)
     model.storPWInvCost = Param(model.Storage, model.Period, default=1000000, mutable=True)
     model.storENInvCost = Param(model.Storage, model.Period, default=800000, mutable=True)
@@ -237,74 +239,18 @@ def run_empire(instance_name: str,
     define_operational_parameters(model, lengthRegSeason, lengthPeakSeason, emission_cap_flag, load_change_module_flag)
     load_operational_parameters(model, data, tab_file_path)
 
-    #Load the parameters
-    # investment
-    logger.info("Reading parameters...")
-    logger.info("Reading parameters for Generator...")
-    data.load(filename=str(tab_file_path / 'Generator_CapitalCosts.tab'), param=model.genCapitalCost, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_FixedOMCosts.tab'), param=model.genFixedOMCost, format="table")
-
-
-
-
-    # investment
-    data.load(filename=str(tab_file_path / 'Generator_RefInitialCap.tab'), param=model.genRefInitCap, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_ScaleFactorInitialCap.tab'), param=model.genScaleInitCap, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_InitialCapacity.tab'), param=model.genInitCap, format="table") #node_generator_intial_capacity.xlsx
-    data.load(filename=str(tab_file_path / 'Generator_MaxBuiltCapacity.tab'), param=model.genMaxBuiltCap, format="table")#?
-    data.load(filename=str(tab_file_path / 'Generator_MaxInstalledCapacity.tab'), param=model.genMaxInstalledCapRaw, format="table")#maximum_capacity_constraint_040317_high
-    data.load(filename=str(tab_file_path / 'Generator_Lifetime.tab'), param=model.genLifetime, format="table") 
-
-
-    # # operational 
-    # breakpoint()
-    # model.lengthRegSeason.set_value(lengthRegSeason)
-    # model.lengthPeakSeason.set_value(lengthPeakSeason)
-    # breakpoint()
-    data.load(filename=str(tab_file_path / 'Generator_VariableOMCosts.tab'), param=model.genVariableOMCost, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_FuelCosts.tab'), param=model.genFuelCost, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_CCSCostTSVariable.tab'), param=model.CCSCostTSVariable, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_Efficiency.tab'), param=model.genEfficiency, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_CO2Content.tab'), param=model.genCO2TypeFactor, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_GeneratorTypeAvailability.tab'), param=model.genCapAvailTypeRaw, format="table")
-
-    logger.info("Reading parameters for Transmission...")
-    data.load(filename=str(tab_file_path / 'Transmission_InitialCapacity.tab'), param=model.transmissionInitCap, format="table")
-    data.load(filename=str(tab_file_path / 'Transmission_MaxBuiltCapacity.tab'), param=model.transmissionMaxBuiltCap, format="table")
-    data.load(filename=str(tab_file_path / 'Transmission_MaxInstallCapacityRaw.tab'), param=model.transmissionMaxInstalledCapRaw, format="table")
-    data.load(filename=str(tab_file_path / 'Transmission_Length.tab'), param=model.transmissionLength, format="table")
-    data.load(filename=str(tab_file_path / 'Transmission_TypeCapitalCost.tab'), param=model.transmissionTypeCapitalCost, format="table")
-    data.load(filename=str(tab_file_path / 'Transmission_TypeFixedOMCost.tab'), param=model.transmissionTypeFixedOMCost, format="table")
-    data.load(filename=str(tab_file_path / 'Transmission_lineEfficiency.tab'), param=model.lineEfficiency, format="table")
-    data.load(filename=str(tab_file_path / 'Transmission_Lifetime.tab'), param=model.transmissionLifetime, format="table")
-    # Load electrical data for LOPF if requested
+    load_investment_parameters(model, data, tab_file_path)
+    
+    # Load electrical data for LOPF if requested (need to split investment and operations!)
     if lopf_flag:
         load_line_parameters(model, tab_file_path, data, lopf_kwargs, logger) 
 
 
     logger.info("Reading parameters for Storage...")
-    data.load(filename=str(tab_file_path / 'Storage_StorageBleedEfficiency.tab'), param=model.storageBleedEff, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_StorageChargeEff.tab'), param=model.storageChargeEff, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_StorageDischargeEff.tab'), param=model.storageDischargeEff, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_StoragePowToEnergy.tab'), param=model.storagePowToEnergy, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_EnergyCapitalCost.tab'), param=model.storENCapitalCost, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_EnergyFixedOMCost.tab'), param=model.storENFixedOMCost, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_EnergyInitialCapacity.tab'), param=model.storENInitCap, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_EnergyMaxBuiltCapacity.tab'), param=model.storENMaxBuiltCap, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_EnergyMaxInstalledCapacity.tab'), param=model.storENMaxInstalledCapRaw, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_StorageInitialEnergyLevel.tab'), param=model.storOperationalInit, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_PowerCapitalCost.tab'), param=model.storPWCapitalCost, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_PowerFixedOMCost.tab'), param=model.storPWFixedOMCost, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_InitialPowerCapacity.tab'), param=model.storPWInitCap, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_PowerMaxBuiltCapacity.tab'), param=model.storPWMaxBuiltCap, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_PowerMaxInstalledCapacity.tab'), param=model.storPWMaxInstalledCapRaw, format="table")
-    data.load(filename=str(tab_file_path / 'Storage_Lifetime.tab'), param=model.storageLifetime, format="table")
 
-    logger.info("Reading parameters for Node...")
-    data.load(filename=str(tab_file_path / 'Node_NodeLostLoadCost.tab'), param=model.nodeLostLoadCost, format="table")
-    data.load(filename=str(tab_file_path / 'Node_ElectricAnnualDemand.tab'), param=model.sloadAnnualDemand, format="table") 
-    data.load(filename=str(tab_file_path / 'Node_HydroGenMaxAnnualProduction.tab'), param=model.maxHydroNode, format="table") 
-    
+    # inv and op
+    data.load(filename=str(tab_file_path / 'Storage_StoragePowToEnergy.tab'), param=model.storagePowToEnergy, format="table")
+
     logger.info("Reading parameters for Stochastic...")
 
     if out_of_sample_flag:

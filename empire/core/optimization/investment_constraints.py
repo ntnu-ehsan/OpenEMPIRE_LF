@@ -1,5 +1,42 @@
 from pyomo.environ import AbstractModel, Constraint, value, BuildAction
 
+
+def load_investment_parameters(model, data, tab_file_path) -> None:
+    #Load the investment parameters
+    # logger.info("Reading parameters...")
+    # logger.info("Reading parameters for Generator...")
+    data.load(filename=str(tab_file_path / 'Generator_CapitalCosts.tab'), param=model.genCapitalCost, format="table")
+    data.load(filename=str(tab_file_path / 'Generator_FixedOMCosts.tab'), param=model.genFixedOMCost, format="table")
+    data.load(filename=str(tab_file_path / 'Generator_RefInitialCap.tab'), param=model.genRefInitCap, format="table")
+    data.load(filename=str(tab_file_path / 'Generator_ScaleFactorInitialCap.tab'), param=model.genScaleInitCap, format="table")
+    data.load(filename=str(tab_file_path / 'Generator_InitialCapacity.tab'), param=model.genInitCap, format="table") #node_generator_intial_capacity.xlsx
+    data.load(filename=str(tab_file_path / 'Generator_MaxBuiltCapacity.tab'), param=model.genMaxBuiltCap, format="table")#?
+    data.load(filename=str(tab_file_path / 'Generator_MaxInstalledCapacity.tab'), param=model.genMaxInstalledCapRaw, format="table")#maximum_capacity_constraint_040317_high
+    data.load(filename=str(tab_file_path / 'Generator_Lifetime.tab'), param=model.genLifetime, format="table") 
+
+    # logger.info("Reading parameters for Transmission...")
+    data.load(filename=str(tab_file_path / 'Transmission_InitialCapacity.tab'), param=model.transmissionInitCap, format="table")
+    data.load(filename=str(tab_file_path / 'Transmission_MaxBuiltCapacity.tab'), param=model.transmissionMaxBuiltCap, format="table")
+    data.load(filename=str(tab_file_path / 'Transmission_MaxInstallCapacityRaw.tab'), param=model.transmissionMaxInstalledCapRaw, format="table")
+    data.load(filename=str(tab_file_path / 'Transmission_Length.tab'), param=model.transmissionLength, format="table")
+    data.load(filename=str(tab_file_path / 'Transmission_TypeCapitalCost.tab'), param=model.transmissionTypeCapitalCost, format="table")
+    data.load(filename=str(tab_file_path / 'Transmission_TypeFixedOMCost.tab'), param=model.transmissionTypeFixedOMCost, format="table")
+    data.load(filename=str(tab_file_path / 'Transmission_Lifetime.tab'), param=model.transmissionLifetime, format="table")
+
+    # storage
+    data.load(filename=str(tab_file_path / 'Storage_EnergyCapitalCost.tab'), param=model.storENCapitalCost, format="table")
+    data.load(filename=str(tab_file_path / 'Storage_EnergyFixedOMCost.tab'), param=model.storENFixedOMCost, format="table")
+    data.load(filename=str(tab_file_path / 'Storage_EnergyInitialCapacity.tab'), param=model.storENInitCap, format="table")
+    data.load(filename=str(tab_file_path / 'Storage_EnergyMaxBuiltCapacity.tab'), param=model.storENMaxBuiltCap, format="table")
+    data.load(filename=str(tab_file_path / 'Storage_EnergyMaxInstalledCapacity.tab'), param=model.storENMaxInstalledCapRaw, format="table")
+    data.load(filename=str(tab_file_path / 'Storage_PowerCapitalCost.tab'), param=model.storPWCapitalCost, format="table")
+    data.load(filename=str(tab_file_path / 'Storage_PowerFixedOMCost.tab'), param=model.storPWFixedOMCost, format="table")
+    data.load(filename=str(tab_file_path / 'Storage_InitialPowerCapacity.tab'), param=model.storPWInitCap, format="table")
+    data.load(filename=str(tab_file_path / 'Storage_PowerMaxBuiltCapacity.tab'), param=model.storPWMaxBuiltCap, format="table")
+    data.load(filename=str(tab_file_path / 'Storage_PowerMaxInstalledCapacity.tab'), param=model.storPWMaxInstalledCapRaw, format="table")
+    data.load(filename=str(tab_file_path / 'Storage_Lifetime.tab'), param=model.storageLifetime, format="table")
+    return 
+
 def prep_investment_parameters(
         model: AbstractModel
     ):
