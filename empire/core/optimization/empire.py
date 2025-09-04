@@ -385,6 +385,7 @@ def run_empire(instance_name: str,
 
     if not out_of_sample_flag:
         # All constraints exclusively for investment decisions inactive when out_of_sample_flag
+        prep_investment_parameters(model)
         define_investment_constraints(model, north_sea_flag)
 
 
