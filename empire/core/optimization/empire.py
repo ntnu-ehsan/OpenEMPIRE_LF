@@ -209,7 +209,6 @@ def run_empire(instance_name: str,
 
 
     #Node dependent technology limitations
-
     model.genRefInitCap = Param(model.GeneratorsOfNode, default=0.0, mutable=True)
     model.genScaleInitCap = Param(model.Generator, model.Period, default=0.0, mutable=True)
     model.genInitCap = Param(model.GeneratorsOfNode, model.Period, default=0.0, mutable=True)
@@ -229,8 +228,6 @@ def run_empire(instance_name: str,
     model.storENMaxInstalledCap = Param(model.StoragesOfNode, model.Period, default=0.0, mutable=True)
     model.storENMaxInstalledCapRaw = Param(model.StoragesOfNode, default=0.0, mutable=True)
 
-    #Type dependent technology limitations
-
     # investment 
     model.genLifetime = Param(model.Generator, default=0.0, mutable=True)
     model.transmissionLifetime = Param(model.BidirectionalArc, default=40.0, mutable=True)
@@ -240,24 +237,35 @@ def run_empire(instance_name: str,
     define_operational_parameters(model, lengthRegSeason, lengthPeakSeason, emission_cap_flag, load_change_module_flag)
 
     #Load the parameters
-
+    # investment
     logger.info("Reading parameters...")
     logger.info("Reading parameters for Generator...")
     data.load(filename=str(tab_file_path / 'Generator_CapitalCosts.tab'), param=model.genCapitalCost, format="table")
     data.load(filename=str(tab_file_path / 'Generator_FixedOMCosts.tab'), param=model.genFixedOMCost, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_VariableOMCosts.tab'), param=model.genVariableOMCost, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_FuelCosts.tab'), param=model.genFuelCost, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_CCSCostTSVariable.tab'), param=model.CCSCostTSVariable, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_Efficiency.tab'), param=model.genEfficiency, format="table")
+
+
+
+
+    # investment
     data.load(filename=str(tab_file_path / 'Generator_RefInitialCap.tab'), param=model.genRefInitCap, format="table")
     data.load(filename=str(tab_file_path / 'Generator_ScaleFactorInitialCap.tab'), param=model.genScaleInitCap, format="table")
     data.load(filename=str(tab_file_path / 'Generator_InitialCapacity.tab'), param=model.genInitCap, format="table") #node_generator_intial_capacity.xlsx
     data.load(filename=str(tab_file_path / 'Generator_MaxBuiltCapacity.tab'), param=model.genMaxBuiltCap, format="table")#?
     data.load(filename=str(tab_file_path / 'Generator_MaxInstalledCapacity.tab'), param=model.genMaxInstalledCapRaw, format="table")#maximum_capacity_constraint_040317_high
-    data.load(filename=str(tab_file_path / 'Generator_CO2Content.tab'), param=model.genCO2TypeFactor, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_RampRate.tab'), param=model.genRampUpCap, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_GeneratorTypeAvailability.tab'), param=model.genCapAvailTypeRaw, format="table")
     data.load(filename=str(tab_file_path / 'Generator_Lifetime.tab'), param=model.genLifetime, format="table") 
+
+
+    # # operational 
+    # breakpoint()
+    # model.lengthRegSeason.set_value(lengthRegSeason)
+    # model.lengthPeakSeason.set_value(lengthPeakSeason)
+    # breakpoint()
+    data.load(filename=str(tab_file_path / 'Generator_VariableOMCosts.tab'), param=model.genVariableOMCost, format="table")
+    data.load(filename=str(tab_file_path / 'Generator_FuelCosts.tab'), param=model.genFuelCost, format="table")
+    data.load(filename=str(tab_file_path / 'Generator_CCSCostTSVariable.tab'), param=model.CCSCostTSVariable, format="table")
+    data.load(filename=str(tab_file_path / 'Generator_Efficiency.tab'), param=model.genEfficiency, format="table")
+    data.load(filename=str(tab_file_path / 'Generator_CO2Content.tab'), param=model.genCO2TypeFactor, format="table")
+    data.load(filename=str(tab_file_path / 'Generator_GeneratorTypeAvailability.tab'), param=model.genCapAvailTypeRaw, format="table")
 
     logger.info("Reading parameters for Transmission...")
     data.load(filename=str(tab_file_path / 'Transmission_InitialCapacity.tab'), param=model.transmissionInitCap, format="table")
