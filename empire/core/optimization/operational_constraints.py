@@ -163,6 +163,7 @@ def define_operational_constraints(
         model: AbstractModel, 
         logger: logging.Logger,
         emission_cap_flag: bool, 
+        include_hydro_node_limit_constraint_flag: bool
         ) -> None:
     # Define operational constraints for the model
 
