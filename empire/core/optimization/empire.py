@@ -30,6 +30,7 @@ from .investment_constraints import define_investment_constraints, prep_investme
 from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
 from .solver import set_solver
+from .helpers import pickle_instance, log_problem_statistics
 
 
 
