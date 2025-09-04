@@ -6,15 +6,16 @@ def prep_investment_parameters(
     
     def prepInvCost_rule(model):
         #Build investment cost for generators, storages and transmission. Annual cost is calculated for the lifetime of the generator and discounted for a year.
-        #Then cost is discounted for the investment period (or the remaining lifetime). CCS generators has additional fixed costs depending on emissions. 
+        #Then cost is discounted for the investment period (or the remaining lifetime). 
 
         #Generator 
         for g in model.Generator:
             for i in model.PeriodActive:
                 costperyear=(model.WACC/(1-((1+model.WACC)**(-model.genLifetime[g]))))*model.genCapitalCost[g,i]+model.genFixedOMCost[g,i]
                 costperperiod=costperyear*1000*(1-(1+model.discountrate)**-(min(value((len(model.PeriodActive)-i+1)*model.LeapYearsInvestment), value(model.genLifetime[g]))))/(1-(1/(1+model.discountrate)))
-                if ('CCS',g) in model.GeneratorsOfTechnology:
-                    costperperiod+=model.CCSCostTSFix*model.CCSRemFrac*model.genCO2TypeFactor[g]*(3.6/model.genEfficiency[g,i])
+                # Stian: Legacy code from Christian Skar's PhD, should not be in there
+                # if ('CCS',g) in model.GeneratorsOfTechnology:
+                #     costperperiod+=model.CCSCostTSFix*model.CCSRemFrac*model.genCO2TypeFactor[g]*(3.6/model.genEfficiency[g,i])
                 model.genInvCost[g,i]=costperperiod
 
         #Storage
