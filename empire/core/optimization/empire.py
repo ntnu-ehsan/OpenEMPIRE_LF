@@ -480,20 +480,3 @@ def set_out_of_sample_path(result_file_path, sample_file_path):
     if not os.path.exists(result_file_path):
         os.makedirs(result_file_path)
     return result_file_path
-
-def pickle_instance(
-        instance,
-        instance_name: str, 
-        use_temp_dir_flag: bool,
-        temp_dir: None | Path = None
-        ):
-    """Pickle the Pyomo model instance to a hardcoded location"""
-    start = time.time()
-    picklestring = f"instance{instance_name}.pkl"
-    if use_temp_dir_flag:
-        picklestring = temp_dir / picklestring
-    with open(picklestring, mode='wb') as file:
-        cloudpickle.dump(instance, file)
-    end = time.time()
-    logger.info("Pickling instance took [sec]: %d", end - start)
-    return 
