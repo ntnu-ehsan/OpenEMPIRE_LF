@@ -217,7 +217,6 @@ def run_empire(instance_name: str,
     model.genCO2TypeFactor = Param(model.Generator, default=0.0, mutable=True)
     model.nodeLostLoadCost = Param(model.Node, model.Period, default=22000.0)
     model.CO2price = Param(model.Period, default=0.0, mutable=True)
-    model.CCSCostTSFix = Param(initialize=1149873.72) #NB! Hard-coded
     model.CCSCostTSVariable = Param(model.Period, default=0.0, mutable=True)
     model.CCSRemFrac = Param(initialize=0.9)
 
