@@ -2,11 +2,10 @@ from __future__ import division
 
 import logging
 import os
-import sys
 import time
 from pathlib import Path
 
-import cloudpickle
+
 from empire.utils import get_name_of_last_folder_in_path
 from pyomo.common.tempfiles import TempfileManager
 from pyomo.environ import (
@@ -25,7 +24,7 @@ from pyomo.environ import (
     Suffix, 
 )
 
-from .operational_constraints import define_operational_constraints, prep_operational_parameters, define_operational_variables
+from .operational_constraints import define_operational_constraints, prep_operational_parameters, define_operational_variables, define_operational_parameters
 from .investment_constraints import define_investment_constraints, prep_investment_parameters
 from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
