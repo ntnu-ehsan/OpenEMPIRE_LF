@@ -417,29 +417,7 @@ def run_empire(instance_name: str,
     #import pdb; pdb.set_trace()
     #instance.CO2price.pprint()
     if not out_of_sample_flag:	
-        logger.info("----------------------Problem Statistics---------------------")
-        logger.info("Nodes: %s", len(instance.Node))
-        logger.info("Lines: %s", len(instance.BidirectionalArc))
-        logger.info("")
-        logger.info("GeneratorTypes: %s", len(instance.Generator))
-        logger.info("TotalGenerators: %s", len(instance.GeneratorsOfNode))
-        logger.info("StorageTypes: %s", len(instance.Storage))
-        logger.info("TotalStorages: %s", len(instance.StoragesOfNode))
-        logger.info("")
-        logger.info("InvestmentUntil: %s", value(2020+int(len(instance.PeriodActive)*LeapYearsInvestment)))
-        logger.info("Scenarios: %s", len(instance.Scenario))
-        logger.info("TotalOperationalHoursPerScenario: %s", len(instance.Operationalhour))
-        logger.info("TotalOperationalHoursPerInvYear: %s", len(instance.Operationalhour)*len(instance.Scenario))
-        logger.info("Seasons: %s", len(instance.Season))
-        logger.info("RegularSeasons: %s", len(instance.FirstHoursOfRegSeason))
-        logger.info("LengthRegSeason: %s", value(instance.lengthRegSeason))
-        logger.info("PeakSeasons: %s", len(instance.FirstHoursOfPeakSeason))
-        logger.info("LengthPeakSeason: %s", value(instance.lengthPeakSeason))
-        logger.info("")
-        logger.info("Discount rate: %s", value(instance.discountrate))
-        logger.info("Operational discount scale: %s", value(instance.operationalDiscountrate))
-        logger.info("--------------------------------------------------------------")
-        
+        log_problem_statistics(instance, logger)
         write_pre_solve(
             instance,
             result_file_path,
