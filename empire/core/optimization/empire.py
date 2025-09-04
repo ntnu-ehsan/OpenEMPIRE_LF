@@ -250,30 +250,6 @@ def run_empire(instance_name: str,
     model.transmissionLifetime = Param(model.BidirectionalArc, default=40.0, mutable=True)
     model.storageLifetime = Param(model.Storage, default=0.0, mutable=True)
 
-    # operational
-    model.genEfficiency = Param(model.Generator, model.Period, default=1.0, mutable=True)
-    model.lineEfficiency = Param(model.DirectionalLink, default=0.97, mutable=True)
-    model.lineReactance   = Param(model.BidirectionalArc, default=0.0, mutable=True)
-    model.lineSusceptance = Param(model.BidirectionalArc, default=0.0, mutable=True)
-    model.storageChargeEff = Param(model.Storage, default=1.0, mutable=True)
-    model.storageDischargeEff = Param(model.Storage, default=1.0, mutable=True)
-    model.storageBleedEff = Param(model.Storage, default=1.0, mutable=True)
-    model.genRampUpCap = Param(model.ThermalGenerators, default=0.0, mutable=True)
-    model.storageDiscToCharRatio = Param(model.Storage, default=1.0, mutable=True) #NB! Hard-coded
-    model.storagePowToEnergy = Param(model.DependentStorage, default=1.0, mutable=True)
-
-    #Stochastic input
-
-    model.sloadRaw = Param(model.Node, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
-    model.sloadAnnualDemand = Param(model.Node, model.Period, default=0.0, mutable=True)
-    model.sload = Param(model.Node, model.Operationalhour, model.Period, model.Scenario, default=0.0, mutable=True)
-    model.genCapAvailTypeRaw = Param(model.Generator, default=1.0, mutable=True)
-    model.genCapAvailStochRaw = Param(model.GeneratorsOfNode, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
-    model.genCapAvail = Param(model.GeneratorsOfNode, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
-    model.maxRegHydroGenRaw = Param(model.Node, model.Period, model.HoursOfSeason, model.Scenario, default=0.0, mutable=True)
-    model.maxRegHydroGen = Param(model.Node, model.Period, model.Season, model.Scenario, default=0.0, mutable=True)
-    model.maxHydroNode = Param(model.Node, default=0.0, mutable=True)
-    model.storOperationalInit = Param(model.Storage, default=0.0, mutable=True) #Percentage of installed energy capacity initially
 
     if emission_cap_flag:
         model.CO2cap = Param(model.Period, default=5000.0, mutable=True)
