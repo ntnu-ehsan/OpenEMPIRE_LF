@@ -122,7 +122,7 @@ def run_empire_model(
     obj_value = None
     if not test_run:
         obj_value = run_empire(
-            name=run_config.run_name,
+            instance_name=run_config.run_name,
             tab_file_path=tab_file_path,
             result_file_path=result_file_path,
             scenario_data_path=scenario_data_path,
