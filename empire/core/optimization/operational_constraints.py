@@ -69,6 +69,15 @@ def prep_operational_parameters(model, load_change_module_flag) -> None:
 
     """
 
+    def prepSceProbab_rule(model):
+        #Build an equiprobable probability distribution for scenarios
+
+        for sce in model.Scenario:
+            model.sceProbab[sce] = value(1/len(model.Scenario))
+
+    model.build_SceProbab = BuildAction(rule=prepSceProbab_rule)
+
+
     def prepRegHydro_rule(model):
         #Build hydrolimits for all periods
 
@@ -146,14 +155,6 @@ def prep_operational_parameters(model, load_change_module_flag) -> None:
         model.operationalDiscountrate = sum((1+model.discountrate)**(-j) for j in list(range(0,value(model.LeapYearsInvestment))))
 
     model.build_operationalDiscountrate = BuildAction(rule=prepOperationalDiscountrate_rule)     
-
-    def prepSceProbab_rule(model):
-        #Build an equiprobable probability distribution for scenarios
-
-        for sce in model.Scenario:
-            model.sceProbab[sce] = value(1/len(model.Scenario))
-
-    model.build_SceProbab = BuildAction(rule=prepSceProbab_rule)
 
     return 
 
