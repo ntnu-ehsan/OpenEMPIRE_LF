@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 from empire import run_empire
-from empire.core.config import (EmpireConfiguration, EmpireRunConfiguration, OperationalParams, Flags
+from empire.core.config import (EmpireConfiguration, EmpireRunConfiguration, OperationalParams, Flags, 
                                 read_config_file)
 from empire.core.reader import generate_tab_files
 from empire.core.scenario_random import (check_scenarios_exist_and_copy,
