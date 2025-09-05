@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 
-from pyomo.common.tempfiles import TempfileManager
+
 from pyomo.environ import (
     DataPortal,
     AbstractModel,
@@ -20,7 +20,7 @@ from .out_of_sample_functions import set_investments_as_parameters, load_optimiz
 from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
 from .solver import set_solver
-from .helpers import pickle_instance, log_problem_statistics
+from .helpers import pickle_instance, log_problem_statistics, prepare_temp_dir, prepare_results_dir
 from empire.core.config import EmpireRunConfiguration, OperationalParams, Flags
 
 logger = logging.getLogger(__name__)
@@ -40,28 +40,10 @@ def run_empire(run_config: EmpireRunConfiguration,
                lopf_kwargs: dict | None = None
                ) -> None | float:
 
-    if flags.use_temp_dir_flag:
-        TempfileManager.tempdir = temp_dir
-
-    if not os.path.exists(run_config.results_path):
-        os.makedirs(run_config.results_path)
-
+    prepare_temp_dir(flags, temp_dir, run_config)
+    prepare_results_dir(flags, run_config)
+    
     model = AbstractModel()
-
-    ##########
-    ##MODULE##
-    ##########
-
-    if flags.write_lp_flag:
-        logger.info("Will write LP-file...")
-
-    if flags.pickle_instance_flag:
-        logger.info("Will pickle instance...")
-
-    if flags.emission_cap_flag:
-        logger.info("Absolute emission cap in each scenario...")
-    else:
-        logger.info("No absolute emission cap...")
     
     ########
     ##SETS##

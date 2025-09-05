@@ -3,6 +3,9 @@ from pathlib import Path
 import time
 import logging 
 import cloudpickle
+import os 
+
+from pyomo.common.tempfiles import TempfileManager
 
 
 def log_problem_statistics(instance, logger):
@@ -48,3 +51,12 @@ def pickle_instance(
     end = time.time()
     logger.info("Pickling instance took [sec]: %d", end - start)
     return 
+
+
+def prepare_temp_dir(flags, temp_dir, run_config):
+    if flags.use_temp_dir_flag:
+        TempfileManager.tempdir = temp_dir
+
+def prepare_results_dir(flags, run_config):
+    if not os.path.exists(run_config.results_path):
+        os.makedirs(run_config.results_path)
