@@ -234,7 +234,7 @@ def run_empire(instance_name: str,
     opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{instance_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
 
     if pickle_instance_flag:
-        pickle_instance()
+        pickle_instance(instance, instance_name, use_temp_dir_flag, logger, temp_dir)
                 
     #instance.display('outputs_gurobi.txt')
 
