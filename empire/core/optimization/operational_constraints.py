@@ -251,7 +251,8 @@ def define_operational_constraints(
 
     def operational_cost_rule(model,i, w):
         """Defines operational cost"""
-    model.operationalcost=Expression(model.PeriodActive,rule=operational_cost_rule)
+        return model.shedcomponent[i,w] + sum(model.operationalDiscountrate*model.seasScale[s]*model.sceProbab[w]*model.genMargCost[g,i]*model.genOperational[n,g,h,i,w] for (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason)
+    model.operationalcost=Expression(model.PeriodActive,model.Scenario,rule=operational_cost_rule)
 
     # note: this cannot be included in the Benders
     if include_hydro_node_limit_constraint_flag:
