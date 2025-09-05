@@ -99,29 +99,18 @@ def run_empire(instance_name: str,
     #Define the sets
 
     logger.info("Declaring sets...")
-
-    #Supply technology sets
-    model.Generator = Set(ordered=True) #g
-    model.Technology = Set(ordered=True) #t
-    model.Storage =  Set() #b
-
-    #Temporal sets
+    # inv and op sets
     model.Period = Set(ordered=True) #max period
     model.PeriodActive = Set(ordered=True, initialize=Period) #i
-    model.Operationalhour = Set(ordered=True, initialize=Operationalhour) #h
-    model.Season = Set(ordered=True, initialize=Season) #s
-
-    #Spatial sets
+    model.Technology = Set(ordered=True) #t
+    model.Generator = Set(ordered=True) #g
+    model.Storage =  Set() #b
     model.Node = Set(ordered=True) #n
     if north_sea_flag:
         model.OffshoreNode = Set(ordered=True, within=model.Node) #n
     model.DirectionalLink = Set(dimen=2, within=model.Node*model.Node, ordered=True) #a
     model.TransmissionType = Set(ordered=True)
 
-    #Stochastic sets
-    model.Scenario = Set(ordered=True, initialize=Scenario) #w
-
-    #Subsets
     model.GeneratorsOfTechnology=Set(dimen=2) #(t,g) for all t in T, g in G_t
     model.GeneratorsOfNode = Set(dimen=2) #(n,g) for all n in N, g in G_n
     model.TransmissionTypeOfDirectionalLink = Set(dimen=3) #(n1,n2,t) for all (n1,n2) in L, t in T
@@ -130,9 +119,11 @@ def run_empire(instance_name: str,
     model.HydroGenerator = Set(within=model.Generator) #g_hyd
     model.StoragesOfNode = Set(dimen=2) #(n,b) for all n in N, b in B_n
     model.DependentStorage = Set() #b_dagger
-    model.HoursOfSeason = Set(dimen=2, ordered=True, initialize=HoursOfSeason) #(s,h) for all s in S, h in H_s
-    model.FirstHoursOfRegSeason = Set(within=model.Operationalhour, ordered=True, initialize=FirstHoursOfRegSeason)
-    model.FirstHoursOfPeakSeason = Set(within=model.Operationalhour, ordered=True, initialize=FirstHoursOfPeakSeason)
+
+
+    define_operational_sets(model, Operationalhour, Season, Scenario, HoursOfSeason, FirstHoursOfRegSeason, FirstHoursOfPeakSeason)
+
+
 
     logger.info("Reading sets...")
 

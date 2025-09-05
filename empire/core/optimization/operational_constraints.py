@@ -4,6 +4,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def define_operational_sets(model: AbstractModel, Operationalhour, Season, Scenario, HoursOfSeason, FirstHoursOfRegSeason, FirstHoursOfPeakSeason):
+    # operational sets
+    model.Operationalhour = Set(ordered=True, initialize=Operationalhour) #h
+    model.Season = Set(ordered=True, initialize=Season) #s
+    model.Scenario = Set(ordered=True, initialize=Scenario) #w
+    model.HoursOfSeason = Set(dimen=2, ordered=True, initialize=HoursOfSeason) #(s,h) for all s in S, h in H_s
+    model.FirstHoursOfRegSeason = Set(within=model.Operationalhour, ordered=True, initialize=FirstHoursOfRegSeason)
+    model.FirstHoursOfPeakSeason = Set(within=model.Operationalhour, ordered=True, initialize=FirstHoursOfPeakSeason)
+    return 
+
 def define_operational_variables(
         model: AbstractModel
 ) -> AbstractModel:
