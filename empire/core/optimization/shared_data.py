@@ -22,6 +22,25 @@ def define_shared_sets(model, Period, north_sea_flag):
     model.HydroGenerator = Set(within=model.Generator) #g_hyd
     model.StoragesOfNode = Set(dimen=2) #(n,b) for all n in N, b in B_n
     model.DependentStorage = Set() #b_dagger
+
+    
+    #Build arc subsets
+
+    def NodesLinked_init(model, node):
+        retval = []
+        for (i,j) in model.DirectionalLink:
+            if j == node:
+                retval.append(i)
+        return retval
+    model.NodesLinked = Set(model.Node, initialize=NodesLinked_init)
+
+    def BidirectionalArc_init(model):
+        retval = []
+        for (i,j) in model.DirectionalLink:
+            if i != j and ((j,i) not in retval):
+                retval.append((i,j))
+        return retval
+    model.BidirectionalArc = Set(dimen=2, initialize=BidirectionalArc_init, ordered=True) #l
     return 
 
 
@@ -43,25 +62,6 @@ def load_shared_sets(model, data, tab_file_path, north_sea_flag):
     data.load(filename=str(tab_file_path / 'Sets_GeneratorsOfTechnology.tab'),format="set", set=model.GeneratorsOfTechnology)
     data.load(filename=str(tab_file_path / 'Sets_GeneratorsOfNode.tab'),format="set", set=model.GeneratorsOfNode)
     data.load(filename=str(tab_file_path / 'Sets_StorageOfNodes.tab'),format="set", set=model.StoragesOfNode)
-
-    #Build arc subsets
-
-    def NodesLinked_init(model, node):
-        retval = []
-        for (i,j) in model.DirectionalLink:
-            if j == node:
-                retval.append(i)
-        return retval
-    model.NodesLinked = Set(model.Node, initialize=NodesLinked_init)
-
-    def BidirectionalArc_init(model):
-        retval = []
-        for (i,j) in model.DirectionalLink:
-            if i != j and ((j,i) not in retval):
-                retval.append((i,j))
-        return retval
-    model.BidirectionalArc = Set(dimen=2, initialize=BidirectionalArc_init, ordered=True) #l
-
     return 
 
 def define_shared_parameters(model, discountrate, LeapYearsInvestment):
