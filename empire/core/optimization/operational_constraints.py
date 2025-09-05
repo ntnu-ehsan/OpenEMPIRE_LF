@@ -87,7 +87,7 @@ def define_operational_parameters(
     # )
 
 
-def load_operational_parameters(model, data, tab_file_path):
+def load_operational_parameters(model, data, tab_file_path, emission_cap_flag, load_change_module_flag, out_of_sample_flag, sample_file_path=None, scenario_data_path=None):
     # Load operational generator parameters
     data.load(filename=str(tab_file_path / 'Generator_VariableOMCosts.tab'), param=model.genVariableOMCost, format="table")
     data.load(filename=str(tab_file_path / 'Generator_FuelCosts.tab'), param=model.genFuelCost, format="table")
@@ -110,6 +110,32 @@ def load_operational_parameters(model, data, tab_file_path):
     data.load(filename=str(tab_file_path / 'Node_NodeLostLoadCost.tab'), param=model.nodeLostLoadCost, format="table")
     data.load(filename=str(tab_file_path / 'Node_ElectricAnnualDemand.tab'), param=model.sloadAnnualDemand, format="table") 
     data.load(filename=str(tab_file_path / 'Node_HydroGenMaxAnnualProduction.tab'), param=model.maxHydroNode, format="table") 
+
+    if out_of_sample_flag:
+        if sample_file_path:
+            # Load operational input data EMPIRE has not seen when optimizing (in-sample)
+            data.load(filename=str(sample_file_path / 'Stochastic_HydroGenMaxSeasonalProduction.tab'), param=model.maxRegHydroGenRaw, format="table")
+            data.load(filename=str(sample_file_path / 'Stochastic_StochasticAvailability.tab'), param=model.genCapAvailStochRaw, format="table") 
+            data.load(filename=str(sample_file_path / 'Stochastic_ElectricLoadRaw.tab'), param=model.sloadRaw, format="table")
+        else:
+            raise ValueError("'out_of_sample_flag = True' needs to be run with existing 'sample_file_path'")
+    else:
+        data.load(filename=str(tab_file_path / 'Stochastic_HydroGenMaxSeasonalProduction.tab'), param=model.maxRegHydroGenRaw, format="table")
+        data.load(filename=str(tab_file_path / 'Stochastic_StochasticAvailability.tab'), param=model.genCapAvailStochRaw, format="table") 
+        data.load(filename=str(tab_file_path / 'Stochastic_ElectricLoadRaw.tab'), param=model.sloadRaw, format="table") 
+        
+    logger.info("Reading parameters for General...")
+    data.load(filename=str(tab_file_path / 'General_seasonScale.tab'), param=model.seasScale, format="table") 
+
+    if emission_cap_flag:
+        data.load(filename=str(tab_file_path / 'General_CO2Cap.tab'), param=model.CO2cap, format="table")
+    else:
+        data.load(filename=str(tab_file_path / 'General_CO2Price.tab'), param=model.CO2price, format="table")
+
+    logger.info("Constructing parameter values...")
+    if load_change_module_flag:
+        data.load(filename=scenario_data_path / 'LoadchangeModule/Stochastic_ElectricLoadMod.tab', param=model.sloadMod, format="table")
+
     return 
 
 def prep_operational_parameters(model, load_change_module_flag) -> None:

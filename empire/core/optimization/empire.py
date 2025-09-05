@@ -193,8 +193,7 @@ def run_empire(instance_name: str,
     define_investment_parameters(model)
 
     define_operational_parameters(model, lengthRegSeason, lengthPeakSeason, emission_cap_flag, load_change_module_flag)
-    load_operational_parameters(model, data, tab_file_path)
-
+    load_operational_parameters(model, data, tab_file_path, emission_cap_flag, load_change_module_flag, out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=scenario_data_path)
     load_investment_parameters(model, data, tab_file_path)
     
     # Load electrical data for LOPF if requested (need to split investment and operations!)
@@ -206,35 +205,6 @@ def run_empire(instance_name: str,
 
     # inv and op
     data.load(filename=str(tab_file_path / 'Storage_StoragePowToEnergy.tab'), param=model.storagePowToEnergy, format="table")
-
-    logger.info("Reading parameters for Stochastic...")
-
-    if out_of_sample_flag:
-        if sample_file_path:
-            # Load operational input data EMPIRE has not seen when optimizing (in-sample)
-            data.load(filename=str(sample_file_path / 'Stochastic_HydroGenMaxSeasonalProduction.tab'), param=model.maxRegHydroGenRaw, format="table")
-            data.load(filename=str(sample_file_path / 'Stochastic_StochasticAvailability.tab'), param=model.genCapAvailStochRaw, format="table") 
-            data.load(filename=str(sample_file_path / 'Stochastic_ElectricLoadRaw.tab'), param=model.sloadRaw, format="table")
-        else:
-            raise ValueError("'out_of_sample_flag = True' needs to be run with existing 'sample_file_path'")
-    else:
-        data.load(filename=str(tab_file_path / 'Stochastic_HydroGenMaxSeasonalProduction.tab'), param=model.maxRegHydroGenRaw, format="table")
-        data.load(filename=str(tab_file_path / 'Stochastic_StochasticAvailability.tab'), param=model.genCapAvailStochRaw, format="table") 
-        data.load(filename=str(tab_file_path / 'Stochastic_ElectricLoadRaw.tab'), param=model.sloadRaw, format="table") 
-        
-    logger.info("Reading parameters for General...")
-    data.load(filename=str(tab_file_path / 'General_seasonScale.tab'), param=model.seasScale, format="table") 
-
-    if emission_cap_flag:
-        data.load(filename=str(tab_file_path / 'General_CO2Cap.tab'), param=model.CO2cap, format="table")
-    else:
-        data.load(filename=str(tab_file_path / 'General_CO2Price.tab'), param=model.CO2price, format="table")
-
-    logger.info("Constructing parameter values...")
-    if load_change_module_flag:
-        data.load(filename=scenario_data_path / 'LoadchangeModule/Stochastic_ElectricLoadMod.tab', param=model.sloadMod, format="table")
-
-
 
     logger.info("Sets and parameters declared and read...")
 
