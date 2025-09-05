@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 
-from empire.utils import get_name_of_last_folder_in_path
 from pyomo.common.tempfiles import TempfileManager
 from pyomo.environ import (
     value,
