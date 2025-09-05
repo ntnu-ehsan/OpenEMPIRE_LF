@@ -1,10 +1,54 @@
-from pyomo.environ import AbstractModel, Constraint, value, BuildAction
+from pyomo.environ import AbstractModel, Constraint, value, BuildAction, Param, Var, NonNegativeReals
+
+def define_investment_parameters(model, wacc):
+    
+    #Cost
+    model.WACC = Param(initialize=wacc) # investment only
+
+    model.genCapitalCost = Param(model.Generator, model.Period, default=0, mutable=True)
+    model.transmissionTypeCapitalCost = Param(model.TransmissionType, model.Period, default=0, mutable=True)
+    model.storPWCapitalCost = Param(model.Storage, model.Period, default=0, mutable=True)
+    model.storENCapitalCost = Param(model.Storage, model.Period, default=0, mutable=True)
+    model.genFixedOMCost = Param(model.Generator, model.Period, default=0, mutable=True)
+    model.transmissionTypeFixedOMCost = Param(model.TransmissionType, model.Period, default=0, mutable=True)
+    model.storPWFixedOMCost = Param(model.Storage, model.Period, default=0, mutable=True)
+    model.storENFixedOMCost = Param(model.Storage, model.Period, default=0, mutable=True)
+    model.genInvCost = Param(model.Generator, model.Period, default=9000000, mutable=True)
+    
+    model.transmissionInvCost = Param(model.BidirectionalArc, model.Period, default=3000000, mutable=True)
+    model.storPWInvCost = Param(model.Storage, model.Period, default=1000000, mutable=True)
+    model.storENInvCost = Param(model.Storage, model.Period, default=800000, mutable=True)
+    model.transmissionLength = Param(model.BidirectionalArc, default=0, mutable=True)
+
+
+    #Node dependent technology limitations
+    model.genRefInitCap = Param(model.GeneratorsOfNode, default=0.0, mutable=True)
+    model.genScaleInitCap = Param(model.Generator, model.Period, default=0.0, mutable=True)
+    model.genInitCap = Param(model.GeneratorsOfNode, model.Period, default=0.0, mutable=True)
+    model.transmissionInitCap = Param(model.BidirectionalArc, model.Period, default=0.0, mutable=True)
+    model.storPWInitCap = Param(model.StoragesOfNode, model.Period, default=0.0, mutable=True)
+    model.storENInitCap = Param(model.StoragesOfNode, model.Period, default=0.0, mutable=True)
+    model.genMaxBuiltCap = Param(model.Node, model.Technology, model.Period, default=500000.0, mutable=True)
+    model.transmissionMaxBuiltCap = Param(model.BidirectionalArc, model.Period, default=20000.0, mutable=True)
+    model.storPWMaxBuiltCap = Param(model.StoragesOfNode, model.Period, default=500000.0, mutable=True)
+    model.storENMaxBuiltCap = Param(model.StoragesOfNode, model.Period, default=500000.0, mutable=True)
+    model.genMaxInstalledCapRaw = Param(model.Node, model.Technology, default=0.0, mutable=True)
+    model.genMaxInstalledCap = Param(model.Node, model.Technology, model.Period, default=0.0, mutable=True)
+    model.transmissionMaxInstalledCapRaw = Param(model.BidirectionalArc, model.Period, default=0.0)
+    model.transmissionMaxInstalledCap = Param(model.BidirectionalArc, model.Period, default=0.0, mutable=True)
+    model.storPWMaxInstalledCap = Param(model.StoragesOfNode, model.Period, default=0.0, mutable=True)
+    model.storPWMaxInstalledCapRaw = Param(model.StoragesOfNode, default=0.0, mutable=True)
+    model.storENMaxInstalledCap = Param(model.StoragesOfNode, model.Period, default=0.0, mutable=True)
+    model.storENMaxInstalledCapRaw = Param(model.StoragesOfNode, default=0.0, mutable=True)
+
+    # investment 
+    model.genLifetime = Param(model.Generator, default=0.0, mutable=True)
+    model.transmissionLifetime = Param(model.BidirectionalArc, default=40.0, mutable=True)
+    model.storageLifetime = Param(model.Storage, default=0.0, mutable=True)
+    return 
 
 
 def load_investment_parameters(model, data, tab_file_path) -> None:
-    #Load the investment parameters
-    # logger.info("Reading parameters...")
-    # logger.info("Reading parameters for Generator...")
     data.load(filename=str(tab_file_path / 'Generator_CapitalCosts.tab'), param=model.genCapitalCost, format="table")
     data.load(filename=str(tab_file_path / 'Generator_FixedOMCosts.tab'), param=model.genFixedOMCost, format="table")
     data.load(filename=str(tab_file_path / 'Generator_RefInitialCap.tab'), param=model.genRefInitCap, format="table")
@@ -36,6 +80,19 @@ def load_investment_parameters(model, data, tab_file_path) -> None:
     data.load(filename=str(tab_file_path / 'Storage_PowerMaxInstalledCapacity.tab'), param=model.storPWMaxInstalledCapRaw, format="table")
     data.load(filename=str(tab_file_path / 'Storage_Lifetime.tab'), param=model.storageLifetime, format="table")
     return 
+
+
+def define_investment_variables(model: AbstractModel) -> None:
+    model.genInvCap = Var(model.GeneratorsOfNode, model.PeriodActive, domain=NonNegativeReals)
+    model.transmisionInvCap = Var(model.BidirectionalArc, model.PeriodActive, domain=NonNegativeReals)
+    model.storPWInvCap = Var(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
+    model.storENInvCap = Var(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
+    model.genInstalledCap = Var(model.GeneratorsOfNode, model.PeriodActive, domain=NonNegativeReals)
+    model.transmissionInstalledCap = Var(model.BidirectionalArc, model.PeriodActive, domain=NonNegativeReals)
+    model.storPWInstalledCap = Var(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
+    model.storENInstalledCap = Var(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
+    return 
+
 
 def prep_investment_parameters(
         model: AbstractModel
