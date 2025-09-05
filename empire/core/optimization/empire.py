@@ -223,10 +223,10 @@ def run_empire(run_config: EmpireRunConfiguration,
 
     #import pdb; pdb.set_trace()
 
-    write_results(instance, results_path, run_config.run_name, flags.out_of_sample_flag, flags.emission_cap_flag, flags.print_iamc_flag, logger)
+    write_results(instance, run_config.results_path, run_config.run_name, flags.out_of_sample_flag, flags.emission_cap_flag, flags.print_iamc_flag, logger)
 
     if flags.compute_operational_duals_flag and not flags.out_of_sample_flag:
-        run_operational_model(instance, opt, results_path, run_config.run_name, logger)
-        write_operational_results(instance, results_path, flags.emission_cap_flag, logger)
+        run_operational_model(instance, opt, run_config.results_path, run_config.run_name, logger)
+        write_operational_results(instance, run_config.results_path, flags.emission_cap_flag, logger)
 
 
