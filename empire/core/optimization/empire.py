@@ -21,8 +21,7 @@ from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
 from .solver import set_solver
 from .helpers import pickle_instance, log_problem_statistics
-from empire.core.data_structures import OperationalParams, Flags
-from empire.core.config import EmpireRunConfiguration
+from empire.core.config import EmpireRunConfiguration, OperationalParams, Flags
 
 logger = logging.getLogger(__name__)
 

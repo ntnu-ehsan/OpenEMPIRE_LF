@@ -1,6 +1,8 @@
 from pyomo.environ import Constraint, Set, Var, value, BuildAction, Expression, AbstractModel, NonNegativeReals, Param, PercentFraction
 import logging
-from empire.core.data_structures import OperationalParams
+from empire.core.config import OperationalParams
+
+
 logger = logging.getLogger(__name__)
 
 def set_scenario_as_parameter(subproblem_model):
