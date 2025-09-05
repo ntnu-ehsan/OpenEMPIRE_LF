@@ -1,5 +1,5 @@
 """Functions that initialize sets, parameters and variables that are used both in investment and operational models"""
-from pyomo.environ import (Set, Param, Var, Constraint, NonNegativeReals)
+from pyomo.environ import (Set, Param)
 
 
 def define_shared_sets(model, Period, north_sea_flag):
