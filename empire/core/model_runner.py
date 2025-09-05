@@ -12,8 +12,55 @@ from empire.core.scenario_random import (check_scenarios_exist_and_copy,
 from empire.input_data_manager import IDataManager
 from empire.utils import (copy_dataset, copy_scenario_data,
                           create_if_not_exist, get_run_name)
-
+from empire.core.data_structures import OperationalParams, Flags
 logger = logging.getLogger(__name__)
+
+
+def define_operational_input_params(empire_config: EmpireConfiguration):
+    FirstHoursOfRegSeason = [empire_config.length_of_regular_season * i + 1 for i in range(empire_config.n_reg_season)]
+    FirstHoursOfPeakSeason = [empire_config.length_of_regular_season * empire_config.n_reg_season + empire_config.len_peak_season * i + 1 for i in range(empire_config.n_peak_seasons)]
+    
+    Scenario = ["scenario" + str(i + 1) for i in range(empire_config.number_of_scenarios)]
+    peak_seasons = ["peak" + str(i + 1) for i in range(empire_config.n_peak_seasons)]
+    Season = empire_config.regular_seasons + peak_seasons
+    Operationalhour = [i + 1 for i in range(FirstHoursOfPeakSeason[-1] + empire_config.len_peak_season - 1)]
+    HoursOfRegSeason = [
+        (s, h)
+        for s in empire_config.regular_seasons
+        for h in Operationalhour
+        if h
+        in list(
+            range(
+                empire_config.regular_seasons.index(s) * empire_config.length_of_regular_season + 1,
+                empire_config.regular_seasons.index(s) * empire_config.length_of_regular_season + empire_config.length_of_regular_season + 1,
+            )
+        )
+    ]
+    HoursOfPeakSeason = [
+        (s, h)
+        for s in peak_seasons
+        for h in Operationalhour
+        if h
+        in list(
+            range(
+                empire_config.length_of_regular_season * len(empire_config.regular_seasons) + peak_seasons.index(s) * empire_config.len_peak_season + 1,
+                empire_config.length_of_regular_season * len(empire_config.regular_seasons) + peak_seasons.index(s) * empire_config.len_peak_season + empire_config.len_peak_season + 1,
+            )
+        )
+    ]
+    HoursOfSeason = HoursOfRegSeason + HoursOfPeakSeason
+
+    operational_params = OperationalParams(
+        Operationalhour=Operationalhour,
+        Scenario=Scenario,
+        Season=Season,
+        HoursOfSeason=HoursOfSeason,
+        FirstHoursOfRegSeason=FirstHoursOfRegSeason,
+        FirstHoursOfPeakSeason=FirstHoursOfPeakSeason,
+        lengthRegSeason=empire_config.length_of_regular_season,
+        lengthPeakSeason=empire_config.len_peak_season,
+    )
+    return operational_params
 
 
 def run_empire_model(
@@ -27,64 +74,20 @@ def run_empire_model(
     for manager in data_managers:
         manager.apply()
 
-    horizon = empire_config.forecast_horizon_year
-    NoOfScenarios = empire_config.number_of_scenarios
-    len_reg_season = empire_config.length_of_regular_season
-    discountrate = empire_config.discount_rate
-    use_scen_generation = empire_config.use_scenario_generation
+
 
     #############################
     ##Non configurable settings##
     #############################
 
-    NoOfRegSeason = empire_config.n_reg_season
-    regular_seasons = empire_config.regular_seasons
-    NoOfPeakSeason = empire_config.n_peak_seasons
-    len_peak_season = empire_config.len_peak_season
-    discountrate = empire_config.discount_rate
-    LeapYearsInvestment = empire_config.leap_years_investment
-
-    workbook_path = run_config.dataset_path
-    tab_file_path = run_config.tab_file_path
-    scenario_data_path = run_config.scenario_data_path
-    result_file_path = run_config.results_path
 
     #######
     ##RUN##
     #######
+    Period = [i + 1 for i in range(int((empire_config.forecast_horizon_year - 2020) / empire_config.leap_years_investment))]
+    operational_params = define_operational_input_params(empire_config)
 
-    FirstHoursOfRegSeason = [len_reg_season * i + 1 for i in range(NoOfRegSeason)]
-    FirstHoursOfPeakSeason = [len_reg_season * NoOfRegSeason + len_peak_season * i + 1 for i in range(NoOfPeakSeason)]
-    Period = [i + 1 for i in range(int((horizon - 2020) / LeapYearsInvestment))]
-    Scenario = ["scenario" + str(i + 1) for i in range(NoOfScenarios)]
-    peak_seasons = ["peak" + str(i + 1) for i in range(NoOfPeakSeason)]
-    Season = regular_seasons + peak_seasons
-    Operationalhour = [i + 1 for i in range(FirstHoursOfPeakSeason[-1] + len_peak_season - 1)]
-    HoursOfRegSeason = [
-        (s, h)
-        for s in regular_seasons
-        for h in Operationalhour
-        if h
-        in list(
-            range(
-                regular_seasons.index(s) * len_reg_season + 1,
-                regular_seasons.index(s) * len_reg_season + len_reg_season + 1,
-            )
-        )
-    ]
-    HoursOfPeakSeason = [
-        (s, h)
-        for s in peak_seasons
-        for h in Operationalhour
-        if h
-        in list(
-            range(
-                len_reg_season * len(regular_seasons) + peak_seasons.index(s) * len_peak_season + 1,
-                len_reg_season * len(regular_seasons) + peak_seasons.index(s) * len_peak_season + len_peak_season + 1,
-            )
-        )
-    ]
-    HoursOfSeason = HoursOfRegSeason + HoursOfPeakSeason
+
     with open(run_config.empire_path / "config/countries.json", "r", encoding="utf-8") as file:
         dict_countries = json.load(file)
 
@@ -93,66 +96,60 @@ def run_empire_model(
     logger.info("++++++++")
     logger.info("Load Change Module: %s", str(empire_config.load_change_module))
     logger.info("Solver: %s", empire_config.optimization_solver)
-    logger.info("Scenario Generation: %s", str(use_scen_generation))
+    logger.info("Scenario Generation: %s", str(empire_config.use_scenario_generation))
     logger.info("++++++++")
     logger.info("ID: %s", run_config.run_name)
     logger.info("++++++++")
 
-    if use_scen_generation:
-        if empire_config.use_fixed_sample and not (scenario_data_path / "sampling_key.csv").exists():
+    flags = Flags(
+        print_iamc_flag=empire_config.print_in_iamc_format,
+        write_lp_flag=empire_config.write_in_lp_format,
+        pickle_instance_flag=empire_config.serialize_instance,
+        emission_cap_flag=empire_config.use_emission_cap,
+        use_temp_dir_flag=empire_config.use_temporary_directory,
+        load_change_module_flag=empire_config.load_change_module,
+        compute_operational_duals_flag=empire_config.compute_operational_duals,
+        north_sea_flag=empire_config.north_sea,
+        out_of_sample_flag=OUT_OF_SAMPLE,
+        lopf_flag=empire_config.USE_LOPF,
+    )
+
+    if empire_config.use_scenario_generation:
+        if empire_config.use_fixed_sample and not (run_config.scenario_data_path / "sampling_key.csv").exists():
             raise ValueError("Missing 'sampling_key.csv' in ScenarioData folder.")
         else:
             generate_random_scenario(
                 empire_config=empire_config,
                 dict_countries=dict_countries,
-                scenario_data_path=scenario_data_path,
-                tab_file_path=tab_file_path,
+                scenario_data_path=run_config.scenario_data_path,
+                tab_file_path=run_config.tab_file_path,
             )
 
     else:
         if not empire_config.use_fixed_sample:
             logger.warning(
-                "Both 'use_scen_generation' and 'use_fixed_sample' are set to False. "
+                "Both 'empire_config.use_scenario_generation' and 'use_fixed_sample' are set to False. "
                 "Existing scenarios will be used, thus 'use_fixed_sample' should be True."
             )
         check_scenarios_exist_and_copy(run_config)
 
-    generate_tab_files(file_path=workbook_path, tab_file_path=tab_file_path)
+    generate_tab_files(file_path=run_config.dataset_path, tab_file_path=run_config.tab_file_path)
 
     obj_value = None
     if not test_run:
         obj_value = run_empire(
-            instance_name=run_config.run_name,
-            tab_file_path=tab_file_path,
-            result_file_path=result_file_path,
-            scenario_data_path=scenario_data_path,
+            run_config=run_config,
+            sample_file_path=sample_file_path,
             solver_name=empire_config.optimization_solver,
             temp_dir=empire_config.temporary_directory,
-            FirstHoursOfRegSeason=FirstHoursOfRegSeason,
-            FirstHoursOfPeakSeason=FirstHoursOfPeakSeason,
-            lengthRegSeason=len_reg_season,
-            lengthPeakSeason=len_peak_season,
             Period=Period,
-            Operationalhour=Operationalhour,
-            Scenario=Scenario,
-            Season=Season,
-            HoursOfSeason=HoursOfSeason,
-            discountrate=discountrate,
+            discountrate=empire_config.discount_rate,
             wacc=empire_config.wacc,
-            LeapYearsInvestment=LeapYearsInvestment,
-            print_iamc_flag=empire_config.print_in_iamc_format,
-            write_lp_flag=empire_config.write_in_lp_format,
-            pickle_instance_flag=empire_config.serialize_instance,
-            emission_cap_flag=empire_config.use_emission_cap,
-            use_temp_dir_flag=empire_config.use_temporary_directory,
-            load_change_module_flag=empire_config.load_change_module,
-            compute_operational_duals_flag=empire_config.compute_operational_duals,
-            north_sea_flag=empire_config.north_sea,
-            out_of_sample_flag=OUT_OF_SAMPLE, 
-            sample_file_path=sample_file_path,
-            lopf_flag=empire_config.USE_LOPF,
+            LeapYearsInvestment=empire_config.leap_years_investment,
             lopf_method=empire_config.LOPF_METHOD,
             lopf_kwargs=getattr(empire_config, "LOPF_KWARGS", {}),
+            operational_params=operational_params,
+            flags=flags, 
             )
 
     config_path = run_config.dataset_path / "config.txt"

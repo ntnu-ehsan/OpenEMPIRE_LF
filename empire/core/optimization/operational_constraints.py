@@ -1,6 +1,6 @@
 from pyomo.environ import Constraint, Set, Var, value, BuildAction, Expression, AbstractModel, NonNegativeReals, Param, PercentFraction
 import logging
-
+from empire.core.data_structures import OperationalParams
 logger = logging.getLogger(__name__)
 
 def set_scenario_as_parameter(subproblem_model):
@@ -12,15 +12,16 @@ def set_scenario_as_parameter(subproblem_model):
     return 
 
 
-def define_operational_sets(model: AbstractModel, Operationalhour, Season, Scenario, HoursOfSeason, FirstHoursOfRegSeason, FirstHoursOfPeakSeason):
+def define_operational_sets(model: AbstractModel, operational_params: OperationalParams):
     # operational sets
-    model.Operationalhour = Set(ordered=True, initialize=Operationalhour) #h
-    model.Season = Set(ordered=True, initialize=Season) #s
-    model.Scenario = Set(ordered=True, initialize=Scenario) #w
-    model.HoursOfSeason = Set(dimen=2, ordered=True, initialize=HoursOfSeason) #(s,h) for all s in S, h in H_s
-    model.FirstHoursOfRegSeason = Set(within=model.Operationalhour, ordered=True, initialize=FirstHoursOfRegSeason)
-    model.FirstHoursOfPeakSeason = Set(within=model.Operationalhour, ordered=True, initialize=FirstHoursOfPeakSeason)
+    model.Operationalhour = Set(ordered=True, initialize=operational_params.Operationalhour) #h
+    model.Season = Set(ordered=True, initialize=operational_params.Season) #s
+    model.Scenario = Set(ordered=True, initialize=operational_params.Scenario) #w
+    model.HoursOfSeason = Set(dimen=2, ordered=True, initialize=operational_params.HoursOfSeason) #(s,h) for all s in S, h in H_s
+    model.FirstHoursOfRegSeason = Set(within=model.Operationalhour, ordered=True, initialize=operational_params.FirstHoursOfRegSeason)
+    model.FirstHoursOfPeakSeason = Set(within=model.Operationalhour, ordered=True, initialize=operational_params.FirstHoursOfPeakSeason)
     return 
+
 
 def define_operational_variables(
         model: AbstractModel
@@ -36,8 +37,7 @@ def define_operational_variables(
 
 def define_operational_parameters(
         model: AbstractModel,
-        lengthRegSeason: int,
-        lengthPeakSeason: int,
+        operational_params: OperationalParams,
         emission_cap_flag: bool,
         load_change_module_flag: bool
     ):
@@ -45,8 +45,8 @@ def define_operational_parameters(
     model.operationalDiscountrate = Param(mutable=True)
     model.sceProbab = Param(model.Scenario, mutable=True)
     model.seasScale = Param(model.Season, initialize=1.0, mutable=True)
-    model.lengthRegSeason = Param(initialize=lengthRegSeason, mutable=True)
-    model.lengthPeakSeason = Param(initialize=lengthPeakSeason, mutable=True)
+    model.lengthRegSeason = Param(initialize=operational_params.lengthRegSeason, mutable=True)
+    model.lengthPeakSeason = Param(initialize=operational_params.lengthPeakSeason, mutable=True)
 
     model.genEfficiency = Param(model.Generator, model.Period, default=1.0, mutable=True)
     model.lineEfficiency = Param(model.DirectionalLink, default=0.97, mutable=True)
@@ -57,7 +57,6 @@ def define_operational_parameters(
     model.storageBleedEff = Param(model.Storage, default=1.0, mutable=True)
     model.genRampUpCap = Param(model.ThermalGenerators, default=0.0, mutable=True)
     model.storageDiscToCharRatio = Param(model.Storage, default=1.0, mutable=True) #NB! Hard-coded
-
 
     model.genMargCost = Param(model.Generator, model.Period, default=600, mutable=True)
     model.CO2price = Param(model.Period, default=0.0, mutable=True)

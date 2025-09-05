@@ -31,50 +31,31 @@ from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
 from .solver import set_solver
 from .helpers import pickle_instance, log_problem_statistics
-
-
+from empire.core.data_structures import OperationalParams, Flags
+from empire.core.config import EmpireRunConfiguration
 
 logger = logging.getLogger(__name__)
 
 
-def run_empire(instance_name: str, 
-               tab_file_path: Path, 
-               result_file_path: Path, 
-               scenario_data_path,
+def run_empire(run_config: EmpireRunConfiguration,
                solver_name, 
                temp_dir, 
-               FirstHoursOfRegSeason, 
-               FirstHoursOfPeakSeason, 
-               lengthRegSeason,
-               lengthPeakSeason, 
                Period, 
-               Operationalhour, 
-               Scenario, 
-               Season, 
-               HoursOfSeason,
+               operational_params: OperationalParams,
                discountrate, 
-               wacc, 
+               wacc,    
                LeapYearsInvestment, 
-               print_iamc_flag, 
-               write_lp_flag,
-               pickle_instance_flag, 
-               emission_cap_flag, 
-               use_temp_dir_flag, 
-               load_change_module_flag, 
-               compute_operational_duals_flag, 
-               north_sea_flag, 
-               out_of_sample_flag: bool = False, 
+               flags: Flags,
                sample_file_path: Path | None = None,
-               lopf_flag: bool = False, 
                lopf_method: str = LOPFMethod.KIRCHHOFF, 
                lopf_kwargs: dict | None = None
                ) -> None | float:
 
-    if use_temp_dir_flag:
+    if flags.use_temp_dir_flag:
         TempfileManager.tempdir = temp_dir
 
-    if not os.path.exists(result_file_path):
-        os.makedirs(result_file_path)
+    if not os.path.exists(run_config.results_path):
+        os.makedirs(run_config.results_path)
 
     model = AbstractModel()
 
@@ -82,13 +63,13 @@ def run_empire(instance_name: str,
     ##MODULE##
     ##########
 
-    if write_lp_flag:
+    if flags.write_lp_flag:
         logger.info("Will write LP-file...")
 
-    if pickle_instance_flag:
+    if flags.pickle_instance_flag:
         logger.info("Will pickle instance...")
 
-    if emission_cap_flag:
+    if flags.emission_cap_flag:
         logger.info("Absolute emission cap in each scenario...")
     else:
         logger.info("No absolute emission cap...")
@@ -97,11 +78,9 @@ def run_empire(instance_name: str,
     ##SETS##
     ########
 
-    define_shared_sets(model, Period, north_sea_flag)
-    define_operational_sets(model, Operationalhour, Season, Scenario, HoursOfSeason, FirstHoursOfRegSeason, FirstHoursOfPeakSeason)
+    define_shared_sets(model, Period, flags.north_sea_flag)
+    define_operational_sets(model, operational_params)
 
-
-    # 
 
     ##############
     ##PARAMETERS##
@@ -113,19 +92,19 @@ def run_empire(instance_name: str,
     
     define_shared_parameters(model, discountrate, LeapYearsInvestment)
     define_investment_parameters(model, wacc)
-    define_operational_parameters(model, lengthRegSeason, lengthPeakSeason, emission_cap_flag, load_change_module_flag)
+    define_operational_parameters(model, operational_params, flags.emission_cap_flag, flags.load_change_module_flag)
 
     #Load the data
 
     data = DataPortal()
-    load_shared_sets(model, data, tab_file_path, north_sea_flag)
-    load_shared_parameters(model, data, tab_file_path)
-    load_operational_parameters(model, data, tab_file_path, emission_cap_flag, load_change_module_flag, out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=scenario_data_path)
-    load_investment_parameters(model, data, tab_file_path)
-    
+    load_shared_sets(model, data, run_config.tab_file_path, flags.north_sea_flag)
+    load_shared_parameters(model, data, run_config.tab_file_path)
+    load_operational_parameters(model, data, run_config.tab_file_path, flags.emission_cap_flag, flags.load_change_module_flag, flags.out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
+    load_investment_parameters(model, data, run_config.tab_file_path)
+
     # Load electrical data for LOPF if requested (need to split investment and operations!)
-    if lopf_flag:
-        load_line_parameters(model, tab_file_path, data, lopf_kwargs, logger) 
+    if flags.lopf_flag:
+        load_line_parameters(model, run_config.tab_file_path, data, lopf_kwargs, logger)
 
 
     logger.info("Sets and parameters declared and read...")
@@ -136,11 +115,11 @@ def run_empire(instance_name: str,
 
     logger.info("Declaring variables...")
 
-    if out_of_sample_flag:
+    if flags.out_of_sample_flag:
         set_investments_as_parameters(model)
-        load_optimized_investments(model, data, result_file_path)
-        result_file_path = set_out_of_sample_path(result_file_path, sample_file_path)
-        logger.info("Out-of-sample results will be saved to: %s", result_file_path)
+        load_optimized_investments(model, data, run_config.results_path)
+        results_path = set_out_of_sample_path(run_config.results_path, sample_file_path)
+        logger.info("Out-of-sample results will be saved to: %s", results_path)
 
     else:
         define_investment_variables(model)
@@ -149,9 +128,9 @@ def run_empire(instance_name: str,
 
 
     # model parameter preparations
-    prep_operational_parameters(model, load_change_module_flag)
+    prep_operational_parameters(model, flags.load_change_module_flag)
 
-    if not out_of_sample_flag:
+    if not flags.out_of_sample_flag:
         # All constraints exclusively for investment decisions inactive when out_of_sample_flag
         prep_investment_parameters(model)
 
@@ -172,10 +151,10 @@ def run_empire(instance_name: str,
     ###############
 
     # constraint defintions
-    define_investment_constraints(model, north_sea_flag)
-    define_operational_constraints(model, logger, emission_cap_flag, include_hydro_node_limit_constraint_flag=True)
+    define_investment_constraints(model, flags.north_sea_flag)
+    define_operational_constraints(model, logger, flags.emission_cap_flag, include_hydro_node_limit_constraint_flag=True)
 
-    if lopf_flag:
+    if flags.lopf_flag:
         logger.info("LOPF constraints activated using method: %s", lopf_method)
         from .lopf_module import add_lopf_constraints
         kw = {} if lopf_kwargs is None else dict(lopf_kwargs)
@@ -183,7 +162,7 @@ def run_empire(instance_name: str,
     else:
         logger.warning("LOPF constraints not activated: %s", lopf_method)
 
-        
+
     #############
     ##OBJECTIVE##
     #############
@@ -220,14 +199,14 @@ def run_empire(instance_name: str,
 
     #import pdb; pdb.set_trace()
     #instance.CO2price.pprint()
-    if not out_of_sample_flag:	
+    if not flags.out_of_sample_flag:	
         log_problem_statistics(instance, logger)
         write_pre_solve(
             instance,
-            result_file_path,
-            instance_name, 
-            write_lp_flag,
-            use_temp_dir_flag,
+            run_config.results_path,
+            run_config.run_name,
+            flags.write_lp_flag,
+            flags.use_temp_dir_flag,
             temp_dir,
             logger
         )
@@ -235,19 +214,19 @@ def run_empire(instance_name: str,
 
     opt = set_solver(solver_name, logger)
     logger.info("Solving...")
-    opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{instance_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
+    opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
 
-    if pickle_instance_flag:
-        pickle_instance(instance, instance_name, use_temp_dir_flag, logger, temp_dir)
+    if flags.pickle_instance_flag:
+        pickle_instance(instance, run_config.run_name, flags.use_temp_dir_flag, logger, temp_dir)
                 
     #instance.display('outputs_gurobi.txt')
 
     #import pdb; pdb.set_trace()
 
-    write_results(instance, result_file_path, instance_name, out_of_sample_flag, emission_cap_flag, print_iamc_flag, logger)
+    write_results(instance, results_path, run_config.run_name, flags.out_of_sample_flag, flags.emission_cap_flag, flags.print_iamc_flag, logger)
 
-    if compute_operational_duals_flag and not out_of_sample_flag:
-        run_operational_model(instance, opt, result_file_path, instance_name, logger)
-        write_operational_results(instance, result_file_path, emission_cap_flag, logger)
+    if flags.compute_operational_duals_flag and not flags.out_of_sample_flag:
+        run_operational_model(instance, opt, results_path, run_config.run_name, logger)
+        write_operational_results(instance, results_path, flags.emission_cap_flag, logger)
 
 
