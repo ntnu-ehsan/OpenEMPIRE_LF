@@ -49,7 +49,6 @@ def define_operational_parameters(
     model.storageBleedEff = Param(model.Storage, default=1.0, mutable=True)
     model.genRampUpCap = Param(model.ThermalGenerators, default=0.0, mutable=True)
     model.storageDiscToCharRatio = Param(model.Storage, default=1.0, mutable=True) #NB! Hard-coded
-    model.storagePowToEnergy = Param(model.DependentStorage, default=1.0, mutable=True)
 
 
     model.genMargCost = Param(model.Generator, model.Period, default=600, mutable=True)
