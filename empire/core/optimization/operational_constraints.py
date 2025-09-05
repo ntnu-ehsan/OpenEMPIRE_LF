@@ -3,6 +3,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def set_scenario_as_parameter(subproblem_model):
+    """Fix scenario for Benders.
+    Need to set parameters like sceProbab to have an index corresponding to the scenario"""
+    sname = "_"
+    subproblem_model.Scenario = Set(initialize=[sname])
+    # subproblem_model.genCapAvailStochRaw[n,g,h,s,i]
+    return 
+
 
 def define_operational_sets(model: AbstractModel, Operationalhour, Season, Scenario, HoursOfSeason, FirstHoursOfRegSeason, FirstHoursOfPeakSeason):
     # operational sets
@@ -236,14 +244,13 @@ def define_operational_constraints(
         ) -> None:
     # Define operational constraints for the model
 
-    def shed_component_rule(model,i):
+    def shed_component_rule(model,i, w):
         """Defines load shedding cost"""
-        return sum(model.operationalDiscountrate*model.seasScale[s]*model.sceProbab[w]*model.nodeLostLoadCost[n,i]*model.loadShed[n,h,i,w] for n in model.Node for w in model.Scenario for (s,h) in model.HoursOfSeason)
-    model.shedcomponent=Expression(model.PeriodActive,rule=shed_component_rule)
+        return sum(model.operationalDiscountrate*model.seasScale[s]*model.sceProbab[w]*model.nodeLostLoadCost[n,i]*model.loadShed[n,h,i,w] for n in model.Node for (s,h) in model.HoursOfSeason)
+    model.shedcomponent=Expression(model.PeriodActive,model.Scenario,rule=shed_component_rule)
 
-    def operational_cost_rule(model,i):
+    def operational_cost_rule(model,i, w):
         """Defines operational cost"""
-        return model.shedcomponent[i] + sum(model.operationalDiscountrate*model.seasScale[s]*model.sceProbab[w]*model.genMargCost[g,i]*model.genOperational[n,g,h,i,w] for (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason for w in model.Scenario)
     model.operationalcost=Expression(model.PeriodActive,rule=operational_cost_rule)
 
     # note: this cannot be included in the Benders
