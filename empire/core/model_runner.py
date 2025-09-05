@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 from empire import run_empire
-from empire.core.config import (EmpireConfiguration, EmpireRunConfiguration,
+from empire.core.config import (EmpireConfiguration, EmpireRunConfiguration, OperationalParams, Flags
                                 read_config_file)
 from empire.core.reader import generate_tab_files
 from empire.core.scenario_random import (check_scenarios_exist_and_copy,
@@ -12,7 +12,6 @@ from empire.core.scenario_random import (check_scenarios_exist_and_copy,
 from empire.input_data_manager import IDataManager
 from empire.utils import (copy_dataset, copy_scenario_data,
                           create_if_not_exist, get_run_name)
-from empire.core.data_structures import OperationalParams, Flags
 logger = logging.getLogger(__name__)
 
 
