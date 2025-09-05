@@ -8,16 +8,6 @@ from pathlib import Path
 
 from pyomo.common.tempfiles import TempfileManager
 from pyomo.environ import (
-    value,
-    Set,
-    Param,
-    Var,
-    Constraint,
-    NonNegativeReals,
-    BuildAction,
-    Expression,
-    Objective,
-    minimize,
     DataPortal,
     AbstractModel,
     Suffix, 
@@ -38,13 +28,13 @@ logger = logging.getLogger(__name__)
 
 
 def run_empire(run_config: EmpireRunConfiguration,
-               solver_name, 
-               temp_dir, 
-               Period, 
+               solver_name: str, 
+               temp_dir: Path, 
+               Period: list[int], 
                operational_params: OperationalParams,
-               discountrate, 
-               wacc,    
-               LeapYearsInvestment, 
+               discountrate: float, 
+               wacc: float,    
+               LeapYearsInvestment: float, 
                flags: Flags,
                sample_file_path: Path | None = None,
                lopf_method: str = LOPFMethod.KIRCHHOFF, 
