@@ -78,22 +78,6 @@ def define_operational_parameters(
     model.maxHydroNode = Param(model.Node, default=0.0, mutable=True)
     model.storOperationalInit = Param(model.Storage, default=0.0, mutable=True) #Percentage of installed energy capacity initially
     return 
-    # Define operational parameters for the model
-    
-    # def gen_avail_rule(model, ng, h, s, i):
-    #     n, g = ng
-    #     if model.gen_use_stochastic[g]:
-    #         return model.gen_avail_stoch[n, g, h, s, i]
-    #     else:
-    #         return model.gen_avail_factor[g]
-    # model.gen_avail = Param(
-    # model.GeneratorsOfNode,
-    # model.OperationalHour,
-    # model.Scenario,
-    # model.PeriodActive,
-    # initialize=gen_avail_rule,
-    # within=PercentFraction
-    # )
 
 
 def load_operational_parameters(model, data, tab_file_path, emission_cap_flag, load_change_module_flag, out_of_sample_flag, sample_file_path=None, scenario_data_path=None):
