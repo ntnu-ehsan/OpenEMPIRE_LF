@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 def create_master_problem_instance(run_config: EmpireRunConfiguration,
                solver_name: str, 
                temp_dir: Path, 
-               Period: list[int], 
+               periods: list[int], 
                operational_params: OperationalParams,
                discountrate: float, 
                wacc: float,    
@@ -48,7 +48,7 @@ def create_master_problem_instance(run_config: EmpireRunConfiguration,
     ##SETS##
     ########
 
-    define_shared_sets(model, Period, flags.north_sea_flag)
+    define_shared_sets(model, periods, flags.north_sea_flag)
 
 
     ##############
@@ -91,7 +91,7 @@ def create_master_problem_instance(run_config: EmpireRunConfiguration,
     define_investment_constraints(model, flags.north_sea_flag)
 
 
-    model.operationalcost = Var(model.Period, model.Scenario, within=NonNegativeReals)
+    model.operationalcost = Var(model.periods, model.Scenario, within=NonNegativeReals)
 
 
     define_objective(model)

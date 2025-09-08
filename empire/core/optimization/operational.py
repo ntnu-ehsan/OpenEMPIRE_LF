@@ -29,12 +29,12 @@ def define_operational_variables(
         model: AbstractModel
 ) -> AbstractModel:
     # Define operational variables for the model
-    model.genOperational = Var(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
-    model.storOperational = Var(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
-    model.transmisionOperational = Var(model.DirectionalLink, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals) #flow
-    model.storCharge = Var(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
-    model.storDischarge = Var(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
-    model.loadShed = Var(model.Node, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
+    model.genOperational = Var(model.GeneratorsOfNode, model.Operationalhour, model.periods_active, model.Scenario, domain=NonNegativeReals)
+    model.storOperational = Var(model.StoragesOfNode, model.Operationalhour, model.periods_active, model.Scenario, domain=NonNegativeReals)
+    model.transmisionOperational = Var(model.DirectionalLink, model.Operationalhour, model.periods_active, model.Scenario, domain=NonNegativeReals) #flow
+    model.storCharge = Var(model.StoragesOfNode, model.Operationalhour, model.periods_active, model.Scenario, domain=NonNegativeReals)
+    model.storDischarge = Var(model.StoragesOfNode, model.Operationalhour, model.periods_active, model.Scenario, domain=NonNegativeReals)
+    model.loadShed = Var(model.Node, model.Operationalhour, model.periods_active, model.Scenario, domain=NonNegativeReals)
 
 
 def define_operational_parameters(
@@ -50,7 +50,7 @@ def define_operational_parameters(
     model.lengthRegSeason = Param(initialize=operational_params.lengthRegSeason, mutable=True)
     model.lengthPeakSeason = Param(initialize=operational_params.lengthPeakSeason, mutable=True)
 
-    model.genEfficiency = Param(model.Generator, model.Period, default=1.0, mutable=True)
+    model.genEfficiency = Param(model.Generator, model.periods, default=1.0, mutable=True)
     model.lineEfficiency = Param(model.DirectionalLink, default=0.97, mutable=True)
     model.lineReactance   = Param(model.BidirectionalArc, default=0.0, mutable=True)
     model.lineSusceptance = Param(model.BidirectionalArc, default=0.0, mutable=True)
@@ -60,30 +60,30 @@ def define_operational_parameters(
     model.genRampUpCap = Param(model.ThermalGenerators, default=0.0, mutable=True)
     model.storageDiscToCharRatio = Param(model.Storage, default=1.0, mutable=True) #NB! Hard-coded
 
-    model.genMargCost = Param(model.Generator, model.Period, default=600, mutable=True)
-    model.CO2price = Param(model.Period, default=0.0, mutable=True)
+    model.genMargCost = Param(model.Generator, model.periods, default=600, mutable=True)
+    model.CO2price = Param(model.periods, default=0.0, mutable=True)
     model.genCO2TypeFactor = Param(model.Generator, default=0.0, mutable=True)
-    model.nodeLostLoadCost = Param(model.Node, model.Period, default=22000.0)
-    model.CCSCostTSVariable = Param(model.Period, default=0.0, mutable=True)
-    model.genFuelCost = Param(model.Generator, model.Period, default=0.0, mutable=True)
+    model.nodeLostLoadCost = Param(model.Node, model.periods, default=22000.0)
+    model.CCSCostTSVariable = Param(model.periods, default=0.0, mutable=True)
+    model.genFuelCost = Param(model.Generator, model.periods, default=0.0, mutable=True)
     model.genVariableOMCost = Param(model.Generator, default=0.0, mutable=True)
     model.CCSRemFrac = Param(initialize=0.9)
 
     if emission_cap_flag:
-        model.CO2cap = Param(model.Period, default=5000.0, mutable=True)
+        model.CO2cap = Param(model.periods, default=5000.0, mutable=True)
     
     if load_change_module_flag:
-        model.sloadMod = Param(model.Node, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
+        model.sloadMod = Param(model.Node, model.Operationalhour, model.Scenario, model.periods, default=0.0, mutable=True)
 
     #Stochastic input
-    model.sloadRaw = Param(model.Node, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
-    model.sloadAnnualDemand = Param(model.Node, model.Period, default=0.0, mutable=True)
-    model.sload = Param(model.Node, model.Operationalhour, model.Period, model.Scenario, default=0.0, mutable=True)
+    model.sloadRaw = Param(model.Node, model.Operationalhour, model.Scenario, model.periods, default=0.0, mutable=True)
+    model.sloadAnnualDemand = Param(model.Node, model.periods, default=0.0, mutable=True)
+    model.sload = Param(model.Node, model.Operationalhour, model.periods, model.Scenario, default=0.0, mutable=True)
     model.genCapAvailTypeRaw = Param(model.Generator, default=1.0, mutable=True)
-    model.genCapAvailStochRaw = Param(model.GeneratorsOfNode, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True, within=PercentFraction)
-    model.genCapAvail = Param(model.GeneratorsOfNode, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True, within=PercentFraction)
-    model.maxRegHydroGenRaw = Param(model.Node, model.Period, model.HoursOfSeason, model.Scenario, default=0.0, mutable=True)
-    model.maxRegHydroGen = Param(model.Node, model.Period, model.Season, model.Scenario, default=0.0, mutable=True)
+    model.genCapAvailStochRaw = Param(model.GeneratorsOfNode, model.Operationalhour, model.Scenario, model.periods, default=0.0, mutable=True, within=PercentFraction)
+    model.genCapAvail = Param(model.GeneratorsOfNode, model.Operationalhour, model.Scenario, model.periods, default=0.0, mutable=True, within=PercentFraction)
+    model.maxRegHydroGenRaw = Param(model.Node, model.periods, model.HoursOfSeason, model.Scenario, default=0.0, mutable=True)
+    model.maxRegHydroGen = Param(model.Node, model.periods, model.Season, model.Scenario, default=0.0, mutable=True)
     model.maxHydroNode = Param(model.Node, default=0.0, mutable=True)
     model.storOperationalInit = Param(model.Storage, default=0.0, mutable=True) #Percentage of installed energy capacity initially
     return 
@@ -161,7 +161,7 @@ def prep_operational_parameters(model, load_change_module_flag) -> None:
 
         for n in model.Node:
             for s in model.Season:
-                for i in model.PeriodActive:
+                for i in model.periods_active:
                     for sce in model.Scenario:
                         model.maxRegHydroGen[n,i,s,sce]=sum(model.maxRegHydroGenRaw[n,i,s,h,sce] for h in model.Operationalhour if (s,h) in model.HoursOfSeason)
 
@@ -174,7 +174,7 @@ def prep_operational_parameters(model, load_change_module_flag) -> None:
         for (n,g) in model.GeneratorsOfNode:
             for h in model.Operationalhour:
                 for s in model.Scenario:
-                    for i in model.PeriodActive:
+                    for i in model.periods_active:
                         if value(model.genCapAvailTypeRaw[g]) == 0:
                             model.genCapAvail[n,g,h,s,i]=model.genCapAvailStochRaw[n,g,h,s,i]
                         else:
@@ -188,7 +188,7 @@ def prep_operational_parameters(model, load_change_module_flag) -> None:
         counter = 0
 
         for n in model.Node:
-            for i in model.PeriodActive:
+            for i in model.periods_active:
                 noderawdemand = 0
                 for (s,h) in model.HoursOfSeason:
                     if value(h) < value(list(model.FirstHoursOfRegSeason)[-1] + model.lengthRegSeason):
@@ -215,7 +215,7 @@ def prep_operational_parameters(model, load_change_module_flag) -> None:
         #Build generator short term marginal costs
 
         for g in model.Generator:
-            for i in model.PeriodActive:
+            for i in model.periods_active:
                 if ('CCS',g) in model.GeneratorsOfTechnology:
                     costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+(1-model.CCSRemFrac)*model.genCO2TypeFactor[g]*model.CO2price[i])+ \
                     (3.6/model.genEfficiency[g,i])*(model.CCSRemFrac*model.genCO2TypeFactor[g]*model.CCSCostTSVariable[i])+ \
@@ -248,18 +248,18 @@ def define_operational_constraints(
     def shed_component_rule(model,i, w):
         """Defines load shedding cost"""
         return sum(model.operationalDiscountrate*model.seasScale[s]*model.sceProbab[w]*model.nodeLostLoadCost[n,i]*model.loadShed[n,h,i,w] for n in model.Node for (s,h) in model.HoursOfSeason)
-    model.shedcomponent=Expression(model.PeriodActive,model.Scenario,rule=shed_component_rule)
+    model.shedcomponent=Expression(model.periods_active,model.Scenario,rule=shed_component_rule)
 
     def operational_cost_rule(model,i, w):
         """Defines operational cost"""
         return model.shedcomponent[i,w] + sum(model.operationalDiscountrate*model.seasScale[s]*model.sceProbab[w]*model.genMargCost[g,i]*model.genOperational[n,g,h,i,w] for (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason)
-    model.operationalcost=Expression(model.PeriodActive,model.Scenario,rule=operational_cost_rule)
+    model.operationalcost=Expression(model.periods_active,model.Scenario,rule=operational_cost_rule)
 
     # note: this cannot be included in the Benders
     if include_hydro_node_limit_constraint_flag:
         def hydro_node_limit_rule(model, n, i):
             return sum(model.genOperational[n,g,h,i,w]*model.seasScale[s]*model.sceProbab[w] for g in model.HydroGenerator if (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason for w in model.Scenario) - model.maxHydroNode[n] <= 0   #
-        model.hydro_node_limit = Constraint(model.Node, model.PeriodActive, rule=hydro_node_limit_rule)
+        model.hydro_node_limit = Constraint(model.Node, model.periods_active, rule=hydro_node_limit_rule)
 
     # scenario-dependent constraints:
 
@@ -269,13 +269,13 @@ def define_operational_constraints(
             + sum((model.lineEfficiency[link,n]*model.transmisionOperational[link,n,h,i,w] - model.transmisionOperational[n,link,h,i,w]) for link in model.NodesLinked[n]) \
             - model.sload[n,h,i,w] + model.loadShed[n,h,i,w] \
             == 0
-    model.FlowBalance = Constraint(model.Node, model.Operationalhour, model.PeriodActive, model.Scenario, rule=FlowBalance_rule)
+    model.FlowBalance = Constraint(model.Node, model.Operationalhour, model.periods_active, model.Scenario, rule=FlowBalance_rule)
 
     #################################################################
 
     def genMaxProd_rule(model, n, g, h, i, w):
             return model.genOperational[n,g,h,i,w] - model.genCapAvail[n,g,h,w,i]*model.genInstalledCap[n,g,i] <= 0
-    model.maxGenProduction = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=genMaxProd_rule)
+    model.maxGenProduction = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.periods_active, model.Scenario, rule=genMaxProd_rule)
 
     #################################################################
 
@@ -287,7 +287,7 @@ def define_operational_constraints(
                 return model.genOperational[n,g,h,i,w]-model.genOperational[n,g,(h-1),i,w] - model.genRampUpCap[g]*model.genInstalledCap[n,g,i] <= 0   #
             else:
                 return Constraint.Skip
-    model.ramping = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=ramping_rule)
+    model.ramping = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.periods_active, model.Scenario, rule=ramping_rule)
 
     #################################################################
 
@@ -296,7 +296,7 @@ def define_operational_constraints(
             return model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] == 0   #
         else:
             return model.storageBleedEff[b]*model.storOperational[n,b,(h-1),i,w] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] == 0   #
-    model.storage_energy_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_energy_balance_rule)
+    model.storage_energy_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.periods_active, model.Scenario, rule=storage_energy_balance_rule)
 
     #################################################################
 
@@ -307,25 +307,25 @@ def define_operational_constraints(
             return model.storOperational[n,b,h+value(model.lengthPeakSeason)-1,i,w] - model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] == 0  #
         else:
             return Constraint.Skip
-    model.storage_seasonal_net_zero_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_seasonal_net_zero_balance_rule)
+    model.storage_seasonal_net_zero_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.periods_active, model.Scenario, rule=storage_seasonal_net_zero_balance_rule)
 
     #################################################################
 
     def storage_operational_cap_rule(model, n, b, h, i, w):
         return model.storOperational[n,b,h,i,w] - model.storENInstalledCap[n,b,i]  <= 0   #
-    model.storage_operational_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_operational_cap_rule)
+    model.storage_operational_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.periods_active, model.Scenario, rule=storage_operational_cap_rule)
 
     #################################################################
 
     def storage_power_discharg_cap_rule(model, n, b, h, i, w):
         return model.storDischarge[n,b,h,i,w] - model.storageDiscToCharRatio[b]*model.storPWInstalledCap[n,b,i] <= 0   #
-    model.storage_power_discharg_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_power_discharg_cap_rule)
+    model.storage_power_discharg_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.periods_active, model.Scenario, rule=storage_power_discharg_cap_rule)
 
     #################################################################
 
     def storage_power_charg_cap_rule(model, n, b, h, i, w):
         return model.storCharge[n,b,h,i,w] - model.storPWInstalledCap[n,b,i] <= 0   #
-    model.storage_power_charg_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_power_charg_cap_rule)
+    model.storage_power_charg_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.periods_active, model.Scenario, rule=storage_power_charg_cap_rule)
 
     #################################################################
 
@@ -334,7 +334,7 @@ def define_operational_constraints(
             return sum(model.genOperational[n,g,h,i,w] for h in model.Operationalhour if (s,h) in model.HoursOfSeason) - model.maxRegHydroGen[n,i,s,w] <= 0
         else:
             return Constraint.Skip  #
-    model.hydro_gen_limit = Constraint(model.GeneratorsOfNode, model.Season, model.PeriodActive, model.Scenario, rule=hydro_gen_limit_rule)
+    model.hydro_gen_limit = Constraint(model.GeneratorsOfNode, model.Season, model.periods_active, model.Scenario, rule=hydro_gen_limit_rule)
 
     #################################################################
 
@@ -343,7 +343,7 @@ def define_operational_constraints(
             return model.transmisionOperational[(n1,n2),h,i,w]  - model.transmissionInstalledCap[(n1,n2),i] <= 0
         elif (n2,n1) in model.BidirectionalArc:
             return model.transmisionOperational[(n1,n2),h,i,w]  - model.transmissionInstalledCap[(n2,n1),i] <= 0
-    model.transmission_cap = Constraint(model.DirectionalLink, model.Operationalhour, model.PeriodActive, model.Scenario, rule=transmission_cap_rule)
+    model.transmission_cap = Constraint(model.DirectionalLink, model.Operationalhour, model.periods_active, model.Scenario, rule=transmission_cap_rule)
 
     #################################################################
 
@@ -351,7 +351,7 @@ def define_operational_constraints(
         def emission_cap_rule(model, i, w):
             return sum(model.seasScale[s]*model.genCO2TypeFactor[g]*(3.6/model.genEfficiency[g,i])*model.genOperational[n,g,h,i,w] for (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason)/1000000 \
                 - model.CO2cap[i] <= 0   #
-        model.emission_cap = Constraint(model.PeriodActive, model.Scenario, rule=emission_cap_rule)
+        model.emission_cap = Constraint(model.periods_active, model.Scenario, rule=emission_cap_rule)
 
     #################################################################
     

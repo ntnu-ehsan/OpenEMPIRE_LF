@@ -16,14 +16,14 @@ def run_benders(
     investment_params: dict,
     discountrate: float,
     LeapYearsInvestment: list,
-    Period: list[int],
+    periods: list[int],
     wacc: float,
     lopf_kwargs: dict,
     solver_name: str,
     benders_cuts: list,
     sample_file_path: Path | None = None,
     temp_dir: Path | None = None,
-    max_iterations: int = 10
+    max_iterations: int = 50
 ) -> AbstractModel:
     """
     Function to create and solve the Benders subproblem.
@@ -59,10 +59,10 @@ def run_benders(
         The solved Pyomo model instance representing the Benders subproblem.
     """
     
-    mp_instance = create_master_problem_instance(run_config, solver_name, run_config.temporary_directory, Period, operational_params, benders_cuts, discountrate, wacc, LeapYearsInvestment, flags, sample_file_path)
+    mp_instance = create_master_problem_instance(run_config, solver_name, run_config.temporary_directory, periods, operational_params, benders_cuts, discountrate, wacc, LeapYearsInvestment, flags, sample_file_path)
     logger.info("Creating Benders subproblem model...")
 
-    sp_model, data = create_subproblem_model(run_config, solver_name, run_config.temporary_directory, Period, operational_params, investment_params, discountrate, LeapYearsInvestment, flags, sample_file_path, lopf_method=flags.lopf_method, lopf_kwargs=lopf_kwargs)
+    sp_model, data = create_subproblem_model(run_config, solver_name, run_config.temporary_directory, periods, operational_params, investment_params, discountrate, LeapYearsInvestment, flags, sample_file_path, lopf_method=flags.lopf_method, lopf_kwargs=lopf_kwargs)
     sp_instance = create_subproblem_instance(sp_model, data)
     solve_master_problem(mp_instance, solver_name, flags, run_config, temp_dir, save_flag=False)
 
@@ -73,7 +73,7 @@ def run_benders(
     last_mp_obj = -1
 
     for iteration in range(max_iterations):
-        for i, w in product(Period, operational_params.Scenario):
+        for i, w in product(periods, operational_params.Scenario):
             set_stochastic_input_subproblem(sp_instance, scenario_data[w], i)
             sp_cut = solve_subproblem(sp_instance, solver_name, run_config, investment_params)
             sp_cuts.append(sp_cut)

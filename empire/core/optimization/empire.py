@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 def run_empire(run_config: EmpireRunConfiguration,
                solver_name: str, 
                temp_dir: Path, 
-               Period: list[int], 
+               periods: list[int], 
                operational_params: OperationalParams,
                discountrate: float, 
                wacc: float,    
@@ -42,14 +42,14 @@ def run_empire(run_config: EmpireRunConfiguration,
 
     prepare_temp_dir(flags, temp_dir, run_config)
     prepare_results_dir(flags, run_config)
-    
+
     model = AbstractModel()
     
     ########
     ##SETS##
     ########
 
-    define_shared_sets(model, Period, flags.north_sea_flag)
+    define_shared_sets(model, periods, flags.north_sea_flag)
     define_operational_sets(model, operational_params)
 
 

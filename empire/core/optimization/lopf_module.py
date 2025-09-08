@@ -74,7 +74,7 @@ def _infer_capacity_expr(model):
             init = getattr(m, _init)
             built = getattr(m, _built)
             total = init[i, j, p] if (i, j, p) in init else 0.0
-            for pp in m.PeriodActive:
+            for pp in m.periods_active:
                 if pp <= p and (i, j, pp) in built:
                     total += built[i, j, pp]
             return total
@@ -112,8 +112,8 @@ def _bind_to_existing_flows(model, flow_dc_like, existing_flow_candidates=()):
     def _bwd(m, i, j, h, w, p):
         return FlowDir[j, i, h, w, p] == -flow_dc_like[i, j, h, w, p]
 
-    model.LOPF_BindFwd = Constraint(model.BidirectionalArc, model.Operationalhour, model.Scenario, model.PeriodActive, rule=_fwd)
-    model.LOPF_BindBwd = Constraint(model.BidirectionalArc, model.Operationalhour, model.Scenario, model.PeriodActive, rule=_bwd)
+    model.LOPF_BindFwd = Constraint(model.BidirectionalArc, model.Operationalhour, model.Scenario, model.periods_active, rule=_fwd)
+    model.LOPF_BindBwd = Constraint(model.BidirectionalArc, model.Operationalhour, model.Scenario, model.periods_active, rule=_bwd)
     return FlowDir
 
 # ---------------------------
@@ -150,12 +150,12 @@ def _add_kirchhoff_constraints(
     """
 
     # ---- Guard required sets (Abstract) ---------------------------------------
-    for s in ("BidirectionalArc", "DirectionalLink", "Node", "Operationalhour", "Scenario", "PeriodActive"):
+    for s in ("BidirectionalArc", "DirectionalLink", "Node", "Operationalhour", "Scenario", "periods_active"):
         if not hasattr(model, s):
             raise ValueError(f"Model is missing required set: {s}")
 
     L = model.BidirectionalArc
-    H, W, P = model.Operationalhour, model.Scenario, model.PeriodActive
+    H, W, P = model.Operationalhour, model.Scenario, model.periods_active
 
     # ---- Reactance X[i,j] selection/derivation (Abstract-safe) ----------------
     # If a reactance Param exists, use it. Else, if asked, derive X = 1/B from susceptance.
@@ -338,12 +338,12 @@ def _add_angle_opf(
     slack_node_set_name: str = "SlackNode",
 ):
     # Required sets
-    for s in ("DirectionalLink", "Node", "Operationalhour", "Scenario", "PeriodActive"):
+    for s in ("DirectionalLink", "Node", "Operationalhour", "Scenario", "periods_active"):
         if not hasattr(model, s):
             raise RuntimeError(f"Model is missing required set '{s}'")
     A = model.DirectionalLink
     N = model.Node
-    H, W, P = model.Operationalhour, model.Scenario, model.PeriodActive
+    H, W, P = model.Operationalhour, model.Scenario, model.periods_active
 
     # Susceptance B[(i,j)]
     if not hasattr(model, susceptance_param_name):

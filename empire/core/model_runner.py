@@ -83,7 +83,7 @@ def run_empire_model(
     #######
     ##RUN##
     #######
-    Period = [i + 1 for i in range(int((empire_config.forecast_horizon_year - 2020) / empire_config.leap_years_investment))]
+    periods = [i + 1 for i in range(int((empire_config.forecast_horizon_year - 2020) / empire_config.leap_years_investment))]
     operational_params = define_operational_input_params(empire_config)
 
 
@@ -141,7 +141,7 @@ def run_empire_model(
             sample_file_path=sample_file_path,
             solver_name=empire_config.optimization_solver,
             temp_dir=empire_config.temporary_directory,
-            Period=Period,
+            periods=periods,
             discountrate=empire_config.discount_rate,
             wacc=empire_config.wacc,
             LeapYearsInvestment=empire_config.leap_years_investment,

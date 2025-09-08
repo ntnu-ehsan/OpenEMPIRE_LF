@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 def define_subproblem(run_config: EmpireRunConfiguration,
                solver_name: str, 
                temp_dir: Path, 
-               Period: list[int], 
+               periods: list[int], 
                operational_params: OperationalParams,
                investment_params: dict,
                discountrate: float, 
@@ -49,7 +49,7 @@ def define_subproblem(run_config: EmpireRunConfiguration,
     ##SETS##
     ########
 
-    define_shared_sets(model, Period, flags.north_sea_flag)
+    define_shared_sets(model, periods, flags.north_sea_flag)
     define_operational_sets(model, operational_params)
 
 
