@@ -237,7 +237,7 @@ class EmpireRunConfiguration:
 @dataclass
 class OperationalParams: 
     Operationalhour: int
-    Scenario: int
+    scenarios: int
     Season: int
     HoursOfSeason: int
     FirstHoursOfRegSeason: int

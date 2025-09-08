@@ -11,12 +11,14 @@ def define_objective(model):
 
     
     def Obj_rule(model):
-        return sum(model.discount_multiplier[i]*(
+        return sum(
+            model.discount_multiplier[i]*(
             sum(model.genInvCost[g,i]* model.genInvCap[n,g,i] for (n,g) in model.GeneratorsOfNode ) + \
             sum(model.transmissionInvCost[n1,n2,i]*model.transmisionInvCap[n1,n2,i] for (n1,n2) in model.BidirectionalArc ) + \
             sum((model.storPWInvCost[b,i]*model.storPWInvCap[n,b,i]+model.storENInvCost[b,i]*model.storENInvCap[n,b,i]) for (n,b) in model.StoragesOfNode )) 
-            for i in model.periods_active) + \
-            sum(model.operationalcost[i, w] for i in model.periods_active for w in model.Scenario)
+            for i in model.periods_active
+            ) + \
+            sum(model.operationalcost[i, w] for i in model.periods_active for w in model.scenarios)
 
     model.Obj = Objective(rule=Obj_rule, sense=minimize)
 
