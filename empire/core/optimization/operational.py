@@ -185,7 +185,9 @@ def prep_operational_parameters(model, load_change_module_flag) -> None:
 
 
     def prepSload_rule(model):
-        # Build load profiles for all periods
+        # Build load profiles for all periods.
+        # Issue: why is peak load not taken into account into the yearly load calculation??
+        
         cutoff = list(model.FirstHoursOfRegSeason)[-1] + model.lengthRegSeason  # last index of regular season
         for n in model.Node:
             for i in model.periods_active:
@@ -194,11 +196,9 @@ def prep_operational_parameters(model, load_change_module_flag) -> None:
                     for (s, h) in model.HoursOfSeason
                     if h < cutoff
                     for w in model.scenarios
-                )
-                if model.sloadAnnualDemand[n, i].value < 1:
-                    hourlyscale = 0
-                else:
-                    hourlyscale = model.sloadAnnualDemand[n, i] / noderawdemand
+                )  
+
+                hourlyscale = model.sloadAnnualDemand[n, i] / noderawdemand
 
                 for h in model.Operationalhour:
                     for w in model.scenarios:
