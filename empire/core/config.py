@@ -235,7 +235,7 @@ class EmpireRunConfiguration:
 
 
 @dataclass
-class OperationalParams: 
+class OperationalInputParams: 
     Operationalhour: int
     scenarios: int
     Season: int

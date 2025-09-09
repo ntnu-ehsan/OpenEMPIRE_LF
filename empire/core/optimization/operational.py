@@ -1,12 +1,12 @@
 from pyomo.environ import Constraint, Set, Var, value, BuildAction, Expression, AbstractModel, NonNegativeReals, Param, PercentFraction
 import logging
-from empire.core.config import OperationalParams
+from empire.core.config import OperationalInputParams
 
 
 logger = logging.getLogger(__name__)
 
 
-def define_operational_sets(model: AbstractModel, operational_params: OperationalParams):
+def define_operational_sets(model: AbstractModel, operational_params: OperationalInputParams):
     # operational sets
     model.Operationalhour = Set(ordered=True, initialize=operational_params.Operationalhour) #h
     model.Season = Set(ordered=True, initialize=operational_params.Season) #s
@@ -31,7 +31,7 @@ def define_operational_variables(
 
 def define_operational_parameters(
         model: AbstractModel,
-        operational_params: OperationalParams,
+        operational_params: OperationalInputParams,
         emission_cap_flag: bool,
         load_change_module_flag: bool
     ):
