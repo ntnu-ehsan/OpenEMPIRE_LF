@@ -6,14 +6,14 @@ from empire.core.config import OperationalInputParams
 logger = logging.getLogger(__name__)
 
 
-def define_operational_sets(model: AbstractModel, operational_params: OperationalInputParams):
+def define_operational_sets(model: AbstractModel, operational_input_params: OperationalInputParams):
     # operational sets
-    model.Operationalhour = Set(ordered=True, initialize=operational_params.Operationalhour) #h
-    model.Season = Set(ordered=True, initialize=operational_params.Season) #s
-    model.scenarios = Set(ordered=True, initialize=operational_params.scenarios) #w
-    model.HoursOfSeason = Set(dimen=2, ordered=True, initialize=operational_params.HoursOfSeason) #(s,h) for all s in S, h in H_s
-    model.FirstHoursOfRegSeason = Set(within=model.Operationalhour, ordered=True, initialize=operational_params.FirstHoursOfRegSeason)
-    model.FirstHoursOfPeakSeason = Set(within=model.Operationalhour, ordered=True, initialize=operational_params.FirstHoursOfPeakSeason)
+    model.Operationalhour = Set(ordered=True, initialize=operational_input_params.Operationalhour) #h
+    model.Season = Set(ordered=True, initialize=operational_input_params.Season) #s
+    model.scenarios = Set(ordered=True, initialize=operational_input_params.scenarios) #w
+    model.HoursOfSeason = Set(dimen=2, ordered=True, initialize=operational_input_params.HoursOfSeason) #(s,h) for all s in S, h in H_s
+    model.FirstHoursOfRegSeason = Set(within=model.Operationalhour, ordered=True, initialize=operational_input_params.FirstHoursOfRegSeason)
+    model.FirstHoursOfPeakSeason = Set(within=model.Operationalhour, ordered=True, initialize=operational_input_params.FirstHoursOfPeakSeason)
     return 
 
 
@@ -29,20 +29,20 @@ def define_operational_variables(
     model.loadShed = Var(model.Node, model.Operationalhour, model.periods_active, model.scenarios, domain=NonNegativeReals)
 
 
+
+
+
 def define_operational_parameters(
         model: AbstractModel,
-        operational_params: OperationalInputParams,
+        operational_input_params: OperationalInputParams,
         emission_cap_flag: bool,
-        load_change_module_flag: bool
     ):
     # operational deterministic parameters 
     model.operationalDiscountrate = Param(mutable=True)
-    model.sceProbab = Param(model.scenarios, mutable=True)
     model.seasScale = Param(model.Season, initialize=1.0, mutable=True)
-    model.lengthRegSeason = Param(initialize=operational_params.lengthRegSeason, mutable=False)
-    model.lengthPeakSeason = Param(initialize=operational_params.lengthPeakSeason, mutable=False)
+    model.lengthRegSeason = Param(initialize=operational_input_params.lengthRegSeason, mutable=False)
+    model.lengthPeakSeason = Param(initialize=operational_input_params.lengthPeakSeason, mutable=False)
 
-    model.genEfficiency = Param(model.Generator, model.periods, default=1.0, mutable=True)
     model.lineEfficiency = Param(model.DirectionalLink, default=0.97, mutable=True)
     model.lineReactance   = Param(model.BidirectionalArc, default=0.0, mutable=True)
     model.lineSusceptance = Param(model.BidirectionalArc, default=0.0, mutable=True)
@@ -51,28 +51,25 @@ def define_operational_parameters(
     model.storageBleedEff = Param(model.Storage, default=1.0, mutable=True)
     model.genRampUpCap = Param(model.ThermalGenerators, default=0.0, mutable=True)
     model.storageDiscToCharRatio = Param(model.Storage, default=1.0, mutable=True) #NB! Hard-coded
-
-    model.genMargCost = Param(model.Generator, model.periods, default=600, mutable=True)
-    model.CO2price = Param(model.periods, default=0.0, mutable=True)
     model.genCO2TypeFactor = Param(model.Generator, default=0.0, mutable=True)
-    model.nodeLostLoadCost = Param(model.Node, model.periods, default=22000.0)
-    model.CCSCostTSVariable = Param(model.periods, default=0.0, mutable=True)
-    model.genFuelCost = Param(model.Generator, model.periods, default=0.0, mutable=True)
     model.genVariableOMCost = Param(model.Generator, default=0.0, mutable=True)
     model.CCSRemFrac = Param(initialize=0.9)
-
-
-    model.sloadAnnualDemand = Param(model.Node, model.periods, default=0.0, mutable=True)
     model.maxHydroNode = Param(model.Node, default=0.0, mutable=True)
     model.genCapAvailTypeRaw = Param(model.Generator, default=1.0, mutable=True)
     model.storOperationalInit = Param(model.Storage, default=0.0, mutable=True) #Percentage of installed energy capacity initially
+    
+    # scenario and/or period-dependent parameters
+    model.sceProbab = Param(model.scenarios, mutable=True)
+    model.genEfficiency = Param(model.Generator, model.periods, default=1.0, mutable=True)
+    model.sloadAnnualDemand = Param(model.Node, model.periods, default=0.0, mutable=True)
+    model.genMargCost = Param(model.Generator, model.periods, default=600, mutable=True)
+    model.nodeLostLoadCost = Param(model.Node, model.periods, default=22000.0)
+    model.genFuelCost = Param(model.Generator, model.periods, default=0.0, mutable=True)
+    model.CO2price = Param(model.periods, default=0.0, mutable=True)
 
+    model.CCSCostTSVariable = Param(model.periods, default=0.0, mutable=True)
     if emission_cap_flag:
         model.CO2cap = Param(model.periods, default=5000.0, mutable=True)
-    
-    if load_change_module_flag:
-        model.sloadMod = Param(model.Node, model.Operationalhour, model.scenarios, model.periods, default=0.0, mutable=True)
-
     return 
 
 def define_stochastic_input(model):
@@ -183,7 +180,7 @@ def prep_operational_parameters(model) -> None:
     return 
 
 
-def prep_stochastic_parameters(model, operational_params):
+def prep_stochastic_parameters(model, operational_input_params):
     
     def prepRegHydro_rule(model):
         #Build hydrolimits for all periods
@@ -197,7 +194,7 @@ def prep_stochastic_parameters(model, operational_params):
     model.build_maxRegHydroGen = BuildAction(rule=prepRegHydro_rule)
 
     # Precompute cutoff (last regular season hour)
-    cutoff = list(operational_params.FirstHoursOfRegSeason)[-1] + operational_params.lengthRegSeason
+    cutoff = list(operational_input_params.FirstHoursOfRegSeason)[-1] + operational_input_params.lengthRegSeason
 
     def prep_sload_rule(model, i, w, n, h):
         """Compute probability-weighted raw demand for this node and period.

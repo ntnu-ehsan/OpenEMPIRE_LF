@@ -11,7 +11,7 @@ wacc: 0.05                                             # Weighted average cost o
 optimization_solver: "Gurobi"                          # Mathematical solver used for optimization tasks
 use_scenario_generation: False                         # Indicates if scenarios should be generated dynamically
 use_fixed_sample: True                                 # Specifies if fixed scenario samples should be used
-load_change_module: False                              #
+load_change_module: False                              # DEPRICATED
 filter_make : False                                    #
 filter_use : False                                     #
 copula_clusters_make: False                            # Make copula clusters (for copula-strata SGR)

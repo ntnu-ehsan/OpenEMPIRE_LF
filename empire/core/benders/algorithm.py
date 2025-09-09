@@ -8,6 +8,8 @@ from empire.core.config import OperationalInputParams
 from .master_problem import create_master_problem_instance, solve_master_problem
 from .subproblem import create_subproblem_model, solve_subproblem, create_subproblem_instance
 
+from empire.core.optimization.operational import prep_stochastic_parameters
+
 logger = logging.getLogger(__name__)
 
 def run_benders(
@@ -34,7 +36,7 @@ def run_benders(
         Configuration flags for the model run.
     run_config : EmpireRunConfiguration
         Configuration for the current model run.
-    operational_params : OperationalInputParams
+    operational_input_params : OperationalInputParams
         Operational parameters and sets for the model.
     investment_params : dict
         Investment parameters as a dictionary.
@@ -58,25 +60,25 @@ def run_benders(
     AbstractModel
         The solved Pyomo model instance representing the Benders subproblem.
     """
-    operational_params = OperationalInputParams()
-    mp_instance = create_master_problem_instance(run_config, solver_name, run_config.temporary_directory, periods, operational_params, benders_cuts, discountrate, wacc, LeapYearsInvestment, flags, sample_file_path)
+    operational_input_params = OperationalInputParams()
+    mp_instance = create_master_problem_instance(run_config, solver_name, run_config.temporary_directory, periods, operational_input_params, benders_cuts, discountrate, wacc, LeapYearsInvestment, flags, sample_file_path)
     logger.info("Creating Benders subproblem model...")
 
-    sp_model, data = create_subproblem_model(run_config, solver_name, run_config.temporary_directory, periods, operational_params, investment_params, discountrate, LeapYearsInvestment, flags, sample_file_path, lopf_method=flags.lopf_method, lopf_kwargs=lopf_kwargs)
+    sp_model, data = create_subproblem_model(run_config, solver_name, run_config.temporary_directory, periods, operational_input_params, investment_params, discountrate, LeapYearsInvestment, flags, sample_file_path, lopf_method=flags.lopf_method, lopf_kwargs=lopf_kwargs)
     sp_instance = create_subproblem_instance(sp_model, data)
     solve_master_problem(mp_instance, solver_name, flags, run_config, temp_dir, save_flag=False)
 
 
-    scenario_data = load_scenario_data(data, operational_params.scenarios)
+    scenario_data = load_scenario_data(data, operational_input_params.scenarios)
     # should iterate until convergence 
     sp_cuts = []
     last_mp_obj = -1
 
     for iteration in range(max_iterations):
-        for i, w in product(periods, operational_params.scenarios):
+        for i, w in product(periods, operational_input_params.scenarios):
             set_stochastic_input_subproblem(sp_instance, scenario_data[w], i)
-            prep_stochastic_input_parameters()
-            operational_params.scenarios = [w]
+            prep_stochastic_parameters(model, operational_input_params)
+            operational_input_params.scenarios = [w]
             sp_cut = solve_subproblem(sp_instance, solver_name, run_config, investment_params)
             sp_cuts.append(sp_cut)
         add_cuts_to_mp(mp_instance, sp_cuts)
