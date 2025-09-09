@@ -1069,11 +1069,11 @@ def generate_random_scenario(
 
     # Make header for .tab-file
     genAvail = genAvail[
-        ["Node", "IntermitentGenerators", "Operationalhour", "Scenario", "Period", "GeneratorStochasticAvailabilityRaw"]
+        ["Period", "Scenario", "Node", "IntermitentGenerators", "Operationalhour", "GeneratorStochasticAvailabilityRaw"]
     ]
-    elecLoad = elecLoad[["Node", "Operationalhour", "Scenario", "Period", "ElectricLoadRaw_in_MW"]]
+    elecLoad = elecLoad[["Period", "Scenario", "Node", "Operationalhour", "ElectricLoadRaw_in_MW"]]
     hydroSeasonal = hydroSeasonal[
-        ["Node", "Period", "Season", "Operationalhour", "Scenario", "HydroGeneratorMaxSeasonalProduction"]
+        ["Period",  "Scenario", "Node", "Season", "Operationalhour", "HydroGeneratorMaxSeasonalProduction"]
     ]
 
     genAvail.loc[genAvail["GeneratorStochasticAvailabilityRaw"] <= 0.001, "GeneratorStochasticAvailabilityRaw"] = 0
@@ -1083,7 +1083,7 @@ def generate_random_scenario(
     ] = 0
 
     if LOADCHANGEMODULE:
-        elecLoadMod = elecLoadMod[["Node", "Operationalhour", "Scenario", "Period", "ElectricLoadRaw_in_MW"]]
+        elecLoadMod = elecLoadMod[["Period", "Scenario", "Node", "Operationalhour", "ElectricLoadRaw_in_MW"]]
 
     # Make file_path (if it does not exist) and print .tab-files
     if not os.path.exists(tab_file_path):
