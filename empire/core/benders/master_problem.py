@@ -21,7 +21,7 @@ from .shared_data import define_shared_sets, load_shared_sets, define_shared_par
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
 from .solver import set_solver
 from empire.core.optimization.helpers import pickle_instance, log_problem_statistics, prepare_results_dir, prepare_temp_dir
-from empire.core.config import EmpireRunConfiguration, OperationalParams, Flags
+from empire.core.config import EmpireRunConfiguration, OperationalInputParams, Flags
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def create_master_problem_instance(run_config: EmpireRunConfiguration,
                solver_name: str, 
                temp_dir: Path, 
                periods: list[int], 
-               operational_params: OperationalParams,
+               operational_params: OperationalInputParams,
                discountrate: float, 
                wacc: float,    
                LeapYearsInvestment: float, 
@@ -91,7 +91,7 @@ def create_master_problem_instance(run_config: EmpireRunConfiguration,
     define_investment_constraints(model, flags.north_sea_flag)
 
 
-    model.operationalcost = Var(model.periods, model.Scenario, within=NonNegativeReals)
+    model.operationalcost = Var(model.periods, model.scenarios, within=NonNegativeReals)
 
 
     define_objective(model)

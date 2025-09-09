@@ -11,6 +11,7 @@ from pyomo.environ import (
     DataPortal,
     AbstractModel,
     Suffix, 
+    Set,
 )
 from empire.core.optimization.objective import define_objective
 from empire.core.optimization.operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters
@@ -20,7 +21,7 @@ from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
 from .solver import set_solver
 from empire.core.optimization.helpers import pickle_instance, log_problem_statistics, prepare_results_dir, prepare_temp_dir
-from empire.core.config import EmpireRunConfiguration, OperationalParams, Flags
+from empire.core.config import EmpireRunConfiguration, OperationalInputParams, Flags
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ def define_subproblem(run_config: EmpireRunConfiguration,
                solver_name: str, 
                temp_dir: Path, 
                periods: list[int], 
-               operational_params: OperationalParams,
+               operational_params: OperationalInputParams,
                investment_params: dict,
                discountrate: float, 
                LeapYearsInvestment: float, 
@@ -133,12 +134,16 @@ def create_subproblem_instance(model, data):
     return instance 
 
 
-def set_investment_values(instance, investment_params: dict):
-    for param_name, values in investment_params.items():
-        param = getattr(instance, param_name)  # e.g. instance.cap_cost
-        for index, val in values.items():
-            param[index] = val
-
+def set_investment_values(
+        instance, 
+        investment_params: dict
+        ):
+    for param_name, new_values in investment_params.items():
+        for period, capacity in new_values.items():
+            param = getattr(instance, param_name)  # e.g. instance.genInvCap
+            if period not in param.keys():
+                raise ValueError(f"Period {period} not in parameter {param_name} keys.")
+            param[period] = capacity
 
 def solve_subproblem(instance, solver_name, run_config, investment_params):
     set_investment_values(instance, investment_params)
@@ -165,3 +170,10 @@ def set_investment_values(model, investment_params: dict):
     return 
 
 
+def set_scenario_as_parameter(subproblem_model):
+    """Fix scenario for Benders.
+    Need to set parameters like sceProbab to have an index corresponding to the scenario"""
+    sname = "_"
+    subproblem_model.scenarios = Set(initialize=[sname])
+    # subproblem_model.genCapAvailStochRaw[n,g,h,s,i]
+    return 
