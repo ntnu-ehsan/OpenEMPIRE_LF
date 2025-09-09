@@ -45,29 +45,18 @@ def run_empire(run_config: EmpireRunConfiguration,
 
     model = AbstractModel()
     
-    ########
-    ##SETS##
-    ########
-
+    # Set definitions
     define_shared_sets(model, periods, flags.north_sea_flag)
     define_operational_sets(model, operational_input_params)
 
 
-    ##############
-    ##PARAMETERS##
-    ##############
-
-    #Define the parameters
-
-    logger.info("Declaring parameters...")
-    
+    # Parameter definitions
     define_shared_parameters(model, discountrate, LeapYearsInvestment)
     define_investment_parameters(model, wacc)
     define_operational_parameters(model, operational_input_params, flags.emission_cap_flag, flags.load_change_module_flag)
     define_stochastic_input(model)
 
-    #Load the data
-
+    # Data loading
     data = DataPortal()
     load_shared_sets(model, data, run_config.tab_file_path, flags.north_sea_flag)
     load_shared_parameters(model, data, run_config.tab_file_path)
@@ -80,14 +69,7 @@ def run_empire(run_config: EmpireRunConfiguration,
         load_line_parameters(model, run_config.tab_file_path, data, lopf_kwargs, logger)
 
 
-    logger.info("Sets and parameters declared and read...")
-
-    #############
-    ##VARIABLES##
-    #############
-
-    logger.info("Declaring variables...")
-
+    # Variable definitions
     if flags.out_of_sample_flag:
         set_investments_as_parameters(model)
         load_optimized_investments(model, data, run_config.results_path)
@@ -100,7 +82,7 @@ def run_empire(run_config: EmpireRunConfiguration,
     define_operational_variables(model)
 
 
-    # model parameter preparations
+    # Model parameter preparations
     prep_operational_parameters(model)
     prep_stochastic_parameters(model, operational_input_params)
 
@@ -110,11 +92,7 @@ def run_empire(run_config: EmpireRunConfiguration,
         prep_investment_parameters(model)
 
 
-    ###############
-    ##CONSTRAINTS##
-    ###############
-
-    # constraint defintions
+    # Constraint defintions
     define_investment_constraints(model, flags.north_sea_flag)
     define_operational_constraints(model, logger, flags.emission_cap_flag, include_hydro_node_limit_constraint_flag=True)
 
@@ -126,7 +104,7 @@ def run_empire(run_config: EmpireRunConfiguration,
     else:
         logger.warning("LOPF constraints not activated: %s", lopf_method)
 
-
+    # Objective definition
     define_objective(model)
 
 
