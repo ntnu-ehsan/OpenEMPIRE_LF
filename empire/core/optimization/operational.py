@@ -5,14 +5,6 @@ from empire.core.config import OperationalParams
 
 logger = logging.getLogger(__name__)
 
-def set_scenario_as_parameter(subproblem_model):
-    """Fix scenario for Benders.
-    Need to set parameters like sceProbab to have an index corresponding to the scenario"""
-    sname = "_"
-    subproblem_model.scenarios = Set(initialize=[sname])
-    # subproblem_model.genCapAvailStochRaw[n,g,h,s,i]
-    return 
-
 
 def define_operational_sets(model: AbstractModel, operational_params: OperationalParams):
     # operational sets
@@ -75,7 +67,9 @@ def define_operational_parameters(
     if load_change_module_flag:
         model.sloadMod = Param(model.Node, model.Operationalhour, model.scenarios, model.periods, default=0.0, mutable=True)
 
-    #Stochastic input
+    return 
+
+def define_stochastic_input(model):
     model.sloadRaw = Param(model.Node, model.Operationalhour, model.scenarios, model.periods, default=0.0, mutable=True)
     model.sloadAnnualDemand = Param(model.Node, model.periods, default=0.0, mutable=True)
     model.sload = Param(model.Node, model.Operationalhour, model.periods, model.scenarios, default=0.0, mutable=True)
