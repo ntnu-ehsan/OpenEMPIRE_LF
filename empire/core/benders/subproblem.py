@@ -30,7 +30,7 @@ def define_subproblem(run_config: EmpireRunConfiguration,
                solver_name: str, 
                temp_dir: Path, 
                periods: list[int], 
-               operational_params: OperationalInputParams,
+               operational_input_params: OperationalInputParams,
                investment_params: dict,
                discountrate: float, 
                LeapYearsInvestment: float, 
@@ -51,7 +51,7 @@ def define_subproblem(run_config: EmpireRunConfiguration,
     ########
 
     define_shared_sets(model, periods, flags.north_sea_flag)
-    define_operational_sets(model, operational_params)
+    define_operational_sets(model, operational_input_params)
 
 
     ##############
@@ -64,7 +64,7 @@ def define_subproblem(run_config: EmpireRunConfiguration,
     
     define_shared_parameters(model, discountrate, LeapYearsInvestment)
     # define_investment_parameters(model, wacc)
-    define_operational_parameters(model, operational_params, flags.emission_cap_flag, flags.load_change_module_flag)
+    define_operational_parameters(model, operational_input_params, flags.emission_cap_flag, flags.load_change_module_flag)
 
     #Load the data
 
