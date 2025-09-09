@@ -180,7 +180,7 @@ def prep_operational_parameters(model) -> None:
     return 
 
 
-def prep_stochastic_parameters(instance):
+def derive_stochastic_parameters(instance):
     """Set values for stochastic parameters."""
     def _set_maxRegHydroGen(instance):
         """Assign values to maxRegHydroGen from maxRegHydroGenRaw."""
