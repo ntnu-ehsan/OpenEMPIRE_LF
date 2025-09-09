@@ -13,7 +13,7 @@ from pyomo.environ import (
     Suffix, 
 )
 from .objective import define_objective
-from .operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input
+from .operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input
 from .investment import define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
 from .shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
 from .out_of_sample_functions import set_investments_as_parameters, load_optimized_investments, set_out_of_sample_path
@@ -72,6 +72,7 @@ def run_empire(run_config: EmpireRunConfiguration,
     load_shared_sets(model, data, run_config.tab_file_path, flags.north_sea_flag)
     load_shared_parameters(model, data, run_config.tab_file_path)
     load_operational_parameters(model, data, run_config.tab_file_path, flags.emission_cap_flag, flags.load_change_module_flag, flags.out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
+    load_stochastic_input(model, data, run_config.tab_file_path, flags.out_of_sample_flag, sample_file_path=sample_file_path)
     load_investment_parameters(model, data, run_config.tab_file_path)
 
     # Load electrical data for LOPF if requested (need to split investment and operations!)
