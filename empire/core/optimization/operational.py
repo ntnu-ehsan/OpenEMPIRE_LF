@@ -75,7 +75,7 @@ def define_operational_parameters(
 def define_stochastic_input(model):
     model.sloadRaw = Param(model.periods, model.scenarios, model.Node, model.Operationalhour, default=0.0, mutable=True)
     model.sload = Param(model.periods, model.scenarios, model.Node, model.Operationalhour, default=0.0, mutable=True)
-    model.genCapAvailStochRaw = Param(model.periods, model.scenarios, model.GeneratorsOfNode, model.Operationalhour, default=0.0, mutable=True, within=PercentFraction)
+    model.genCapAvailStochRaw = Param(model.periods, model.scenarios, model.GeneratorsOfNode, model.Operationalhour, default=1., mutable=True, within=PercentFraction)
     model.genCapAvail = Param(model.periods, model.scenarios, model.GeneratorsOfNode, model.Operationalhour, default=0.0, mutable=True, within=PercentFraction)
     model.maxRegHydroGenRaw = Param(model.periods, model.scenarios, model.Node, model.HoursOfSeason, default=0.0, mutable=True)
     model.maxRegHydroGen = Param(model.periods, model.scenarios, model.Node, model.Season, default=0.0, mutable=True)
@@ -180,59 +180,55 @@ def prep_operational_parameters(model) -> None:
     return 
 
 
-def prep_stochastic_parameters(model, operational_input_params):
-    
-    def prepRegHydro_rule(model):
-        #Build hydrolimits for all periods
+def prep_stochastic_parameters(instance):
+    """Set values for stochastic parameters."""
+    def _set_maxRegHydroGen(instance):
+        """Assign values to maxRegHydroGen from maxRegHydroGenRaw."""
+        for n in instance.Node:
+            for s in instance.Season:
+                for i in instance.periods_active:
+                    for w in instance.scenarios:
+                        total = sum(
+                            instance.maxRegHydroGenRaw[i, w, n, s, h]
+                            for h in instance.Operationalhour
+                            if (s, h) in instance.HoursOfSeason
+                        )
+                        instance.maxRegHydroGen[i, w, n, s] = total
+    _set_maxRegHydroGen(instance)
 
-        for n in model.Node:
-            for s in model.Season:
-                for i in model.periods_active:
-                    for w in model.scenarios:
-                        model.maxRegHydroGen[i,w,n,s]=sum(model.maxRegHydroGenRaw[i,w,n,s,h] for h in model.Operationalhour if (s,h) in model.HoursOfSeason)
+    def _set_sload(instance):
+        # Precompute cutoff
+        cutoff = list(instance.FirstHoursOfRegSeason)[-1] + instance.lengthRegSeason
 
-    model.build_maxRegHydroGen = BuildAction(rule=prepRegHydro_rule)
+        for n in instance.Node:
+            for i in instance.periods_active:
+                # Compute probability-weighted raw demand
+                noderawdemand = sum(
+                    instance.sceProbab[w] * instance.seasScale[s] * instance.sloadRaw[i, w, n, h]
+                    for (s, h) in instance.HoursOfSeason
+                    if h < cutoff  # adjust if you want peak hours included
+                    for w in instance.scenarios
+                )
 
-    # Precompute cutoff (last regular season hour)
-    cutoff = list(operational_input_params.FirstHoursOfRegSeason)[-1] + operational_input_params.lengthRegSeason
+                # Scaling factor, safe for zero demand
+                hourlyscale = instance.sloadAnnualDemand[n, i] / noderawdemand
 
-    def prep_sload_rule(model, i, w, n, h):
-        """Compute probability-weighted raw demand for this node and period.
-        ISSUE: Why is the peak period not included? """
-        noderawdemand = sum(
-            model.sceProbab[ws] * model.seasScale[s] * model.sloadRaw[i, ws, n, hh]
-            for (s, hh) in model.HoursOfSeason
-            if hh < cutoff
-            for ws in model.scenarios
-        )
-        hourlyscale = model.sloadAnnualDemand[n, i] / noderawdemand
+                for w in instance.scenarios:
+                    for h in instance.Operationalhour:
+                        instance.sload[i, w, n, h] = instance.sloadRaw[i, w, n, h] * hourlyscale
 
-        # Return scaled load
-        return model.sloadRaw[i, w, n, h] * hourlyscale
+    _set_sload(instance)
 
-    model.sload = Param(
-        model.periods_active,
-        model.scenarios,
-        model.Node,
-        model.Operationalhour,
-        initialize=prep_sload_rule,
-        mutable=True
-    )
-
-
-    def prepGenCapAvail_rule(model):
-        #Build generator availability for all periods
-
-        for (n,g) in model.GeneratorsOfNode:
-            for h in model.Operationalhour:
-                for s in model.scenarios:
-                    for i in model.periods_active:
-                        if value(model.genCapAvailTypeRaw[g]) == 0:
-                            model.genCapAvail[i,s,n,g,h]=model.genCapAvailStochRaw[i,s,n,g,h]
-                        else:
-                            model.genCapAvail[i,s,n,g,h]=model.genCapAvailTypeRaw[g]
-        return 
-    model.build_genCapAvail = BuildAction(rule=prepGenCapAvail_rule)
+    def _set_genCapAvail(instance):
+        """Assign generator availability based on type and stochastic raw availability."""
+        for (n, g) in instance.GeneratorsOfNode:
+            for h in instance.Operationalhour:
+                for s in instance.scenarios:
+                    for i in instance.periods_active:
+                        instance.genCapAvail[i, s, n, g, h] = (
+                            instance.genCapAvailTypeRaw[g] * instance.genCapAvailStochRaw[i, s, n, g, h]
+                        )
+    _set_genCapAvail(instance)
     return 
 
 

@@ -53,7 +53,7 @@ def run_empire(run_config: EmpireRunConfiguration,
     # Parameter definitions
     define_shared_parameters(model, discountrate, LeapYearsInvestment)
     define_investment_parameters(model, wacc)
-    define_operational_parameters(model, operational_input_params, flags.emission_cap_flag, flags.load_change_module_flag)
+    define_operational_parameters(model, operational_input_params, flags.emission_cap_flag)
     define_stochastic_input(model)
 
     # Data loading
@@ -80,11 +80,9 @@ def run_empire(run_config: EmpireRunConfiguration,
         define_investment_variables(model)
 
     define_operational_variables(model)
-
-
     # Model parameter preparations
     prep_operational_parameters(model)
-    prep_stochastic_parameters(model, operational_input_params)
+
 
 
     if not flags.out_of_sample_flag:
@@ -95,6 +93,7 @@ def run_empire(run_config: EmpireRunConfiguration,
     # Constraint defintions
     define_investment_constraints(model, flags.north_sea_flag)
     define_operational_constraints(model, logger, flags.emission_cap_flag, include_hydro_node_limit_constraint_flag=True)
+
 
     if flags.lopf_flag:
         logger.info("LOPF constraints activated using method: %s", lopf_method)
@@ -121,6 +120,9 @@ def run_empire(run_config: EmpireRunConfiguration,
     start = time.time()
 
     instance = model.create_instance(data) #, report_timing=True)
+    prep_stochastic_parameters(instance)
+
+
     instance.dual = Suffix(direction=Suffix.IMPORT) #Make sure the dual value is collected into solver results (if solver supplies dual information)
 
     end = time.time()
