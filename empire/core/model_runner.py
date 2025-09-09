@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 from empire import run_empire
-from empire.core.config import (EmpireConfiguration, EmpireRunConfiguration, OperationalParams, Flags, 
+from empire.core.config import (EmpireConfiguration, EmpireRunConfiguration, OperationalInputParams, Flags, 
                                 read_config_file)
 from empire.core.reader import generate_tab_files
 from empire.core.scenario_random import (check_scenarios_exist_and_copy,
@@ -49,7 +49,7 @@ def define_operational_input_params(empire_config: EmpireConfiguration):
     ]
     HoursOfSeason = HoursOfRegSeason + HoursOfPeakSeason
 
-    operational_params = OperationalParams(
+    operational_input_params = OperationalInputParams(
         Operationalhour=Operationalhour,
         scenarios=scenarios,
         Season=Season,
@@ -59,7 +59,8 @@ def define_operational_input_params(empire_config: EmpireConfiguration):
         lengthRegSeason=empire_config.length_of_regular_season,
         lengthPeakSeason=empire_config.len_peak_season,
     )
-    return operational_params
+
+    return operational_input_params
 
 
 def run_empire_model(
@@ -84,7 +85,7 @@ def run_empire_model(
     ##RUN##
     #######
     periods = [i + 1 for i in range(int((empire_config.forecast_horizon_year - 2020) / empire_config.leap_years_investment))]
-    operational_params = define_operational_input_params(empire_config)
+    operational_input_params = define_operational_input_params(empire_config)
 
 
     with open(run_config.empire_path / "config/countries.json", "r", encoding="utf-8") as file:
@@ -147,7 +148,7 @@ def run_empire_model(
             LeapYearsInvestment=empire_config.leap_years_investment,
             lopf_method=empire_config.LOPF_METHOD,
             lopf_kwargs=getattr(empire_config, "LOPF_KWARGS", {}),
-            operational_params=operational_params,
+            operational_input_params=operational_input_params,
             flags=flags, 
             )
 
