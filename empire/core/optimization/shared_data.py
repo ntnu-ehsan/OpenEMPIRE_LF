@@ -2,9 +2,9 @@
 from pyomo.environ import (Set, Param)
 
 
-def define_shared_sets(model, Period, north_sea_flag):
-    model.Period = Set(ordered=True) #max period
-    model.PeriodActive = Set(ordered=True, initialize=Period) #i
+def define_shared_sets(model, periods, north_sea_flag):
+    model.periods = Set(ordered=True) #max period
+    model.periods_active = Set(ordered=True, initialize=periods) #i
     model.Technology = Set(ordered=True) #t
     model.Generator = Set(ordered=True) #g
     model.Storage =  Set() #b
@@ -55,7 +55,7 @@ def load_shared_sets(model, data, tab_file_path, north_sea_flag):
     data.load(filename=str(tab_file_path / 'Sets_Node.tab'),format="set", set=model.Node)
     if north_sea_flag:
         data.load(filename=str(tab_file_path / 'Sets_OffshoreNode.tab'),format="set", set=model.OffshoreNode)
-    data.load(filename=str(tab_file_path / 'Sets_Horizon.tab'),format="set", set=model.Period)
+    data.load(filename=str(tab_file_path / 'Sets_Horizon.tab'),format="set", set=model.periods)
     data.load(filename=str(tab_file_path / 'Sets_DirectionalLines.tab'),format="set", set=model.DirectionalLink)
     data.load(filename=str(tab_file_path / 'Sets_LineType.tab'),format="set", set=model.TransmissionType)
     data.load(filename=str(tab_file_path / 'Sets_LineTypeOfDirectionalLines.tab'),format="set", set=model.TransmissionTypeOfDirectionalLink)
@@ -64,14 +64,13 @@ def load_shared_sets(model, data, tab_file_path, north_sea_flag):
     data.load(filename=str(tab_file_path / 'Sets_StorageOfNodes.tab'),format="set", set=model.StoragesOfNode)
     return 
 
+
 def define_shared_parameters(model, discountrate, LeapYearsInvestment):
     model.storagePowToEnergy = Param(model.DependentStorage, default=1.0, mutable=True)
-
-    # investment and operations
     model.discountrate = Param(initialize=discountrate) 
     model.LeapYearsInvestment = Param(initialize=LeapYearsInvestment)
-    
     return 
+
 
 def load_shared_parameters(model, data, tab_file_path):
     data.load(filename=str(tab_file_path / 'Storage_StoragePowToEnergy.tab'), param=model.storagePowToEnergy, format="table")
