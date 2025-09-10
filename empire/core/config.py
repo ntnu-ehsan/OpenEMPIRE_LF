@@ -48,7 +48,6 @@ class EmpireConfiguration:
         len_peak_season: int = 24,
         leap_years_investment: int = 5,
         time_format: str = "%d/%m/%Y %H:%M",
-        USE_LOPF: bool = False,
         lopf_flag: bool = False,
         lopf_method: str = "kirchhoff",
         lopf_kwargs: dict | None = None,
