@@ -11,35 +11,28 @@ from pyomo.environ import (
     DataPortal,
     AbstractModel,
     Suffix, 
-    ConstraintList,
     Var,
     NonNegativeReals,
 )
-from .objective import define_objective
-from .investment import define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
-from .shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
-from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
-from .solver import set_solver
+from empire.core.optimization.objective import define_objective
+from empire.core.optimization.investment import define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
+from empire.core.optimization.shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
+from empire.core.optimization.results import write_results, run_operational_model, write_operational_results, write_pre_solve
+from empire.core.optimization.solver import set_solver
 from empire.core.optimization.helpers import pickle_instance, log_problem_statistics, prepare_results_dir, prepare_temp_dir
-from empire.core.config import EmpireRunConfiguration, OperationalInputParams, Flags
+from empire.core.config import EmpireRunConfiguration, EmpireConfiguration
 
 logger = logging.getLogger(__name__)
 
 
-def create_master_problem_instance(run_config: EmpireRunConfiguration,
-               solver_name: str, 
-               temp_dir: Path, 
-               periods: list[int], 
-               operational_params: OperationalInputParams,
-               discountrate: float, 
-               wacc: float,    
-               LeapYearsInvestment: float, 
-               flags: Flags,
-               sample_file_path: Path | None = None,
-               ) -> None | float:
+def create_master_problem_instance(
+        run_config: EmpireRunConfiguration, 
+        empire_config: EmpireConfiguration, 
+        periods: list[int]
+        ) -> None | float:
 
-    prepare_temp_dir(flags, temp_dir, run_config)
-    prepare_results_dir(flags, run_config)
+    prepare_temp_dir(empire_config.use_temporary_directory, temp_dir=empire_config.temporary_directory)
+    prepare_results_dir(run_config)
     
     model = AbstractModel()
 
@@ -48,7 +41,7 @@ def create_master_problem_instance(run_config: EmpireRunConfiguration,
     ##SETS##
     ########
 
-    define_shared_sets(model, periods, flags.north_sea_flag)
+    define_shared_sets(model, periods, empire_config.north_sea_flag)
 
 
     ##############
@@ -59,13 +52,13 @@ def create_master_problem_instance(run_config: EmpireRunConfiguration,
 
     logger.info("Declaring parameters...")
     
-    define_shared_parameters(model, discountrate, LeapYearsInvestment)
-    define_investment_parameters(model, wacc)
+    define_shared_parameters(model, empire_config.discountrate, empire_config.leap_years_investment)
+    define_investment_parameters(model, empire_config.wacc)
 
     #Load the data
 
     data = DataPortal()
-    load_shared_sets(model, data, run_config.tab_file_path, flags.north_sea_flag)
+    load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag)
     load_shared_parameters(model, data, run_config.tab_file_path)
     load_investment_parameters(model, data, run_config.tab_file_path)
 
@@ -88,7 +81,7 @@ def create_master_problem_instance(run_config: EmpireRunConfiguration,
     ###############
 
     # constraint defintions
-    define_investment_constraints(model, flags.north_sea_flag)
+    define_investment_constraints(model, empire_config.north_sea_flag)
 
 
     model.operationalcost = Var(model.periods, model.scenarios, within=NonNegativeReals)
@@ -117,37 +110,48 @@ def create_master_problem_instance(run_config: EmpireRunConfiguration,
 
     #import pdb; pdb.set_trace()
     #instance.CO2price.pprint()
-    if not flags.out_of_sample_flag:	
-        log_problem_statistics(instance, logger)
-        write_pre_solve(
-            instance,
-            run_config.results_path,
-            run_config.run_name,
-            flags.write_lp_flag,
-            flags.use_temp_dir_flag,
-            temp_dir,
-            logger
-        )
+
+    # log_problem_statistics(instance, logger)
+    # write_pre_solve(
+    #     instance,
+    #     run_config.results_path,
+    #     run_config.run_name,
+    #     flags.write_lp_flag,
+    #     flags.use_temp_dir_flag,
+    #     temp_dir,
+    #     logger
+    # )
         
 
     return instance
 
-def solve_master_problem(instance, solver_name, flags, run_config, temp_dir, save_flag=False):
-    opt = set_solver(solver_name, logger)
+def solve_master_problem(instance, empire_config, run_config, save_flag=False):
+    opt = set_solver(empire_config.optimization_solver, logger)
     logger.info("Solving...")
     opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
     if save_flag:
-        if flags.pickle_instance_flag:
-            pickle_instance(instance, run_config.run_name, flags.use_temp_dir_flag, logger, temp_dir)
-                    
+        if empire_config.pickle_instance_flag:
+            pickle_instance(instance, run_config.run_name, empire_config.use_temp_dir_flag, logger, empire_config.temporary_directory)
+
         #instance.display('outputs_gurobi.txt')
 
         #import pdb; pdb.set_trace()
 
-        write_results(instance, run_config.results_path, run_config.run_name, flags.out_of_sample_flag, flags.emission_cap_flag, flags.print_iamc_flag, logger)
+        write_results(instance, run_config.results_path, run_config.run_name, False, empire_config.emission_cap_flag, empire_config.print_iamc_flag, logger)
 
-        if flags.compute_operational_duals_flag and not flags.out_of_sample_flag:
-            run_operational_model(instance, opt, run_config.results_path, run_config.run_name, logger)
-            write_operational_results(instance, run_config.results_path, flags.emission_cap_flag, logger)
     return instance.Obj
 
+
+def extract_capacity_params(mp_instance):
+    """Extract capacity parameters from the master problem instance."""
+    capacity_params = {
+        'genInvCap': {},
+        'storInvCap': {},
+        'lineInvCap': {},
+        'periods_active': list(mp_instance.periods_active)
+    }
+    for period in mp_instance.periods_active:
+        capacity_params['genInvCap'][period] = {g: mp_instance.genInvCap[g, period].value for g in mp_instance.GeneratorsOfNode}
+        capacity_params['storInvCap'][period] = {s: mp_instance.storInvCap[s, period].value for s in mp_instance.StoragesOfNode}
+        capacity_params['lineInvCap'][period] = {l: mp_instance.lineInvCap[l, period].value for l in mp_instance.BidirectionalArc}
+    return capacity_params
