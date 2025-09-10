@@ -82,7 +82,7 @@ def define_stochastic_input(model):
     return 
 
 
-def load_operational_parameters(model, data, tab_file_path, emission_cap_flag, load_change_module_flag, out_of_sample_flag, sample_file_path=None, scenario_data_path=None):
+def load_operational_parameters(model, data, tab_file_path, emission_cap_flag, out_of_sample_flag, sample_file_path=None, scenario_data_path=None):
     # Load operational generator parameters
     data.load(filename=str(tab_file_path / 'Generator_VariableOMCosts.tab'), param=model.genVariableOMCost, format="table")
     data.load(filename=str(tab_file_path / 'Generator_FuelCosts.tab'), param=model.genFuelCost, format="table")
@@ -114,10 +114,6 @@ def load_operational_parameters(model, data, tab_file_path, emission_cap_flag, l
     else:
         data.load(filename=str(tab_file_path / 'General_CO2Price.tab'), param=model.CO2price, format="table")
 
-    logger.info("Constructing parameter values...")
-    if load_change_module_flag:
-        data.load(filename=scenario_data_path / 'LoadchangeModule/Stochastic_ElectricLoadMod.tab', param=model.sloadMod, format="table")
-
     return 
 
 
@@ -140,8 +136,6 @@ def load_stochastic_input(model, data, tab_file_path, out_of_sample_flag=False, 
 
 def prep_operational_parameters(model) -> None:
     """Prepare operational parameters for the model. 
-    load_change_module_flag (bool): Flag indicating if load changes should be considered.
-
 
     """
 
@@ -216,7 +210,7 @@ def derive_stochastic_parameters(instance):
 
                 for w in instance.scenarios:
                     for h in instance.Operationalhour:
-                        instance.sload[i, w, n, h] = instance.sloadRaw[i, w, n, h] * hourlyscale
+                        instance.sload[i, w, n, h] = instance.sloadRaw[i, w, n, h] * hourlyscale 
 
     _set_sload(instance)
 
