@@ -13,7 +13,7 @@ from pyomo.environ import (
     Suffix, 
 )
 from .objective import define_objective
-from .operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, prep_stochastic_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input
+from .operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, derive_stochastic_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input
 from .investment import define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
 from .shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
 from .out_of_sample_functions import set_investments_as_parameters, load_optimized_investments, set_out_of_sample_path
@@ -128,7 +128,7 @@ def run_empire(run_config: EmpireRunConfiguration,
     start = time.time()
 
     instance = model.create_instance(data) #, report_timing=True)
-    prep_stochastic_parameters(instance)
+    derive_stochastic_parameters(instance)
 
 
     instance.dual = Suffix(direction=Suffix.IMPORT) #Make sure the dual value is collected into solver results (if solver supplies dual information)
