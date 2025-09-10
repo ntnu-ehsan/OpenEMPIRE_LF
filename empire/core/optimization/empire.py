@@ -109,6 +109,14 @@ def run_empire(run_config: EmpireRunConfiguration,
 
     #################################################################
 
+    # Data loading
+    data = DataPortal()
+    load_shared_sets(model, data, run_config.tab_file_path, flags.north_sea_flag)
+    load_shared_parameters(model, data, run_config.tab_file_path)
+    load_operational_parameters(model, data, run_config.tab_file_path, flags.emission_cap_flag, flags.load_change_module_flag, flags.out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
+    load_stochastic_input(model, data, run_config.tab_file_path, flags.out_of_sample_flag, sample_file_path=sample_file_path)
+    load_investment_parameters(model, data, run_config.tab_file_path)
+
     #######
     ##RUN##
     #######
