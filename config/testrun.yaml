@@ -38,3 +38,4 @@ LOPF_KWARGS:
   # OR if you only have susceptance:
   # reactance_from_susceptance: true
   # susceptance_param_name: "lineSusceptance"
+use_benders_flag: False

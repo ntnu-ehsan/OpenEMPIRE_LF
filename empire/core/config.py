@@ -52,6 +52,7 @@ class EmpireConfiguration:
         USE_LOPF: bool = False,
         LOPF_METHOD: str = "kirchhoff",
         LOPF_KWARGS: dict | None = None,
+        use_benders_flag: bool = False,
         **kwargs,
     ):
         """
@@ -130,6 +131,9 @@ class EmpireConfiguration:
         self.USE_LOPF = bool(USE_LOPF)
         self.LOPF_METHOD = str(LOPF_METHOD)
         self.LOPF_KWARGS = {} if LOPF_KWARGS is None else dict(LOPF_KWARGS)
+
+        # Benders
+        self.use_benders_flag = use_benders_flag
 
         # Validate the configuration
         self.validate()

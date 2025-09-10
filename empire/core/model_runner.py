@@ -137,18 +137,25 @@ def run_empire_model(
 
     obj_value = None
     if not test_run:
-        obj_value = run_empire(
-            run_config=run_config,
-            empire_config=empire_config,
-            sample_file_path=sample_file_path,
-            periods=periods,
-            operational_input_params=operational_input_params,
-            flags=flags, 
-            )
-        # obj_value = run_benders(
-        #     flags=flags, 
+        if not empire_config.use_benders_flag:
+            obj_value = run_empire(
+                run_config=run_config,
+                empire_config=empire_config,
+                sample_file_path=sample_file_path,
+                periods=periods,
+                operational_input_params=operational_input_params,
+                flags=flags, 
+                )
+        else:
+            obj_value = run_benders(
+                run_config=run_config,
+                empire_config=empire_config,
+                sample_file_path=sample_file_path,
+                periods=periods,
+                operational_input_params=operational_input_params,
+                flags=flags, 
+                )
 
-        # )
 
         
     config_path = run_config.dataset_path / "config.txt"
