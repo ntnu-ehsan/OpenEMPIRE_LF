@@ -21,26 +21,23 @@ from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
 from .solver import set_solver
 from .helpers import pickle_instance, log_problem_statistics, prepare_temp_dir, prepare_results_dir
-from empire.core.config import EmpireRunConfiguration, OperationalInputParams, Flags
+from empire.core.config import EmpireRunConfiguration, OperationalInputParams, Flags, EmpireConfiguration
+from pyomo.opt import TerminationCondition
+import gurobipy as gp
 
 logger = logging.getLogger(__name__)
 
 
-def run_empire(run_config: EmpireRunConfiguration,
-               solver_name: str, 
-               temp_dir: Path, 
-               periods: list[int], 
-               operational_input_params: OperationalInputParams,
-               discountrate: float, 
-               wacc: float,    
-               LeapYearsInvestment: float, 
-               flags: Flags,
-               sample_file_path: Path | None = None,
-               lopf_method: str = LOPFMethod.KIRCHHOFF, 
-               lopf_kwargs: dict | None = None
-               ) -> None | float:
+def run_empire(
+        run_config: EmpireRunConfiguration,
+        empire_config: EmpireConfiguration,
+        periods: list[int], 
+        operational_input_params: OperationalInputParams,
+        flags: Flags,
+        sample_file_path: Path | None = None,
+        ) -> None | float:
 
-    prepare_temp_dir(flags, temp_dir, run_config)
+    prepare_temp_dir(flags, empire_config.temporary_directory, run_config)
     prepare_results_dir(flags, run_config)
 
     model = AbstractModel()
@@ -51,8 +48,8 @@ def run_empire(run_config: EmpireRunConfiguration,
 
 
     # Parameter definitions
-    define_shared_parameters(model, discountrate, LeapYearsInvestment)
-    define_investment_parameters(model, wacc)
+    define_shared_parameters(model, empire_config.discount_rate, empire_config.leap_years_investment)
+    define_investment_parameters(model, empire_config.wacc)
     define_operational_parameters(model, operational_input_params, flags.emission_cap_flag)
     define_stochastic_input(model)
 
@@ -66,7 +63,7 @@ def run_empire(run_config: EmpireRunConfiguration,
 
     # Load electrical data for LOPF if requested (need to split investment and operations!)
     if flags.lopf_flag:
-        load_line_parameters(model, run_config.tab_file_path, data, lopf_kwargs, logger)
+        load_line_parameters(model, run_config.tab_file_path, data, empire_config.LOPF_KWARGS, logger)
 
 
     # Variable definitions
@@ -96,12 +93,14 @@ def run_empire(run_config: EmpireRunConfiguration,
 
 
     if flags.lopf_flag:
-        logger.info("LOPF constraints activated using method: %s", lopf_method)
+        logger.info("LOPF constraints activated using method: %s", empire_config.LOPF_METHOD)
         from .lopf_module import add_lopf_constraints
-        kw = {} if lopf_kwargs is None else dict(lopf_kwargs)
-        add_lopf_constraints(model, method=lopf_method, **kw)
+        kw = {} if empire_config.LOPF_KWARGS is None else dict(empire_config.LOPF_KWARGS)
+        add_lopf_constraints(model, method=empire_config.LOPF_METHOD, **kw)
     else:
-        logger.warning("LOPF constraints not activated: %s", lopf_method)
+        logger.info("LOPF constraints not activated.")
+
+
 
     # Objective definition
     define_objective(model)
@@ -146,15 +145,41 @@ def run_empire(run_config: EmpireRunConfiguration,
             run_config.run_name,
             flags.write_lp_flag,
             flags.use_temp_dir_flag,
-            temp_dir,
+            empire_config.temporary_directory,
             logger
         )
-        
 
-    opt = set_solver(solver_name, logger)
+
+    opt = set_solver(empire_config.optimization_solver, logger)
     logger.info("Solving...")
-    opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
+    results = opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
+    # breakpoint()
+    # if results.solver.termination_condition == TerminationCondition.infeasible:
+    #      lp_filename = "subproblem.lp"
+    #      gurobi_model = gp.read(lp_filename)
+    #      gurobi_model.setParam("Method", 1)  # Ensure Dual Simplex is used
+    #      gurobi_model.setParam("InfUnbdInfo", 1)  # Enable infeasibility certificate
+    #      gurobi_model.setParam("DualReductions", 0)  # Ensure extreme ray is available
+    #      gurobi_model.setParam("PreSolve", 0)   # Disable preprocessing
+    #      gurobi_model.optimize()
 
+    # # Find dual extreme points
+    # print('Dual extreme points:')
+    # dual_values = gurobi_model.getAttr("Pi", gurobi_model.getConstrs())
+    # for constr, dual_value in zip(gurobi_model.getConstrs(), dual_values):
+    #      print(constr, dual_value)
+     
+    # # Find dual extreme rays
+    # print('Dual extreme rays:')
+    # for constr in gurobi_model.getConstrs():
+    #     farkas_dual = constr.getAttr("FarkasDual")
+    #     print(constr, farkas_dual)
+
+
+    post_process(instance, run_config, flags, empire_config.temporary_directory, opt, logger)  
+
+
+def post_process(instance, run_config, flags, temp_dir, opt, logger):
     if flags.pickle_instance_flag:
         pickle_instance(instance, run_config.run_name, flags.use_temp_dir_flag, logger, temp_dir)
                 
@@ -167,5 +192,6 @@ def run_empire(run_config: EmpireRunConfiguration,
     if flags.compute_operational_duals_flag and not flags.out_of_sample_flag:
         run_operational_model(instance, opt, run_config.results_path, run_config.run_name, logger)
         write_operational_results(instance, run_config.results_path, flags.emission_cap_flag, logger)
+    return 
 
 

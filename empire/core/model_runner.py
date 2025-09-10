@@ -139,19 +139,18 @@ def run_empire_model(
     if not test_run:
         obj_value = run_empire(
             run_config=run_config,
+            empire_config=empire_config,
             sample_file_path=sample_file_path,
-            solver_name=empire_config.optimization_solver,
-            temp_dir=empire_config.temporary_directory,
             periods=periods,
-            discountrate=empire_config.discount_rate,
-            wacc=empire_config.wacc,
-            LeapYearsInvestment=empire_config.leap_years_investment,
-            lopf_method=empire_config.LOPF_METHOD,
-            lopf_kwargs=getattr(empire_config, "LOPF_KWARGS", {}),
             operational_input_params=operational_input_params,
             flags=flags, 
             )
+        # obj_value = run_benders(
+        #     flags=flags, 
 
+        # )
+
+        
     config_path = run_config.dataset_path / "config.txt"
     logger.info("Writing config to: %s", config_path)
     with open(config_path, "w", encoding="utf-8") as file:
