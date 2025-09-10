@@ -211,7 +211,8 @@ def derive_stochastic_parameters(instance):
                 )
 
                 # Scaling factor, safe for zero demand
-                hourlyscale = instance.sloadAnnualDemand[n, i] / noderawdemand
+                
+                hourlyscale = instance.sloadAnnualDemand[n, i] / noderawdemand if value(noderawdemand) != 0 else 0
 
                 for w in instance.scenarios:
                     for h in instance.Operationalhour:
