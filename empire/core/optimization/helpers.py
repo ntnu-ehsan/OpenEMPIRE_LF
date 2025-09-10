@@ -53,10 +53,10 @@ def pickle_instance(
     return 
 
 
-def prepare_temp_dir(flags, temp_dir, run_config):
-    if flags.use_temp_dir_flag:
+def prepare_temp_dir(use_temp_dir_flag, temp_dir):
+    if use_temp_dir_flag:
         TempfileManager.tempdir = temp_dir
 
-def prepare_results_dir(flags, run_config):
+def prepare_results_dir(run_config):
     if not os.path.exists(run_config.results_path):
         os.makedirs(run_config.results_path)

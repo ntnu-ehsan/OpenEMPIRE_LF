@@ -21,7 +21,7 @@ from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
 from .solver import set_solver
 from .helpers import pickle_instance, log_problem_statistics, prepare_temp_dir, prepare_results_dir
-from empire.core.config import EmpireRunConfiguration, OperationalInputParams, Flags, EmpireConfiguration
+from empire.core.config import EmpireRunConfiguration, OperationalInputParams, EmpireConfiguration
 from pyomo.opt import TerminationCondition
 import gurobipy as gp
 
@@ -33,41 +33,41 @@ def run_empire(
         empire_config: EmpireConfiguration,
         periods: list[int], 
         operational_input_params: OperationalInputParams,
-        flags: Flags,
+        out_of_sample_flag: bool = False,
         sample_file_path: Path | None = None,
         ) -> None | float:
 
-    prepare_temp_dir(flags, empire_config.temporary_directory, run_config)
-    prepare_results_dir(flags, run_config)
+    prepare_temp_dir(empire_config.use_temporary_directory, temp_dir=empire_config.temporary_directory)
+    prepare_results_dir(run_config)
 
     model = AbstractModel()
     
     # Set definitions
-    define_shared_sets(model, periods, flags.north_sea_flag)
+    define_shared_sets(model, periods, empire_config.north_sea_flag)
     define_operational_sets(model, operational_input_params)
 
 
     # Parameter definitions
     define_shared_parameters(model, empire_config.discount_rate, empire_config.leap_years_investment)
     define_investment_parameters(model, empire_config.wacc)
-    define_operational_parameters(model, operational_input_params, flags.emission_cap_flag)
+    define_operational_parameters(model, operational_input_params, empire_config.emission_cap_flag)
     define_stochastic_input(model)
 
     # Data loading
     data = DataPortal()
-    load_shared_sets(model, data, run_config.tab_file_path, flags.north_sea_flag)
+    load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag)
     load_shared_parameters(model, data, run_config.tab_file_path)
-    load_operational_parameters(model, data, run_config.tab_file_path, flags.emission_cap_flag, flags.load_change_module_flag, flags.out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
-    load_stochastic_input(model, data, run_config.tab_file_path, flags.out_of_sample_flag, sample_file_path=sample_file_path)
+    load_operational_parameters(model, data, run_config.tab_file_path, empire_config.emission_cap_flag, out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
+    load_stochastic_input(model, data, run_config.tab_file_path, out_of_sample_flag, sample_file_path=sample_file_path)
     load_investment_parameters(model, data, run_config.tab_file_path)
 
     # Load electrical data for LOPF if requested (need to split investment and operations!)
-    if flags.lopf_flag:
-        load_line_parameters(model, run_config.tab_file_path, data, empire_config.LOPF_KWARGS, logger)
+    if empire_config.lopf_flag:
+        load_line_parameters(model, run_config.tab_file_path, data, empire_config.lopf_kwargs, logger)
 
 
     # Variable definitions
-    if flags.out_of_sample_flag:
+    if out_of_sample_flag:
         set_investments_as_parameters(model)
         load_optimized_investments(model, data, run_config.results_path)
         results_path = set_out_of_sample_path(run_config.results_path, sample_file_path)
@@ -82,21 +82,21 @@ def run_empire(
 
 
 
-    if not flags.out_of_sample_flag:
+    if not out_of_sample_flag:
         # All constraints exclusively for investment decisions inactive when out_of_sample_flag
         prep_investment_parameters(model)
 
 
     # Constraint defintions
-    define_investment_constraints(model, flags.north_sea_flag)
-    define_operational_constraints(model, logger, flags.emission_cap_flag, include_hydro_node_limit_constraint_flag=True)
+    define_investment_constraints(model, empire_config.north_sea_flag)
+    define_operational_constraints(model, logger, empire_config.emission_cap_flag, include_hydro_node_limit_constraint_flag=True)
 
 
-    if flags.lopf_flag:
-        logger.info("LOPF constraints activated using method: %s", empire_config.LOPF_METHOD)
+    if empire_config.lopf_flag:
+        logger.info("LOPF constraints activated using method: %s", empire_config.lopf_method)
         from .lopf_module import add_lopf_constraints
-        kw = {} if empire_config.LOPF_KWARGS is None else dict(empire_config.LOPF_KWARGS)
-        add_lopf_constraints(model, method=empire_config.LOPF_METHOD, **kw)
+        kw = {} if empire_config.lopf_kwargs is None else dict(empire_config.lopf_kwargs)
+        add_lopf_constraints(model, method=empire_config.lopf_method, **kw)
     else:
         logger.info("LOPF constraints not activated.")
 
@@ -110,10 +110,10 @@ def run_empire(
 
     # Data loading
     data = DataPortal()
-    load_shared_sets(model, data, run_config.tab_file_path, flags.north_sea_flag)
+    load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag)
     load_shared_parameters(model, data, run_config.tab_file_path)
-    load_operational_parameters(model, data, run_config.tab_file_path, flags.emission_cap_flag, flags.load_change_module_flag, flags.out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
-    load_stochastic_input(model, data, run_config.tab_file_path, flags.out_of_sample_flag, sample_file_path=sample_file_path)
+    load_operational_parameters(model, data, run_config.tab_file_path, empire_config.emission_cap_flag, out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
+    load_stochastic_input(model, data, run_config.tab_file_path, out_of_sample_flag, sample_file_path=sample_file_path)
     load_investment_parameters(model, data, run_config.tab_file_path)
 
     #######
@@ -137,14 +137,14 @@ def run_empire(
 
     #import pdb; pdb.set_trace()
     #instance.CO2price.pprint()
-    if not flags.out_of_sample_flag:	
+    if not out_of_sample_flag:	
         log_problem_statistics(instance, logger)
         write_pre_solve(
             instance,
             run_config.results_path,
             run_config.run_name,
-            flags.write_lp_flag,
-            flags.use_temp_dir_flag,
+            empire_config.write_in_lp_format,
+            empire_config.use_temporary_directory,
             empire_config.temporary_directory,
             logger
         )
@@ -176,22 +176,22 @@ def run_empire(
     #     print(constr, farkas_dual)
 
 
-    post_process(instance, run_config, flags, empire_config.temporary_directory, opt, logger)  
+    post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag)  
 
 
-def post_process(instance, run_config, flags, temp_dir, opt, logger):
-    if flags.pickle_instance_flag:
-        pickle_instance(instance, run_config.run_name, flags.use_temp_dir_flag, logger, temp_dir)
-                
+def post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag):
+    if empire_config.pickle_instance_flag:
+        pickle_instance(instance, run_config.run_name, empire_config.use_temporary_directory, logger, empire_config.temporary_directory)
+
     #instance.display('outputs_gurobi.txt')
 
     #import pdb; pdb.set_trace()
 
-    write_results(instance, run_config.results_path, run_config.run_name, flags.out_of_sample_flag, flags.emission_cap_flag, flags.print_iamc_flag, logger)
+    write_results(instance, run_config.results_path, run_config.run_name, out_of_sample_flag, empire_config.emission_cap_flag, empire_config.print_iamc_flag, logger)
 
-    if flags.compute_operational_duals_flag and not flags.out_of_sample_flag:
+    if empire_config.compute_operational_duals_flag and not out_of_sample_flag:
         run_operational_model(instance, opt, run_config.results_path, run_config.run_name, logger)
-        write_operational_results(instance, run_config.results_path, flags.emission_cap_flag, logger)
-    return 
+        write_operational_results(instance, run_config.results_path, empire_config.emission_cap_flag, logger)
+    return
 
 

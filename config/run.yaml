@@ -12,6 +12,7 @@ optimization_solver: "Gurobi"                          # Mathematical solver use
 use_scenario_generation: False                         # Indicates if scenarios should be generated dynamically
 use_fixed_sample: True                                 # Specifies if fixed scenario samples should be used
 load_change_module: False                              # DEPRICATED
+use_fixed_sample: False                                # Specifies if fixed scenario samples should be used
 filter_make : False                                    #
 filter_use : False                                     #
 copula_clusters_make: False                            # Make copula clusters (for copula-strata SGR)
@@ -21,11 +22,22 @@ n_cluster : 10                                         #
 moment_matching : False                                #
 n_tree_compare : 20                                    # Number of trees to compare for moment matching and copula-sampling
 use_emission_cap: True                                 # Indicates if there's a cap on CO2 emissions
+emission_cap_flag: True                                 # Indicates if there's a cap on CO2 emissions
 compute_operational_duals: True                        # Resolve empire with fixed investment variables and write new duals
-print_in_iamc_format: False                            # Output should be printed in a IAMC-compatible format
+print_iamc_flag: False                            # Output should be printed in a IAMC-compatible format
 write_in_lp_format: False                              # Problem should be written in Linear Programming format
 serialize_instance: False                              # Serialize the data structure or model for later use
-north_sea: True                                        # Whether the north sea is modelled or not
-leap_years_investment: 5                               # Number of years per period (default: 5)
+north_sea_flag: True                                        # Whether the north sea is modelled or not
+leap_years_investment: 10                               # Number of years per period (default: 5)
 time_format: "%d/%m/%Y %H:%M"                          # Time format for scenario data files
-use_benders_flag: False                                # Whether to use Benders decompsition 
+
+  couple_to_existing_flows: false
+  # existing_flow_candidates: ["transmisionOperational"]
+  reactance_param_name: "lineReactance"   # <— matches your .tab
+  reactance_from_susceptance: false       # we’re providing reactance directly
+  # OR if you only have susceptance:
+  # reactance_from_susceptance: true
+  # susceptance_param_name: "lineSusceptance"
+
+benders_flag: False                                # Whether to use Benders decompsition 
+max_benders_iterations: 10
