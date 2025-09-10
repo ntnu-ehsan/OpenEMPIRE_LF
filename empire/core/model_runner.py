@@ -5,6 +5,7 @@ from pathlib import Path
 
 from empire import run_empire
 from empire.core.config import (EmpireConfiguration, EmpireRunConfiguration, OperationalInputParams, Flags, 
+from empire.core.config import (EmpireConfiguration, EmpireRunConfiguration, OperationalInputParams,
                                 read_config_file)
 from empire.core.reader import generate_tab_files
 from empire.core.scenario_random import (check_scenarios_exist_and_copy,
@@ -12,6 +13,7 @@ from empire.core.scenario_random import (check_scenarios_exist_and_copy,
 from empire.input_data_manager import IDataManager
 from empire.utils import (copy_dataset, copy_scenario_data,
                           create_if_not_exist, get_run_name)
+from empire.core.benders.algorithm import run_benders
 logger = logging.getLogger(__name__)
 
 
@@ -94,25 +96,11 @@ def run_empire_model(
     logger.info("++++++++")
     logger.info("+EMPIRE+")
     logger.info("++++++++")
-    logger.info("Load Change Module: %s", str(empire_config.load_change_module))
     logger.info("Solver: %s", empire_config.optimization_solver)
     logger.info("Scenario Generation: %s", str(empire_config.use_scenario_generation))
     logger.info("++++++++")
     logger.info("ID: %s", run_config.run_name)
     logger.info("++++++++")
-
-    flags = Flags(
-        print_iamc_flag=empire_config.print_in_iamc_format,
-        write_lp_flag=empire_config.write_in_lp_format,
-        pickle_instance_flag=empire_config.serialize_instance,
-        emission_cap_flag=empire_config.use_emission_cap,
-        use_temp_dir_flag=empire_config.use_temporary_directory,
-        load_change_module_flag=empire_config.load_change_module,
-        compute_operational_duals_flag=empire_config.compute_operational_duals,
-        north_sea_flag=empire_config.north_sea,
-        out_of_sample_flag=OUT_OF_SAMPLE,
-        lopf_flag=empire_config.USE_LOPF,
-    )
 
     if empire_config.use_scenario_generation:
         if empire_config.use_fixed_sample and not (run_config.scenario_data_path / "sampling_key.csv").exists():
@@ -137,15 +125,15 @@ def run_empire_model(
 
     obj_value = None
     if not test_run:
-        if not empire_config.use_benders_flag:
+        if not empire_config.benders_flag:
             obj_value = run_empire(
                 run_config=run_config,
                 empire_config=empire_config,
-                sample_file_path=sample_file_path,
                 periods=periods,
                 operational_input_params=operational_input_params,
-                flags=flags, 
-                )
+                sample_file_path=sample_file_path,
+                out_of_sample_flag=False,
+            )
         else:
             obj_value = run_benders(
                 run_config=run_config,
@@ -153,7 +141,6 @@ def run_empire_model(
                 sample_file_path=sample_file_path,
                 periods=periods,
                 operational_input_params=operational_input_params,
-                flags=flags, 
                 )
 
 
