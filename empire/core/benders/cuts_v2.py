@@ -121,7 +121,7 @@ def define_cut_structure(subproblem_instance, i, w):
             if g in subproblem_instance.RegHydroGenerator
             for s in subproblem_instance.Season],
         capacity_var_name="genInstalledCap",
-        capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[2], idx[3]),  # n, g, s, i
+        capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, g, i
     ),
     CapacityVariableHandler(
         constraint_name="transmission_cap",

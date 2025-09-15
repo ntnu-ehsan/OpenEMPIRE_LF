@@ -4,18 +4,18 @@ from pathlib import Path
 from pyomo.environ import AbstractModel, ConstraintList, value
 
 from empire.core.config import OperationalInputParams, EmpireConfiguration, EmpireRunConfiguration
-from .master_problem import create_master_problem_instance, solve_master_problem, extract_capacity_params
-from .subproblem import create_subproblem_model, solve_subproblem, create_subproblem_instance, set_scenario_and_period_as_parameter
+from .master_problem import create_master_problem_instance, solve_master_problem, extract_capacity_params, define_initial_capacity_params
+from .subproblem import create_subproblem_model, solve_subproblem, create_subproblem_instance, load_data, set_scenario_and_period_as_parameter
 from .cuts_v2 import define_cut_structure, CapacityVariableHandler
-from empire.core.optimization.operational import load_stochastic_input, derive_stochastic_parameters, prep_operational_parameters
-
+from empire.core.optimization.operational import load_stochastic_input, derive_stochastic_parameters, prep_operational_parameters, define_operational_parameters, define_period_and_scenario_dependent_parameters, define_stochastic_input
+from empire.core.optimization.shared_data import define_shared_parameters
 logger = logging.getLogger(__name__)
 
 def run_benders(
     run_config: EmpireRunConfiguration,
     empire_config: EmpireConfiguration,
     operational_input_params: OperationalInputParams,
-    capacity_params_init: dict,
+    capacity_params_init: None | dict,
     periods: list[int],
     tab_file_path: Path,
     sample_file_path: Path | None = None,
@@ -58,10 +58,14 @@ def run_benders(
     # solve_master_problem(mp_instance, empire_config.optimization_solver, flags, run_config, empire_config.temporary_directory, save_flag=False)
     logger.info("Creating Benders subproblem model...")
 
-    dummy_scenario = [operational_input_params.scenarios[0]]
-    dummy_period = [periods[0]]
-    capacity_params = capacity_params_init
-    sp_model, data = create_subproblem_model(run_config, empire_config.optimization_solver, run_config.temporary_directory, dummy_period, dummy_scenario, capacity_params, empire_config.discount_rate, empire_config.leap_years_investment, sample_file_path, lopf_method=empire_config.lopf_method, lopf_kwargs=empire_config.LOPF_KWARGS)
+    dummy_scenario = operational_input_params.scenarios[0]
+    dummy_period = periods[0]
+    if capacity_params_init is None:
+        capacity_params = define_initial_capacity_params(mp_instance)
+    else:
+        capacity_params = capacity_params_init
+
+    sp_model = create_subproblem_model(run_config, empire_config, dummy_period, dummy_scenario, operational_input_params)
 
 
 
@@ -75,23 +79,24 @@ def run_benders(
     for iteration in range(empire_config.max_benders_iterations):
         logger.info("Benders iteration %d", iteration + 1)
         for i in periods:
+            
             cut = create_cut(
                 mp_instance, 
                 capacity_params, 
                 sp_model, 
-                data,
                 i,
                 operational_input_params.scenarios,
                 tab_file_path,
-                operational_input_params,
                 empire_config,
-                run_config
+                run_config,
+                operational_input_params,
+                capacity_params
             )
 
             mp_instance.cut_constraints.add(expr=cut)
 
         opt_mp, mp_objective = solve_master_problem(mp_instance, run_config, save_flag=False)
-        capacity_params = extract_capacity_params(opt_mp)
+        capacity_params = extract_capacity_params(mp_instance)
 
         if np.isclose(mp_objective, last_mp_obj):
             logger.info("Benders converged.")
@@ -103,11 +108,69 @@ def run_benders(
         
 
 
+def create_cut(
+        master_instance, 
+        old_capacities, 
+        sp_model, 
+        period_active: int,
+        scenarios: list[str],
+        tab_file_path: Path,
+        empire_config,
+        run_config,
+        operational_input_params: OperationalInputParams,
+        capacity_params: dict,
+        ):
+
+    expr = 0 
+    scenario_output_data = {}
+    scenario_objectives = {}
+    cut_data = {}
+    for w in scenarios:
+        cut_data[w] = {}
+        sp_model = create_subproblem_model(run_config, empire_config, period_active, w, operational_input_params)
+        
+        # set_scenario_and_period_as_parameter(sp_model, period_active, w)
+        # 
+        # define_shared_parameters(sp_model, empire_config.discount_rate, empire_config.leap_years_investment)  # should not be needed preferably. 
+        # define_stochastic_input(sp_model)
+        data = load_data(sp_model, run_config, empire_config, period_active, w, capacity_params, out_of_sample_flag=False)  # DUPLICATE? 
+
+        sp_instance, opt = solve_sp(
+            sp_model,
+            period_active,
+            w,
+            data,
+            tab_file_path,
+            old_capacities,
+            empire_config,
+            run_config
+            )
+        cut_structure: list[CapacityVariableHandler] = define_cut_structure(sp_instance, period_active, w)
+
+        for capacity_variable_handler in cut_structure:
+            cut_data[w][capacity_variable_handler.capacity_var_name] = capacity_variable_handler.extract_data(sp_instance)
+
+        scenario_objectives[w] = value(sp_instance.Obj)
+        
+    # can pickle capacity data and cut structure here if needed
+    expr = sum(scenario_objectives[w] for w in scenarios)
+    for w in scenarios:
+        for capacity_variable_name, (duals, coefficients, variable_inds) in cut_data[w].items():
+            for dual, coeff, var_inds in zip(duals.values(), coefficients.values(), variable_inds.values()):  # loops over all tuples of constraint indices
+                expr += dual * coeff * (
+                    getattr(master_instance, capacity_variable_name)[var_inds] 
+                    - 
+                    value(old_capacities.get(capacity_variable_name)[var_inds])
+                )
+        
+
+    return master_instance.theta[period_active] >= expr
+
 
 def solve_sp(
     sp_model,
-    w,
-    i,
+    period_active,
+    scenario,
     data,
     tab_file_path,
     capacity_params,
@@ -115,65 +178,18 @@ def solve_sp(
     run_config
     ):
 
-    set_scenario_and_period_as_parameter(sp_model, w, i)
 
     # set_stochastic_input_subproblem(sp_instance, scenario_data[w], i)
-    load_stochastic_input(sp_model, data, tab_file_path)
+    
+    # load_stochastic_input(sp_model, data, tab_file_path)  # DUPLICATE? 
     
     sp_instance = create_subproblem_instance(sp_model, data)
+    # set_investment_values(sp_instance, capacity_params, period_active)
     derive_stochastic_parameters(sp_instance)
 
     opt = solve_subproblem(sp_instance, empire_config.optimization_solver, run_config, capacity_params)
     return sp_instance, opt
 
-
-def create_cut(
-        master_instance, 
-        old_capacities, 
-        sp_model, 
-        data,
-        period_active: int,
-        scenarios: list[str],
-        tab_file_path: Path,
-        operational_input_params,
-        empire_config,
-        run_config
-        ):
-
-    expr = 0 
-    scenario_output_data = {}
-    scenario_objectives = {}
-    for w in scenarios:
-        sp_instance, opt = solve_sp(
-            sp_model,
-            w,
-            period_active,
-            data,
-            tab_file_path,
-            old_capacities,
-            empire_config,
-            run_config
-        )
-        cut_structure: list[CapacityVariableHandler] = define_cut_structure(sp_instance, period_active, w)
-        capacity_data = {}
-        for capacity_variable_handler in cut_structure:
-            capacity_data[capacity_variable_handler.capacity_var_name] = capacity_variable_handler.extract_data(sp_instance)
-
-        scenario_objectives[w] = value(sp_instance.Obj)
-        
-    # can pickle capacity data and cut structure here if needed
-    expr = sum(scenario_objectives[w] for w in scenarios)
-    for w in scenarios:
-        for capacity_variable_name, (duals, coefficients, variable_inds) in scenario_output_data[w].items():
-            for dual, coeff, var_inds in zip(duals.values(), coefficients.values(), variable_inds.values()):  # loops over all tuples of constraint indices 
-                expr += dual * coeff * (
-                    getattr(master_instance, capacity_variable_name)[var_inds] 
-                    - 
-                    value(getattr(old_capacities, capacity_variable_name)[var_inds])
-                )
-        
-
-    return master_instance.theta[period_active] >= expr
 
 def load_scenario_data(data, scenario) -> dict:
     pass

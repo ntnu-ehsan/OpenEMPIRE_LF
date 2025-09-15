@@ -13,8 +13,11 @@ from pyomo.environ import (
     Suffix, 
     Var,
     NonNegativeReals,
+    Objective,
+    minimize,
+    Expression,
 )
-from empire.core.optimization.objective import define_objective
+from empire.core.optimization.objective import investment_obj, multiplier_rule
 from empire.core.optimization.investment import define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
 from empire.core.optimization.shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
 from empire.core.optimization.results import write_results, run_operational_model, write_operational_results, write_pre_solve
@@ -28,7 +31,7 @@ logger = logging.getLogger(__name__)
 def create_master_problem_instance(
         run_config: EmpireRunConfiguration, 
         empire_config: EmpireConfiguration, 
-        periods: list[int]
+        Period: list[int]
         ) -> None | float:
 
     prepare_temp_dir(empire_config.use_temporary_directory, temp_dir=empire_config.temporary_directory)
@@ -41,7 +44,7 @@ def create_master_problem_instance(
     ##SETS##
     ########
 
-    define_shared_sets(model, periods, empire_config.north_sea_flag)
+    define_shared_sets(model, Period, empire_config.north_sea_flag)
 
 
     ##############
@@ -52,7 +55,7 @@ def create_master_problem_instance(
 
     logger.info("Declaring parameters...")
     
-    define_shared_parameters(model, empire_config.discountrate, empire_config.leap_years_investment)
+    define_shared_parameters(model, empire_config.discount_rate, empire_config.leap_years_investment)
     define_investment_parameters(model, empire_config.wacc)
 
     #Load the data
@@ -83,11 +86,16 @@ def create_master_problem_instance(
     # constraint defintions
     define_investment_constraints(model, empire_config.north_sea_flag)
 
+    
+    model.theta = Var(model.Period, within=NonNegativeReals)
+    
+    model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)
 
-    model.operationalcost = Var(model.periods, model.scenarios, within=NonNegativeReals)
+    def Obj_rule(model):
+        return investment_obj(model) + \
+            sum(model.theta[i] for i in model.PeriodActive)
 
-
-    define_objective(model)
+    model.Obj = Objective(rule=Obj_rule, sense=minimize)
 
 
     #################################################################
@@ -125,7 +133,7 @@ def create_master_problem_instance(
 
     return instance
 
-def solve_master_problem(instance, empire_config, run_config, save_flag=False):
+def solve_master_problem(instance, empire_config: EmpireConfiguration, run_config: EmpireRunConfiguration, save_flag=False):
     opt = set_solver(empire_config.optimization_solver, logger)
     logger.info("Solving...")
     opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
@@ -142,16 +150,34 @@ def solve_master_problem(instance, empire_config, run_config, save_flag=False):
     return instance.Obj
 
 
+CAPACITY_VARS = [
+    'genInstalledCap',  # n,g,i
+    'transmissionInstalledCap',  # (n1,n2), i
+    'storPWInstalledCap',  # n,b,i
+    'storENInstalledCap'  # n,b,i
+]
 def extract_capacity_params(mp_instance):
     """Extract capacity parameters from the master problem instance."""
     capacity_params = {
-        'genInvCap': {},
-        'storInvCap': {},
-        'lineInvCap': {},
-        'periods_active': list(mp_instance.periods_active)
+        var: {} for var in CAPACITY_VARS
     }
-    for period in mp_instance.periods_active:
-        capacity_params['genInvCap'][period] = {g: mp_instance.genInvCap[g, period].value for g in mp_instance.GeneratorsOfNode}
-        capacity_params['storInvCap'][period] = {s: mp_instance.storInvCap[s, period].value for s in mp_instance.StoragesOfNode}
-        capacity_params['lineInvCap'][period] = {l: mp_instance.lineInvCap[l, period].value for l in mp_instance.BidirectionalArc}
+    for period in mp_instance.PeriodActive:
+        capacity_params['genInstalledCap'][period] = {(*ng, period): mp_instance.genInstalledCap[ng, period].value for ng in mp_instance.GeneratorsOfNode}
+        capacity_params['storENInstalledCap'][period] = {(*nb, period): mp_instance.storENInstalledCap[nb, period].value for nb in mp_instance.StoragesOfNode}
+        capacity_params['storPWInstalledCap'][period] = {(*nb, period): mp_instance.storPWInstalledCap[nb, period].value for nb in mp_instance.StoragesOfNode}
+        capacity_params['transmissionInstalledCap'][period] = {(line_pair, period): mp_instance.transmissionInstalledCap[line_pair, period].value for line_pair in mp_instance.BidirectionalArc}
+    return capacity_params
+
+
+def define_initial_capacity_params(mp_instance):
+    ## set all capacities to zero
+    capacity_params = {
+        var: {} for var in CAPACITY_VARS
+    }
+    for period in mp_instance.PeriodActive:
+        capacity_params['genInstalledCap'][period] = {(*ng, period): 0 for ng in mp_instance.GeneratorsOfNode}
+        capacity_params['storENInstalledCap'][period] = {(*nb, period): 0 for nb in mp_instance.StoragesOfNode}
+        capacity_params['storPWInstalledCap'][period] = {(*nb, period): 0 for nb in mp_instance.StoragesOfNode}
+        capacity_params['transmissionInstalledCap'][period] = {(line_pair, period): 0 for line_pair in mp_instance.BidirectionalArc}
+
     return capacity_params
