@@ -18,7 +18,7 @@ def log_problem_statistics(instance, logger):
     logger.info("StorageTypes: %s", len(instance.Storage))
     logger.info("TotalStorages: %s", len(instance.StoragesOfNode))
     logger.info("")
-    logger.info("InvestmentUntil: %s", value(2020+int(len(instance.periods_active)*instance.LeapYearsInvestment.value)))
+    logger.info("InvestmentUntil: %s", value(2020+int(len(instance.PeriodActive)*instance.LeapYearsInvestment.value)))
     logger.info("Scenarios: %s", len(instance.scenarios))
     logger.info("TotalOperationalHoursPerscenarios: %s", len(instance.Operationalhour))
     logger.info("TotalOperationalHoursPerInvYear: %s", len(instance.Operationalhour)*len(instance.scenarios))

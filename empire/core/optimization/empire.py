@@ -13,7 +13,7 @@ from pyomo.environ import (
     Suffix, 
 )
 from .objective import define_objective
-from .operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, derive_stochastic_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input
+from .operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, derive_stochastic_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input, define_period_and_scenario_dependent_parameters
 from .investment import define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
 from .shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
 from .out_of_sample_functions import set_investments_as_parameters, load_optimized_investments, set_out_of_sample_path
@@ -50,7 +50,8 @@ def run_empire(
     # Parameter definitions
     define_shared_parameters(model, empire_config.discount_rate, empire_config.leap_years_investment)
     define_investment_parameters(model, empire_config.wacc)
-    define_operational_parameters(model, operational_input_params, empire_config.emission_cap_flag)
+    define_operational_parameters(model, operational_input_params)
+    define_period_and_scenario_dependent_parameters(model, empire_config.emission_cap_flag)
     define_stochastic_input(model)
 
     # Data loading
@@ -174,7 +175,6 @@ def run_empire(
     # for constr in gurobi_model.getConstrs():
     #     farkas_dual = constr.getAttr("FarkasDual")
     #     print(constr, farkas_dual)
-
 
     post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag)  
 
