@@ -33,6 +33,13 @@ class CapacityVariableHandler:
             self.capacity_var_index_selection_func(constraint_index_tuple)
             for constraint_index_tuple in self.constraint_indices
         }
+
+            # transmission capacity variable has a tuple as first index
+            # self.variable_inds = {
+            #     constraint_index_tuple:
+            #     (self.capacity_var_index_selection_func(constraint_index_tuple)[0], self.capacity_var_index_selection_func(constraint_index_tuple)[1])
+            #     for constraint_index_tuple in self.constraint_indices
+            # }
         
 
     def extract_data(self, subproblem_instance):
@@ -129,7 +136,7 @@ def define_cut_structure(subproblem_instance, i, w):
             for n1, n2 in subproblem_instance.DirectionalLink
             for h in subproblem_instance.Operationalhour],
         capacity_var_name="transmissionInstalledCap",
-        capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n1, n2, i
+        capacity_var_index_selection_func=lambda idx: ((idx[0], idx[1]), idx[3]),  # n1, n2, i
     )
     ]
     return cut_structure
