@@ -156,12 +156,18 @@ def create_cut(
     expr = sum(scenario_objectives[w] for w in scenarios)
     for w in scenarios:
         for capacity_variable_name, (duals, coefficients, variable_inds) in cut_data[w].items():
-            for dual, coeff, var_inds in zip(duals.values(), coefficients.values(), variable_inds.values()):  # loops over all tuples of constraint indices
-                expr += dual * coeff * (
-                    getattr(master_instance, capacity_variable_name)[var_inds] 
-                    - 
-                    value(old_capacities.get(capacity_variable_name)[var_inds])
-                )
+            for constraint_inds, (dual, coeff, var_inds) in zip(duals.keys(), zip(duals.values(), coefficients.values(), variable_inds.values())):  # loops over all tuples of constraint indices
+                if capacity_variable_name == "transmissionInstalledCap":
+                    # transmission capacity variable can have n1, n2 switched around
+                    if var_inds not in old_capacities.get(capacity_variable_name)[period_active]:
+                        var_inds = ((var_inds[0][1], var_inds[0][0]), var_inds[1])  # switch around n1, n2
+                    expr += dual * coeff * (
+                        getattr(master_instance, capacity_variable_name)[var_inds] 
+                        - 
+                        value(old_capacities.get(capacity_variable_name)[period_active][var_inds])
+                    )
+                
+
         
 
     return master_instance.theta[period_active] >= expr
