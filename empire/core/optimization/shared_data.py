@@ -3,8 +3,8 @@ from pyomo.environ import (Set, Param)
 
 
 def define_shared_sets(model, periods, north_sea_flag):
-    model.periods = Set(ordered=True) #max period
-    model.periods_active = Set(ordered=True, initialize=periods) #i
+    model.Period = Set(ordered=True) #max period
+    model.PeriodActive = Set(ordered=True, initialize=periods) #i
     model.Technology = Set(ordered=True) #t
     model.Generator = Set(ordered=True) #g
     model.Storage =  Set() #b
@@ -44,7 +44,7 @@ def define_shared_sets(model, periods, north_sea_flag):
     return 
 
 
-def load_shared_sets(model, data, tab_file_path, north_sea_flag):
+def load_shared_sets(model, data, tab_file_path, north_sea_flag, load_period=True):
     data.load(filename=str(tab_file_path / 'Sets_Generator.tab'),format="set", set=model.Generator)
     data.load(filename=str(tab_file_path / 'Sets_ThermalGenerators.tab'),format="set", set=model.ThermalGenerators)
     data.load(filename=str(tab_file_path / 'Sets_HydroGenerator.tab'),format="set", set=model.HydroGenerator)
@@ -55,14 +55,17 @@ def load_shared_sets(model, data, tab_file_path, north_sea_flag):
     data.load(filename=str(tab_file_path / 'Sets_Node.tab'),format="set", set=model.Node)
     if north_sea_flag:
         data.load(filename=str(tab_file_path / 'Sets_OffshoreNode.tab'),format="set", set=model.OffshoreNode)
-    data.load(filename=str(tab_file_path / 'Sets_Horizon.tab'),format="set", set=model.periods)
+    # 
     data.load(filename=str(tab_file_path / 'Sets_DirectionalLines.tab'),format="set", set=model.DirectionalLink)
     data.load(filename=str(tab_file_path / 'Sets_LineType.tab'),format="set", set=model.TransmissionType)
     data.load(filename=str(tab_file_path / 'Sets_LineTypeOfDirectionalLines.tab'),format="set", set=model.TransmissionTypeOfDirectionalLink)
     data.load(filename=str(tab_file_path / 'Sets_GeneratorsOfTechnology.tab'),format="set", set=model.GeneratorsOfTechnology)
     data.load(filename=str(tab_file_path / 'Sets_GeneratorsOfNode.tab'),format="set", set=model.GeneratorsOfNode)
     data.load(filename=str(tab_file_path / 'Sets_StorageOfNodes.tab'),format="set", set=model.StoragesOfNode)
+    if load_period:
+        data.load(filename=str(tab_file_path / 'Sets_Horizon.tab'),format="set", set=model.Period)
     return 
+
 
 
 def define_shared_parameters(model, discountrate, LeapYearsInvestment):

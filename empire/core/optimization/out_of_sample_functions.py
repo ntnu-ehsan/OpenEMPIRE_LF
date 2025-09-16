@@ -3,16 +3,18 @@ from pyomo.environ import Param, NonNegativeReals
 from empire.utils import get_name_of_last_folder_in_path
 
 
-def set_investments_as_parameters(model, data):
+def set_investments_as_parameters(model, set_only_capacities: bool = False):
     # Redefine investment vars as input parameters
-    model.genInvCap = Param(model.GeneratorsOfNode, model.periods_active, domain=NonNegativeReals)
-    model.transmisionInvCap = Param(model.BidirectionalArc, model.periods_active, domain=NonNegativeReals)
-    model.storPWInvCap = Param(model.StoragesOfNode, model.periods_active, domain=NonNegativeReals)
-    model.storENInvCap = Param(model.StoragesOfNode, model.periods_active, domain=NonNegativeReals)
-    model.genInstalledCap = Param(model.GeneratorsOfNode, model.periods_active, domain=NonNegativeReals)
-    model.transmissionInstalledCap = Param(model.BidirectionalArc, model.periods_active, domain=NonNegativeReals)
-    model.storPWInstalledCap = Param(model.StoragesOfNode, model.periods_active, domain=NonNegativeReals)
-    model.storENInstalledCap = Param(model.StoragesOfNode, model.periods_active, domain=NonNegativeReals)
+    model.genInstalledCap = Param(model.GeneratorsOfNode, model.PeriodActive, domain=NonNegativeReals)
+    model.transmissionInstalledCap = Param(model.BidirectionalArc, model.PeriodActive, domain=NonNegativeReals)
+    model.storPWInstalledCap = Param(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
+    model.storENInstalledCap = Param(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
+    if set_only_capacities: 
+        return 
+    model.genInvCap = Param(model.GeneratorsOfNode, model.PeriodActive, domain=NonNegativeReals)
+    model.transmisionInvCap = Param(model.BidirectionalArc, model.PeriodActive, domain=NonNegativeReals)
+    model.storPWInvCap = Param(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
+    model.storENInvCap = Param(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
     return 
 
 

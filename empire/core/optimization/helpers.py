@@ -18,7 +18,7 @@ def log_problem_statistics(instance, logger):
     logger.info("StorageTypes: %s", len(instance.Storage))
     logger.info("TotalStorages: %s", len(instance.StoragesOfNode))
     logger.info("")
-    logger.info("InvestmentUntil: %s", value(2020+int(len(instance.periods_active)*instance.LeapYearsInvestment.value)))
+    logger.info("InvestmentUntil: %s", value(2020+int(len(instance.PeriodActive)*instance.LeapYearsInvestment.value)))
     logger.info("Scenarios: %s", len(instance.scenarios))
     logger.info("TotalOperationalHoursPerscenarios: %s", len(instance.Operationalhour))
     logger.info("TotalOperationalHoursPerInvYear: %s", len(instance.Operationalhour)*len(instance.scenarios))
@@ -53,10 +53,10 @@ def pickle_instance(
     return 
 
 
-def prepare_temp_dir(flags, temp_dir, run_config):
-    if flags.use_temp_dir_flag:
+def prepare_temp_dir(use_temp_dir_flag, temp_dir):
+    if use_temp_dir_flag:
         TempfileManager.tempdir = temp_dir
 
-def prepare_results_dir(flags, run_config):
+def prepare_results_dir(run_config):
     if not os.path.exists(run_config.results_path):
         os.makedirs(run_config.results_path)

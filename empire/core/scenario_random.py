@@ -441,9 +441,7 @@ def generate_random_scenario(
     len_peak_season = empire_config.len_peak_season
     time_format = empire_config.time_format
     fix_sample = empire_config.use_fixed_sample
-    north_sea = empire_config.north_sea
-
-    LOADCHANGEMODULE = empire_config.load_change_module
+    north_sea_flag = empire_config.north_sea_flag
     filter_make = empire_config.filter_make
     filter_use = empire_config.filter_use
     copulas_to_use = empire_config.copulas_to_use
@@ -464,9 +462,6 @@ def generate_random_scenario(
     elecLoad = pd.DataFrame()
     hydroSeasonal = pd.DataFrame()
 
-    if LOADCHANGEMODULE:
-        elecLoadMod = pd.DataFrame()
-
     # Load all the raw scenario data
     solar_data = pd.read_csv(scenario_data_path / "solar.csv")
     windonshore_data = pd.read_csv(scenario_data_path / "windonshore.csv")
@@ -478,8 +473,6 @@ def generate_random_scenario(
     # Unique nodes; for copula-based SGR
     unique_nodes = [col for col in solar_data.columns if col != "time"]
 
-    if LOADCHANGEMODULE:
-        elecLoadMod_data = pd.read_csv(scenario_data_path / "LoadchangeModule/elec_load_mod.csv")
 
     # Make datetime columns
     solar_data = make_datetime(solar_data, time_format)
@@ -489,8 +482,6 @@ def generate_random_scenario(
     hydroseasonal_data = make_datetime(hydroseasonal_data, time_format)
     electricload_data = make_datetime(electricload_data, time_format)
 
-    if LOADCHANGEMODULE:
-        elecLoadMod_data = make_datetime(elecLoadMod_data, "%Y-%m-%d %H:%M")
 
     # ===== BEGIN VORONOI SGR BRANCH =====
     if getattr(empire_config, "voronoi_sgr_make", False):
@@ -627,11 +618,6 @@ def generate_random_scenario(
                     hydroseasonal_season = year_season_filter(hydroseasonal_data, sample_year, s)
                     electricload_season = year_season_filter(electricload_data, sample_year, s)
 
-                    if LOADCHANGEMODULE:
-                        elecLoadMod_period = elecLoadMod_data.loc[elecLoadMod_data.Period.isin([i])]
-                        elecLoadMod_period = elecLoadMod_period.drop(columns=["Period"])
-                        elecLoadMod_season = year_season_filter(elecLoadMod_period, sample_year, s)
-
                     # Filter the sample range by K-means if filter_sample=True
 
                     if filter_use or copula_clusters_use or getattr(empire_config, "voronoi_sgr_use", False):
@@ -693,7 +679,7 @@ def generate_random_scenario(
                         ],
                         ignore_index=True,
                     )
-                    if north_sea:
+                    if north_sea_flag:
                         genAvail = pd.concat(
                             [
                                 genAvail,
@@ -794,22 +780,6 @@ def generate_random_scenario(
                         ignore_index=True,
                     )
 
-                    if LOADCHANGEMODULE:
-                        elecLoadMod = pd.concat(
-                            [
-                                elecLoadMod,
-                                sample_load(
-                                    data=elecLoadMod_season,
-                                    regularSeasonHours=len_of_regular_season,
-                                    scenario=scenario,
-                                    season=s,
-                                    seasons=seasons,
-                                    period=i,
-                                    sample_hour=sample_hour,
-                                ),
-                            ],
-                            ignore_index=True,
-                        )
 
                 ################
                 ##PEAK SEASONS##
@@ -837,8 +807,6 @@ def generate_random_scenario(
                 hydroseasonal_data_year = hydroseasonal_data.loc[hydroseasonal_data.year.isin([sample_year]), :]
                 electricload_data_year = electricload_data.loc[electricload_data.year.isin([sample_year]), :]
 
-                if LOADCHANGEMODULE:
-                    elecLoadMod_data_year = elecLoadMod_period.loc[elecLoadMod_period.year.isin([sample_year])]
 
                 # Peak1: The highest load when all loads are summed together
                 electricload_data_year_notime = remove_time_index(electricload_data_year)
@@ -894,7 +862,7 @@ def generate_random_scenario(
                     ],
                     ignore_index=True,
                 )
-                if north_sea:
+                if north_sea_flag:
                     genAvail = pd.concat(
                         [
                             genAvail,
@@ -1001,24 +969,6 @@ def generate_random_scenario(
                     ignore_index=True,
                 )
 
-                # Sample the change of load
-                if LOADCHANGEMODULE:
-                    elecLoadMod = pd.concat(
-                        [
-                            elecLoadMod,
-                            sample_load_peak(
-                                data=elecLoadMod_data_year,
-                                seasons=seasons,
-                                scenario=scenario,
-                                period=i,
-                                regularSeasonHours=len_of_regular_season,
-                                peakSeasonHours=len_peak_season,
-                                overall_sample=overall_sample,
-                                country_sample=country_sample,
-                            ),
-                        ],
-                        ignore_index=True,
-                    )
 
         if moment_matching:
             # Save the tree
@@ -1064,12 +1014,9 @@ def generate_random_scenario(
     elecLoad = elecLoad.replace({"Node": dict_countries})
     hydroSeasonal = hydroSeasonal.replace({"Node": dict_countries})
 
-    if LOADCHANGEMODULE:
-        elecLoadMod = elecLoadMod.replace({"Node": dict_countries})
-
     # Make header for .tab-file
     genAvail = genAvail[
-        ["Period", "Scenario", "Node", "IntermitentGenerators", "Operationalhour", "GeneratorStochasticAvailabilityRaw"]
+        ["Node", "IntermitentGenerators", "Operationalhour", "Period", "Scenario", "GeneratorStochasticAvailabilityRaw"]
     ]
     elecLoad = elecLoad[["Period", "Scenario", "Node", "Operationalhour", "ElectricLoadRaw_in_MW"]]
     hydroSeasonal = hydroSeasonal[
@@ -1082,8 +1029,6 @@ def generate_random_scenario(
         hydroSeasonal["HydroGeneratorMaxSeasonalProduction"] <= 0.001, "HydroGeneratorMaxSeasonalProduction"
     ] = 0
 
-    if LOADCHANGEMODULE:
-        elecLoadMod = elecLoadMod[["Period", "Scenario", "Node", "Operationalhour", "ElectricLoadRaw_in_MW"]]
 
     # Make file_path (if it does not exist) and print .tab-files
     if not os.path.exists(tab_file_path):
@@ -1107,18 +1052,6 @@ def generate_random_scenario(
     hydroSeasonal.to_csv(
         tab_file_path / "Stochastic_HydroGenMaxSeasonalProduction.tab", header=True, index=None, sep="\t", mode="w"
     )
-
-    if LOADCHANGEMODULE:
-        if not os.path.exists(tab_file_path + "/LoadchangeModule"):
-            os.makedirs(tab_file_path + "/LoadchangeModule")
-        elecLoadMod.to_csv(
-            tab_file_path + "/LoadchangeModule/Stochastic_ElectricLoadMod" + ".tab",
-            header=True,
-            index=None,
-            sep="\t",
-            mode="w",
-        )
-
 
 def check_scenarios_exist_and_copy(run_config: EmpireRunConfiguration):
     """

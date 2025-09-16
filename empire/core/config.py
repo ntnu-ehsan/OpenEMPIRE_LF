@@ -26,7 +26,6 @@ class EmpireConfiguration:
         optimization_solver: str,
         use_scenario_generation: bool,
         use_fixed_sample: bool,
-        load_change_module: bool,
         filter_make: bool,
         filter_use: bool,
         n_cluster: int,
@@ -35,12 +34,12 @@ class EmpireConfiguration:
         copula_clusters_use: bool,
         copulas_to_use: list[str],
         n_tree_compare: int,
-        use_emission_cap: bool,
-        compute_operational_duals: bool,
-        print_in_iamc_format: bool,
+        emission_cap_flag: bool,
+        compute_operational_duals_flag: bool,
+        print_iamc_flag: bool,
         write_in_lp_format: bool,
         serialize_instance: bool,
-        north_sea: bool,
+        north_sea_flag: bool,
         voronoi_sgr_make: bool = False,
         voronoi_sgr_use: bool = False,
         voronoi_mu_percentile: int = 80,
@@ -49,10 +48,12 @@ class EmpireConfiguration:
         len_peak_season: int = 24,
         leap_years_investment: int = 5,
         time_format: str = "%d/%m/%Y %H:%M",
-        USE_LOPF: bool = False,
-        LOPF_METHOD: str = "kirchhoff",
-        LOPF_KWARGS: dict | None = None,
-        use_benders_flag: bool = False,
+        lopf_flag: bool = False,
+        lopf_method: str = "kirchhoff",
+        lopf_kwargs: dict | None = None,
+        benders_flag: bool = False,
+        max_benders_iterations: int = 50,
+        pickle_instance_flag: bool = False,
         **kwargs,
     ):
         """
@@ -68,18 +69,17 @@ class EmpireConfiguration:
         :param optimization_solver: Mathematical solver used for optimization tasks. Options: “Xpress”, “Gurobi”, “CPLEX”.
         :param use_scenario_generation: If true, new operational scenarios will be generated. NB! If false, .tab-files or sampling key must be manually added to the ‘ScenarioData’-folder in the version.
         :param use_fixed_sample: If true, operational scenarios will be generated according to a fixed sampling key located in the ‘Scenario Data’ folder to ensure the same operational scenarios are generated.
-        :param load_change_module:
         :param filter_make:
         :param filter_use:
         :param n_cluster:
         :param moment_matching:
         :param n_tree_compare:
-        :param use_emission_cap: If true, emissions in every scenario are capped according to the specified cap in ‘General.xlsx’. If false, the CO2-price specified in ‘General.xlsx’ applies.
+        :param emission_cap_flag: If true, emissions in every scenario are capped according to the specified cap in ‘General.xlsx’. If false, the CO2-price specified in ‘General.xlsx’ applies.
         :param compute_operational_duals: If true, investment decisions are fixed and resolved to compute operational duals
         :param print_in_iamc_format: OIf true, selected results are printed on the standard IAMC-format in addition to the normal EMPIRE print.
         :param write_in_lp_format: Problem should be written in Linear Programming format.
         :param serialize_instance: Serialize the data structure or model for later use.
-        :param use_north_sea: Whether north-sea is modelled or not.
+        :param north_sea_flag: Whether north-sea is modelled or not.
         :param regular_seasons: Regular seasons.
         :param n_peak_seasons:  Peak seasons.
         :param leap_years_investment: Years between investment decisions
@@ -96,7 +96,6 @@ class EmpireConfiguration:
         self.optimization_solver = optimization_solver
         self.use_scenario_generation = use_scenario_generation
         self.use_fixed_sample = use_fixed_sample
-        self.load_change_module = load_change_module
         self.filter_make = filter_make
         self.filter_use = filter_use
         self.copulas_to_use = copulas_to_use
@@ -105,12 +104,12 @@ class EmpireConfiguration:
         self.n_cluster = n_cluster
         self.moment_matching = moment_matching
         self.n_tree_compare = n_tree_compare
-        self.use_emission_cap = use_emission_cap
-        self.compute_operational_duals = compute_operational_duals
-        self.print_in_iamc_format = print_in_iamc_format
+        self.emission_cap_flag = emission_cap_flag
+        self.compute_operational_duals_flag = compute_operational_duals_flag
+        self.print_iamc_flag = print_iamc_flag
         self.write_in_lp_format = write_in_lp_format
         self.serialize_instance = serialize_instance
-        self.north_sea = north_sea
+        self.north_sea_flag = north_sea_flag
         self.voronoi_sgr_make = voronoi_sgr_make
         self.voronoi_sgr_use = voronoi_sgr_use
         self.voronoi_mu_percentile = voronoi_mu_percentile
@@ -128,12 +127,16 @@ class EmpireConfiguration:
         self.n_periods = len(self.periods)
 
         # OPF
-        self.USE_LOPF = bool(USE_LOPF)
-        self.LOPF_METHOD = str(LOPF_METHOD)
-        self.LOPF_KWARGS = {} if LOPF_KWARGS is None else dict(LOPF_KWARGS)
+        self.lopf_flag = bool(lopf_flag)
+        self.lopf_method = str(lopf_method)
+        self.lopf_kwargs = {} if lopf_kwargs is None else dict(lopf_kwargs)
 
         # Benders
-        self.use_benders_flag = use_benders_flag
+        self.benders_flag = benders_flag
+        self.max_benders_iterations = max_benders_iterations
+
+        # pickling
+        self.pickle_instance_flag = pickle_instance_flag
 
         # Validate the configuration
         self.validate()
@@ -249,16 +252,3 @@ class OperationalInputParams:
     lengthRegSeason: int
     lengthPeakSeason: int
 
-
-@dataclass 
-class Flags:
-    print_iamc_flag: bool
-    write_lp_flag: bool
-    pickle_instance_flag: bool
-    emission_cap_flag: bool
-    use_temp_dir_flag: bool
-    load_change_module_flag: bool
-    compute_operational_duals_flag: bool
-    north_sea_flag: bool
-    out_of_sample_flag: bool
-    lopf_flag: bool
