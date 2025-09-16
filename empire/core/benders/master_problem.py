@@ -175,10 +175,11 @@ def define_initial_capacity_params(mp_instance):
     capacity_params = {
         var: {} for var in CAPACITY_VARS
     }
+    base_value = 1e4
     for period in mp_instance.PeriodActive:
-        capacity_params['genInstalledCap'][period] = {(*ng, period): 0 for ng in mp_instance.GeneratorsOfNode}
-        capacity_params['storENInstalledCap'][period] = {(*nb, period): 0 for nb in mp_instance.StoragesOfNode}
-        capacity_params['storPWInstalledCap'][period] = {(*nb, period): 0 for nb in mp_instance.StoragesOfNode}
-        capacity_params['transmissionInstalledCap'][period] = {(line_pair, period): 0 for line_pair in mp_instance.BidirectionalArc}
+        capacity_params['genInstalledCap'][period] = {(*ng, period): base_value for ng in mp_instance.GeneratorsOfNode}
+        capacity_params['storENInstalledCap'][period] = {(*nb, period): base_value for nb in mp_instance.StoragesOfNode}
+        capacity_params['storPWInstalledCap'][period] = {(*nb, period): base_value for nb in mp_instance.StoragesOfNode}
+        capacity_params['transmissionInstalledCap'][period] = {(line_pair, period): base_value for line_pair in mp_instance.BidirectionalArc}
 
     return capacity_params
