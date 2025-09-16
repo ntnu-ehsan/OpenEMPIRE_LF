@@ -16,6 +16,7 @@ from pyomo.environ import (
     Objective,
     minimize,
     Expression,
+    value
 )
 from empire.core.optimization.objective import investment_obj, multiplier_rule
 from empire.core.optimization.investment import define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
@@ -147,7 +148,7 @@ def solve_master_problem(instance, empire_config: EmpireConfiguration, run_confi
 
         write_results(instance, run_config.results_path, run_config.run_name, False, empire_config.emission_cap_flag, empire_config.print_iamc_flag, logger)
 
-    return instance.Obj
+    return opt, value(instance.Obj)
 
 
 CAPACITY_VARS = [
