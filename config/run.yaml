@@ -39,5 +39,6 @@ lopf_kwargs:
   # reactance_from_susceptance: true
   # susceptance_param_name: "lineSusceptance"
 
-benders_flag: False                                # Whether to use Benders decompsition 
+benders_flag: True                              # Whether to use Benders decompsition 
 max_benders_iterations: 10
+include_hydro_node_limit_constraint_flag: False
