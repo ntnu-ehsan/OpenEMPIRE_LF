@@ -1,7 +1,7 @@
 from pyomo.environ import Constraint, Set, Var, value, BuildAction, Expression, AbstractModel, NonNegativeReals, Param, PercentFraction
 import logging
 from empire.core.config import OperationalInputParams
-
+from .loading_utils import load_set
 
 logger = logging.getLogger(__name__)
 

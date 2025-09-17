@@ -22,6 +22,8 @@ from empire.core.optimization.results import write_results, run_operational_mode
 from empire.core.optimization.solver import set_solver
 from empire.core.optimization.helpers import pickle_instance, log_problem_statistics, prepare_results_dir, prepare_temp_dir
 from empire.core.config import EmpireRunConfiguration, OperationalInputParams, EmpireConfiguration
+from empire.core.optimization.loading_utils import load_set
+
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +127,71 @@ def create_subproblem_model(
 
     return model, data
 
+def load_data(
+    model: AbstractModel, 
+    run_config: EmpireRunConfiguration, 
+    empire_config: EmpireConfiguration, 
+    period: int, 
+    scenario: str, 
+    capacity_params: dict, 
+    out_of_sample_flag: bool, 
+    sample_file_path: Path | None = None
+    ) -> DataPortal:
+
+    data = DataPortal()
+    load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag, load_period=False)
+    load_set(data, model.Period, period)
+    load_set(data, model.PeriodActive, period)
+    load_set(data, model.Scenario, scenario)
+
+    load_shared_parameters(model, data, run_config.tab_file_path)
+    load_selected_operational_parameters(model, data, run_config.tab_file_path, empire_config.emission_cap_flag, out_of_sample_flag, period, scenario, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
+    load_capacity_values(model, data, capacity_params, period)
+
+    # Load electrical data for LOPF if requested (need to split investment and operations!)
+    if empire_config.lopf_flag:
+        load_line_parameters(model, run_config.tab_file_path, data, empire_config.lopf_kwargs, logger)
+    return data
+
+
+def load_selected_operational_parameters(model, data, tab_file_path, emission_cap_flag, out_of_sample_flag, period, scenario, sample_file_path=None, scenario_data_path=None):
+    # Load operational generator parameters
+    data.load(filename=str(tab_file_path / 'Generator_VariableOMCosts.tab'), param=model.genVariableOMCost, format="table")
+
+    data.load(filename=str(tab_file_path / 'Generator_CO2Content.tab'), param=model.genCO2TypeFactor, format="table")
+    data.load(filename=str(tab_file_path / 'Generator_GeneratorTypeAvailability.tab'), param=model.genCapAvailTypeRaw, format="table")
+    data.load(filename=str(tab_file_path / 'Generator_RampRate.tab'), param=model.genRampUpCap, format="table")
+
+    # Load operational transmission line parameters
+    data.load(filename=str(tab_file_path / 'Transmission_lineEfficiency.tab'), param=model.lineEfficiency, format="table")
+
+    # Storage parameters
+    data.load(filename=str(tab_file_path / 'Storage_StorageBleedEfficiency.tab'), param=model.storageBleedEff, format="table")
+    data.load(filename=str(tab_file_path / 'Storage_StorageChargeEff.tab'), param=model.storageChargeEff, format="table")
+    data.load(filename=str(tab_file_path / 'Storage_StorageDischargeEff.tab'), param=model.storageDischargeEff, format="table")
+    data.load(filename=str(tab_file_path / 'Storage_StorageInitialEnergyLevel.tab'), param=model.storOperationalInit, format="table")
+    data.load(filename=str(tab_file_path / 'Node_HydroGenMaxAnnualProduction.tab'), param=model.maxHydroNode, format="table")
+    data.load(filename=str(tab_file_path / 'General_seasonScale.tab'), param=model.seasScale, format="table")
+
+
+    load_parameter(data, tab_file_path / 'Generator_Efficiency.tab', model.genEfficiency, periods_to_load=[period], period_indnr=1)
+    load_parameter(data, tab_file_path / 'Node_ElectricAnnualDemand.tab', model.sloadAnnualDemand, periods_to_load=[period], period_indnr=1)
+    load_parameter(data, tab_file_path / 'Node_NodeLostLoadCost.tab', model.nodeLostLoadCost, periods_to_load=[period], period_indnr=1)
+    load_parameter(data, tab_file_path / 'Generator_FuelCosts.tab', model.genFuelCost, periods_to_load=[period], period_indnr=1)
+    load_parameter(data, tab_file_path / 'Generator_CCSCostTSVariable.tab', model.CCSCostTSVariable, periods_to_load=[period], period_indnr=0)
+    if emission_cap_flag:
+        load_parameter(data, tab_file_path / 'General_CO2Cap.tab', model.CO2cap, periods_to_load=[period], period_indnr=0)
+    else:
+        load_parameter(data, tab_file_path / 'General_CO2Price.tab', model.CO2price, periods_to_load=[period], period_indnr=0)
+
+    load_parameter(data, tab_file_path / 'Stochastic_HydroGenMaxSeasonalProduction.tab', model.maxRegHydroGenRaw, periods_to_load=[period], period_indnr=0, scenarios_to_load=[scenario], scenario_indnr=1)
+    load_parameter(data, tab_file_path / 'Stochastic_StochasticAvailability.tab', model.genCapAvailStochRaw, periods_to_load=[period], period_indnr=3, scenarios_to_load=[scenario], scenario_indnr=4)
+    load_parameter(data, tab_file_path / 'Stochastic_ElectricLoadRaw.tab', model.sloadRaw, periods_to_load=[period], period_indnr=0, scenarios_to_load=[scenario], scenario_indnr=1)
+
+    return 
+
+
+
 def create_subproblem_instance(model, data):
     start = time.time()
     instance = model.create_instance(data) #, report_timing=True)
@@ -168,13 +235,17 @@ INVESTMENT_VARS = [
     'storENInstalledCap'
 ]
 
-def set_investment_values(model, investment_params: dict):
-    """Set investment decision variables to fixed values from previous optimization run.
-    """
-    for var in INVESTMENT_VARS:
-        setattr(model, var, investment_params[var])
-    return 
+def load_capacity_values(
+    sp_model,
+    data, 
+    capacity_params: dict,
+    period_active   : int
+    ):
 
+    for param_name, capacities in capacity_params.items():
+        capacity_period = capacities[period_active]
+        load_dict_into_dataportal(data, getattr(sp_model, param_name), capacity_period)
+    return
 
 def set_scenario_and_period_as_parameter(subproblem_model, scenario, period):
     """Fix scenario for Benders.
