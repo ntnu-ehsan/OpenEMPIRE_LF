@@ -111,14 +111,13 @@ def load_parameter(
 
 def load_set(data, model_set, value):
     """Create a temporary .tab file with the specified period and load it into the DataPortal."""
-    breakpoint()
     if isinstance(value, (int, float, str)):
         val = [value]
     else:
         val = value
-    df = pd.Index(val)
+    df = pd.Series(val, name="value").to_frame()
     with tempfile.NamedTemporaryFile(mode="w", suffix=".tab", delete=False) as tmpfile:
-        df.to_csv(tmpfile.name, sep="\t", index=False)
+        df.to_csv(tmpfile.name, sep="\t", index=False, header=True)
         tmpname = tmpfile.name
     data.load(filename=tmpname, format="set", set=model_set)
     os.remove(tmpname)
