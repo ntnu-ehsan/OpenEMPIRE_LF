@@ -54,6 +54,7 @@ class EmpireConfiguration:
         benders_flag: bool = False,
         max_benders_iterations: int = 50,
         pickle_instance_flag: bool = False,
+        include_hydro_node_limit_constraint_flag: bool = True,
         **kwargs,
     ):
         """
@@ -84,6 +85,7 @@ class EmpireConfiguration:
         :param n_peak_seasons:  Peak seasons.
         :param leap_years_investment: Years between investment decisions
         :param time_format: Time format
+
         """
         # Model parameters
         self.use_temporary_directory = use_temporary_directory
@@ -113,6 +115,7 @@ class EmpireConfiguration:
         self.voronoi_sgr_make = voronoi_sgr_make
         self.voronoi_sgr_use = voronoi_sgr_use
         self.voronoi_mu_percentile = voronoi_mu_percentile
+        self.include_hydro_node_limit_constraint_flag = include_hydro_node_limit_constraint_flag
 
         # Optional parameters
         self.regular_seasons = regular_seasons
