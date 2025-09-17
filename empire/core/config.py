@@ -243,12 +243,12 @@ class EmpireRunConfiguration:
 
 @dataclass
 class OperationalInputParams: 
-    Operationalhour: int
-    scenarios: int
-    Season: int
-    HoursOfSeason: int
-    FirstHoursOfRegSeason: int
-    FirstHoursOfPeakSeason: int
+    Operationalhour: list[int]
+    scenarios: list[str]
+    Season: list[str]
+    HoursOfSeason: list[int]
+    FirstHoursOfRegSeason: list[int]
+    FirstHoursOfPeakSeason: list[int]
     lengthRegSeason: int
     lengthPeakSeason: int
 

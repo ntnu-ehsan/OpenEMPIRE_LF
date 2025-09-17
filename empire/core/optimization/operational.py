@@ -6,13 +6,13 @@ from empire.core.config import OperationalInputParams
 logger = logging.getLogger(__name__)
 
 
-def define_operational_sets(model: AbstractModel, operational_input_params: OperationalInputParams, scenarios: None | list = None):
+def define_operational_sets(model: AbstractModel, operational_input_params: OperationalInputParams):
     # operational sets
     if scenarios is None:
         scenarios = operational_input_params.scenarios
     model.Operationalhour = Set(ordered=True, initialize=operational_input_params.Operationalhour) #h
     model.Season = Set(ordered=True, initialize=operational_input_params.Season) #s
-    model.Scenario = Set(ordered=True, initialize=scenarios) #w
+    model.Scenario = Set(ordered=True) #w
     model.HoursOfSeason = Set(dimen=2, ordered=True, initialize=operational_input_params.HoursOfSeason) #(s,h) for all s in S, h in H_s
     model.FirstHoursOfRegSeason = Set(within=model.Operationalhour, ordered=True, initialize=operational_input_params.FirstHoursOfRegSeason)
     model.FirstHoursOfPeakSeason = Set(within=model.Operationalhour, ordered=True, initialize=operational_input_params.FirstHoursOfPeakSeason)
@@ -85,6 +85,10 @@ def define_stochastic_input(model):
     model.maxRegHydroGen = Param(model.Period, model.Scenario, model.Node, model.Season, default=0.0, mutable=True)
     return 
 
+
+def load_operational_sets(model, data, scenarios):
+    load_set(data, model.Scenario, scenarios)
+    return 
 
 def load_operational_parameters(model, data, tab_file_path, emission_cap_flag, out_of_sample_flag, sample_file_path=None, scenario_data_path=None):
     # Load operational generator parameters
