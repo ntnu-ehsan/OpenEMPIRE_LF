@@ -4,7 +4,6 @@ import logging
 from pathlib import Path
 
 from empire import run_empire
-from empire.core.config import (EmpireConfiguration, EmpireRunConfiguration, OperationalInputParams, Flags, 
 from empire.core.config import (EmpireConfiguration, EmpireRunConfiguration, OperationalInputParams,
                                 read_config_file)
 from empire.core.reader import generate_tab_files
@@ -138,10 +137,9 @@ def run_empire_model(
             obj_value = run_benders(
                 run_config=run_config,
                 empire_config=empire_config,
-                sample_file_path=sample_file_path,
-                periods=periods,
                 operational_input_params=operational_input_params,
-                )
+                periods=periods,
+            )
 
 
         
