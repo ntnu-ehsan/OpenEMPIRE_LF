@@ -118,6 +118,8 @@ def run_empire(
     load_stochastic_input(model, data, run_config.tab_file_path, out_of_sample_flag, sample_file_path=sample_file_path)
     load_investment_parameters(model, data, run_config.tab_file_path)
 
+    # Model parameter preparations
+    prep_operational_parameters(model)
     #######
     ##RUN##
     #######
