@@ -20,37 +20,26 @@ def run_benders(
     capacity_params_init: None | dict = None,
 ) -> tuple[AbstractModel | None, float | None]:
     """
-    Function to create and solve the Benders subproblem.
+    Function to create and solve and EMPIRE instance using Benders decomposition.
 
     Parameters
     ----------
-    flags : EmpireFlags
-        Configuration flags for the model run.
     run_config : EmpireRunConfiguration
         Configuration for the current model run.
+    empire_config : EmpireConfiguration
+        General configuration for the EMPIRE model.
     operational_input_params : OperationalInputParams
-        Operational parameters and sets for the model.
-    investment_params : dict
-        Investment parameters as a dictionary.
-    discountrate : float
-        Discount rate for financial calculations.
-    LeapYearsInvestment : list
-        List of years considered for leap year investments.
-    wacc : float
-        Weighted Average Cost of Capital.
-    lopf_kwargs : dict
-        Additional keyword arguments for LOPF configuration.
-    solver_name : str
-        Name of the solver to be used (e.g., 'gurobi', 'cplex').
-    benders_cuts : list
-        List of Benders cuts to be applied in the subproblem.
-    sample_file_path : Path, optional
-        Path to the sample file for out-of-sample analysis, by default None.
+        Operational input parameters. 
+    periods : list[int]
+        List of periods to consider in the model. (shorter than full planning horizon?)
+    capacity_params_init : dict, optional
+        Initial capacity parameters to start the Benders iterations, by default None.
 
     Returns
     -------
-    AbstractModel
-        The solved Pyomo model instance representing the Benders subproblem.
+    tuple[ConcreteModel | None, float | None]
+        Returns the final master problem instance and its objective value if converged, otherwise (None, None).
+    
     """
 
     if capacity_params_init is None:
@@ -58,7 +47,7 @@ def run_benders(
     else:
         capacity_params = capacity_params_init
     # del(mp_instance)
-    mp_instance = create_master_problem_instance(run_config, empire_config, capacity_params=capacity_params)
+    mp_instance = create_master_problem_instance(run_config, empire_config, capacity_params=capacity_params, periods=periods)
     # solve_master_problem(mp_instance, empire_config.optimization_solver, flags, run_config, empire_config.temporary_directory, save_flag=False)
     logger.info("Creating Benders subproblem model...")
 
@@ -89,15 +78,15 @@ def run_benders(
             )
 
             mp_instance.cut_constraints.add(expr=cut)
-        breakpoint()
-        opt_mp, mp_objective = solve_master_problem(mp_instance, empire_config, run_config, save_flag=False)
+
+        mp_objective = solve_master_problem(mp_instance, empire_config, run_config, save_flag=False)
         capacity_params = extract_capacity_params(mp_instance)
         mp_objs.append(mp_objective)
         if np.isclose(mp_objective, last_mp_obj):
             logger.info("Benders converged.")
             for i, mp_obj in enumerate(mp_objs):
                 print(f"Iteration {i+1}: Master problem objective = {mp_obj:.2e}")
-            return opt_mp, mp_objective
+            return mp_instance, mp_objective
         last_mp_obj = mp_objective
 
     logger.info("Benders did not converge.")

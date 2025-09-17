@@ -36,6 +36,7 @@ def create_master_problem_instance(
         capacity_params: dict | None = None,
         regularization_flag: bool = True,
         regularization_weight: float = 1e6,
+        periods: list[int] | None = None
         ) -> ConcreteModel:
 
     prepare_temp_dir(empire_config.use_temporary_directory, temp_dir=empire_config.temporary_directory)
@@ -133,7 +134,7 @@ def create_master_problem_instance(
 
     return instance
 
-def solve_master_problem(instance, empire_config: EmpireConfiguration, run_config: EmpireRunConfiguration, save_flag=False):
+def solve_master_problem(instance, empire_config: EmpireConfiguration, run_config: EmpireRunConfiguration, save_flag=False) -> float:
     opt = set_solver(empire_config.optimization_solver, logger)
     logger.info("Solving...")
     opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
@@ -143,7 +144,7 @@ def solve_master_problem(instance, empire_config: EmpireConfiguration, run_confi
 
         write_results(instance, run_config.results_path, run_config.run_name, False, empire_config.emission_cap_flag, empire_config.print_iamc_flag, logger)
 
-    return opt, value(instance.Obj)
+    return value(instance.Obj)
 
 
 CAPACITY_VARS = [
