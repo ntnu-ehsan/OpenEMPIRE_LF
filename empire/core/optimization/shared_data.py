@@ -2,9 +2,9 @@
 from pyomo.environ import (Set, Param)
 
 
-def define_shared_sets(model, periods, north_sea_flag):
+def define_shared_sets(model, north_sea_flag):
     model.Period = Set(ordered=True) #max period
-    model.PeriodActive = Set(ordered=True, initialize=periods) #i
+    model.PeriodActive = Set(ordered=True) #i
     model.Technology = Set(ordered=True) #t
     model.Generator = Set(ordered=True) #g
     model.Storage =  Set() #b
@@ -44,7 +44,7 @@ def define_shared_sets(model, periods, north_sea_flag):
     return 
 
 
-def load_shared_sets(model, data, tab_file_path, north_sea_flag, load_period=True):
+def load_shared_sets(model, data, tab_file_path, north_sea_flag, load_period=True, period_active=None):
     data.load(filename=str(tab_file_path / 'Sets_Generator.tab'),format="set", set=model.Generator)
     data.load(filename=str(tab_file_path / 'Sets_ThermalGenerators.tab'),format="set", set=model.ThermalGenerators)
     data.load(filename=str(tab_file_path / 'Sets_HydroGenerator.tab'),format="set", set=model.HydroGenerator)
