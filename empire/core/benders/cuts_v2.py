@@ -3,9 +3,12 @@ from typing import Callable
 import pickle 
 from pathlib import Path
 import pandas as pd
-from pyomo.environ import value
+from pyomo.environ import value, ConcreteModel
 
 class CapacityVariableHandler:
+    """
+    Class to handle extraction of duals and coefficients for a specific capacity variable.
+    """
     def __init__(
             self, 
             constraint_name: str, 
@@ -39,22 +42,15 @@ class CapacityVariableHandler:
             for constraint_index_tuple in self.constraint_indices
         }
 
-            # transmission capacity variable has a tuple as first index
-            # self.variable_inds = {
-            #     constraint_index_tuple:
-            #     (self.capacity_var_index_selection_func(constraint_index_tuple)[0], self.capacity_var_index_selection_func(constraint_index_tuple)[1])
-            #     for constraint_index_tuple in self.constraint_indices
-            # }
-        
 
-    def extract_data(self, subproblem_instance):
+    def extract_data(self, subproblem_instance: ConcreteModel) -> pd.Series:
         self.extract_duals(subproblem_instance)
         self.extract_coefficients(subproblem_instance)
         dual_and_coeff = self.duals * self.coefficients
         self.dual_and_coeff_total = dual_and_coeff.groupby(self.index_names_to_keep).sum()
         return self.dual_and_coeff_total
 
-    def extract_duals(self, subproblem_instance):
+    def extract_duals(self, subproblem_instance: ConcreteModel):
         sp_constraint = getattr(subproblem_instance, self.constraint_name)
         self.duals = pd.Series({
             subproblem_index_tuple:
@@ -63,7 +59,7 @@ class CapacityVariableHandler:
         })
         self.duals.index.names = self.constraint_index_names
 
-    def extract_coefficients(self, subproblem_instance):
+    def extract_coefficients(self, subproblem_instance: ConcreteModel):
         if self.has_coefficient:
             subproblem_coefficient_param = getattr(subproblem_instance, self.coefficient_param_subproblem_name)
             self.coefficients = pd.Series({
@@ -75,7 +71,8 @@ class CapacityVariableHandler:
         else:
             self.coefficients = pd.Series({constraint_index_tuple: 1.0 for constraint_index_tuple in self.constraint_indices})
 
-def define_cut_structure(subproblem_instance, i, w):
+
+def define_cut_structure(subproblem_instance: ConcreteModel, i: int, w: str) -> list[CapacityVariableHandler]:
     cut_structure = [
     CapacityVariableHandler(
         constraint_name="maxGenProduction",

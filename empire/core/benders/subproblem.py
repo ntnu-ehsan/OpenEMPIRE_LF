@@ -15,6 +15,7 @@ from pyomo.environ import (
     AbstractModel,
     Suffix, 
     Set,
+    ConcreteModel
 )
 from empire.core.optimization.objective import define_objective
 from empire.core.optimization.operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input, define_period_and_scenario_dependent_parameters
@@ -84,10 +85,6 @@ def create_subproblem_model(
     # model parameter preparations
     prep_operational_parameters(model, num_scenarios=len(operational_input_params.scenarios))
 
-    ###############
-    ##CONSTRAINTS##
-    ###############
-
     # constraint defintions
     define_operational_constraints(model, logger, empire_config.emission_cap_flag, include_hydro_node_limit_constraint_flag=False)
 
@@ -140,7 +137,7 @@ def load_data(
     return data
 
 
-def load_selected_operational_parameters(model, data, tab_file_path, emission_cap_flag, out_of_sample_flag, period, scenario, sample_file_path=None, scenario_data_path=None):
+def load_selected_operational_parameters(model, data, tab_file_path, emission_cap_flag, out_of_sample_flag, period, scenario, sample_file_path=None, scenario_data_path=None) -> None:
     # Load operational generator parameters
     data.load(filename=str(tab_file_path / 'Generator_VariableOMCosts.tab'), param=model.genVariableOMCost, format="table")
 
@@ -178,14 +175,11 @@ def load_selected_operational_parameters(model, data, tab_file_path, emission_ca
 
 
 
-def create_subproblem_instance(model, data):
-    # model.Period.construct()
-    
+def create_subproblem_instance(model, data) -> ConcreteModel:
     start = time.time()
-    instance = model.create_instance(data) #, report_timing=True)
+    instance: ConcreteModel = model.create_instance(data) #, report_timing=True)
     end = time.time()
     logger.info("Building instance took [sec]: %d", end - start)
-    
     return instance 
 
 
@@ -194,7 +188,6 @@ def solve_subproblem(instance, solver_name, run_config, investment_params):
     opt = set_solver(solver_name, logger)
     logger.info("Solving...")
     opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
-
     return opt
 
 
@@ -203,8 +196,8 @@ def load_capacity_values(
     data, 
     capacity_params: dict,
     period_active   : int
-    ):
-
+    ) -> None:
+    """Load capacity values from the MP into the DataPortal for the subproblem."""
     for param_name, capacities in capacity_params.items():
         capacity_period = capacities[period_active]
         load_dict_into_dataportal(data, getattr(sp_model, param_name), capacity_period)

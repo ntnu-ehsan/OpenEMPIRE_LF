@@ -124,6 +124,7 @@ def create_cut(
             empire_config,
             run_config
             )
+        breakpoint()
         cut_structure: list[CapacityVariableHandler] = define_cut_structure(sp_instance, period_active, w)
 
         for capacity_variable_handler in cut_structure:
@@ -166,42 +167,11 @@ def solve_sp(
     empire_config: EmpireConfiguration,
     run_config: EmpireRunConfiguration
     ):
-
-
-    # set_stochastic_input_subproblem(sp_instance, scenario_data[w], i)
-    
-    # load_stochastic_input(sp_model, data, tab_file_path)  # DUPLICATE? 
-    
     sp_instance = create_subproblem_instance(sp_model, data)
-
-    # set_investment_values(sp_instance, capacity_params, period_active)
     derive_stochastic_parameters(sp_instance)
-
     opt = solve_subproblem(sp_instance, empire_config.optimization_solver, run_config, capacity_params)
     return sp_instance, opt
 
-
-def load_scenario_data(data, scenario) -> dict:
-    pass
-
-
-def filter_scenario_init(model, *idx):
-    # Assume your param is indexed like (scenario, something else)
-    scenario, other_idx = idx[0], idx[1:]
-    if scenario == model.active_scenario:
-        return model.maxRegHydroGenRaw[idx]
-    return None  # or skip
-
-def set_stochastic_input_subproblem(instance, scenario_data):
-    pass
-
-# model.maxRegHydroGen = Param(
-#     model.maxRegHydroGenRaw.index_set(),
-#     initialize=filter_scenario_init,
-#     within=NonNegativeReals,
-#     default=0
-# )
-#     pass
 
 
 
