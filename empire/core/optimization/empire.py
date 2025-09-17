@@ -56,7 +56,8 @@ def run_empire(
 
     # Data loading
     data = DataPortal()
-    load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag)
+    load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag, load_period=True, period_active=periods)
+    load_operational_sets(model, data, operational_input_params.scenarios)
     load_shared_parameters(model, data, run_config.tab_file_path)
     load_operational_parameters(model, data, run_config.tab_file_path, empire_config.emission_cap_flag, out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
     load_stochastic_input(model, data, run_config.tab_file_path, out_of_sample_flag, sample_file_path=sample_file_path)
