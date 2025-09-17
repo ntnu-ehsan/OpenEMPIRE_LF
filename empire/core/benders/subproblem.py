@@ -198,14 +198,6 @@ def solve_subproblem(instance, solver_name, run_config, investment_params):
     return opt
 
 
-
-CAPACITY_VARS = [
-    'genInstalledCap',  # n,g,i
-    'transmissionInstalledCap',  # (n1,n2), i
-    'storPWInstalledCap',  # n,b,i
-    'storENInstalledCap'  # n,b,i
-]
-
 def load_capacity_values(
     sp_model,
     data, 
