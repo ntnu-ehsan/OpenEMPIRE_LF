@@ -90,7 +90,7 @@ def run_empire(
 
     # Constraint defintions
     define_investment_constraints(model, empire_config.north_sea_flag)
-    define_operational_constraints(model, logger, empire_config.emission_cap_flag, include_hydro_node_limit_constraint_flag=True)
+    define_operational_constraints(model, logger, empire_config.emission_cap_flag, include_hydro_node_limit_constraint_flag=empire_config.include_hydro_node_limit_constraint_flag)
 
 
     if empire_config.lopf_flag:
