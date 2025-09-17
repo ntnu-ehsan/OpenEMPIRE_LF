@@ -79,9 +79,6 @@ def run_empire(
         define_investment_variables(model)
 
     define_operational_variables(model)
-    # Model parameter preparations
-    prep_operational_parameters(model)
-
 
 
     if not out_of_sample_flag:
