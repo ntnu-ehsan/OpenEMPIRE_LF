@@ -64,6 +64,9 @@ def load_shared_sets(model, data, tab_file_path, north_sea_flag, load_period=Tru
     data.load(filename=str(tab_file_path / 'Sets_StorageOfNodes.tab'),format="set", set=model.StoragesOfNode)
     if load_period:
         data.load(filename=str(tab_file_path / 'Sets_Horizon.tab'),format="set", set=model.Period)
+        from .loading_utils import load_set
+        load_set(data, model.PeriodActive, period_active)
+        # data.load(filename=str(tab_file_path / 'Sets_Horizon.tab'),format="set", set=model.PeriodActive)
     return 
 
 
