@@ -33,7 +33,9 @@ def create_master_problem_instance(
         run_config: EmpireRunConfiguration, 
         empire_config: EmpireConfiguration, 
         Period: list[int]
-        ) -> None | float:
+        regularization_flag: bool = True,
+        regularization_weight: float = 1e6,
+        ) -> ConcreteModel:
 
     prepare_temp_dir(empire_config.use_temporary_directory, temp_dir=empire_config.temporary_directory)
     prepare_results_dir(run_config)
@@ -93,8 +95,39 @@ def create_master_problem_instance(
     model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)
 
     def Obj_rule(model):
-        return investment_obj(model) + \
+        obj = investment_obj(model) + \
             sum(model.theta[i] for i in model.PeriodActive)
+        # Regularization: penalize deviation from previous iteration capacities
+        # weight can be tuned; smaller = softer stabilization
+        if regularization_flag and capacity_params is not None:
+
+            for period in model.PeriodActive:
+                # Generators
+
+                for (n, g) in model.GeneratorsOfNode:
+                    # breakpoint()
+                    prev = capacity_params['genInstalledCap'][period][(n, g, period)]
+                    curr = model.genInstalledCap[n, g, period]
+                    obj += regularization_weight * ((curr - prev)/prev) ** 2
+
+                # Storage energy
+                for (n, b) in model.StoragesOfNode:
+                    prev = capacity_params['storENInstalledCap'][period][(n, b, period)]
+                    curr = model.storENInstalledCap[n, b, period]
+                    obj += regularization_weight * ((curr - prev)/prev) ** 2
+
+                # Storage power
+                for (n, b) in model.StoragesOfNode:
+                    prev = capacity_params['storPWInstalledCap'][period][(n, b, period)]
+                    curr = model.storPWInstalledCap[n, b, period]
+                    obj += regularization_weight * ((curr - prev)/prev) ** 2
+
+                # Transmission
+                for (line_pair) in model.BidirectionalArc:
+                    prev = capacity_params['transmissionInstalledCap'][period][(line_pair, period)]
+                    curr = model.transmissionInstalledCap[line_pair, period]
+                    obj += regularization_weight * ((curr - prev)/prev) ** 2
+        return obj
 
     model.Obj = Objective(rule=Obj_rule, sense=minimize)
 
