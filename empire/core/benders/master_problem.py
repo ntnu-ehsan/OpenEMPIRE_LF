@@ -4,7 +4,7 @@ import logging
 import os
 import time
 from pathlib import Path
-
+from collections import defaultdict
 
 
 from pyomo.environ import (
@@ -16,7 +16,8 @@ from pyomo.environ import (
     Objective,
     minimize,
     Expression,
-    value
+    value,
+    ConcreteModel
 )
 from empire.core.optimization.objective import investment_obj, multiplier_rule
 from empire.core.optimization.investment import define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 def create_master_problem_instance(
         run_config: EmpireRunConfiguration, 
         empire_config: EmpireConfiguration, 
-        Period: list[int]
+        capacity_params: dict | None = None,
         regularization_flag: bool = True,
         regularization_weight: float = 1e6,
         ) -> ConcreteModel:
@@ -41,58 +42,23 @@ def create_master_problem_instance(
     prepare_results_dir(run_config)
     
     model = AbstractModel()
-
-    
-    ########
-    ##SETS##
-    ########
-
-    define_shared_sets(model, Period, empire_config.north_sea_flag)
-
-
-    ##############
-    ##PARAMETERS##
-    ##############
-
-    #Define the parameters
-
-    logger.info("Declaring parameters...")
-    
+    define_shared_sets(model, empire_config.north_sea_flag)
     define_shared_parameters(model, empire_config.discount_rate, empire_config.leap_years_investment)
     define_investment_parameters(model, empire_config.wacc)
+    define_investment_variables(model)
 
     #Load the data
-
     data = DataPortal()
     load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag)
     load_shared_parameters(model, data, run_config.tab_file_path)
     load_investment_parameters(model, data, run_config.tab_file_path)
 
-
-    logger.info("Sets and parameters declared and read...")
-
-    #############
-    ##VARIABLES##
-    #############
-
-    logger.info("Declaring variables...")
-
-
-    define_investment_variables(model)
-    prep_investment_parameters(model)
-
-
-    ###############
-    ##CONSTRAINTS##
-    ###############
-
-    # constraint defintions
+    prep_investment_parameters(model) 
     define_investment_constraints(model, empire_config.north_sea_flag)
 
-    
+    # Benders specific
     model.theta = Var(model.Period, within=NonNegativeReals)
-    
-    model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)
+    model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)  # must be specified before defining objective 
 
     def Obj_rule(model):
         obj = investment_obj(model) + \
@@ -175,10 +141,6 @@ def solve_master_problem(instance, empire_config: EmpireConfiguration, run_confi
         if empire_config.pickle_instance_flag:
             pickle_instance(instance, run_config.run_name, empire_config.use_temp_dir_flag, logger, empire_config.temporary_directory)
 
-        #instance.display('outputs_gurobi.txt')
-
-        #import pdb; pdb.set_trace()
-
         write_results(instance, run_config.results_path, run_config.run_name, False, empire_config.emission_cap_flag, empire_config.print_iamc_flag, logger)
 
     return opt, value(instance.Obj)
@@ -192,8 +154,9 @@ CAPACITY_VARS = [
 ]
 def extract_capacity_params(mp_instance):
     """Extract capacity parameters from the master problem instance."""
+
     capacity_params = {
-        var: {} for var in CAPACITY_VARS
+        var: {period: {} for period in mp_instance.PeriodActive} for var in CAPACITY_VARS
     }
     for period in mp_instance.PeriodActive:
         capacity_params['genInstalledCap'][period] = {(*ng, period): mp_instance.genInstalledCap[ng, period].value for ng in mp_instance.GeneratorsOfNode}
@@ -203,16 +166,25 @@ def extract_capacity_params(mp_instance):
     return capacity_params
 
 
-def define_initial_capacity_params(mp_instance):
-    ## set all capacities to zero
+def define_initial_capacity_params(base_value=1e4):
+    """Initialize capacity params as nested defaultdicts with base_value as default."""
+    def default_factory():
+        return base_value
+
     capacity_params = {
-        var: {} for var in CAPACITY_VARS
+        'genInstalledCap': defaultdict(lambda: defaultdict(default_factory)),
+        'storENInstalledCap': defaultdict(lambda: defaultdict(default_factory)),
+        'storPWInstalledCap': defaultdict(lambda: defaultdict(default_factory)),
+        'transmissionInstalledCap': defaultdict(lambda: defaultdict(default_factory)),
     }
-    base_value = 1e4
-    for period in mp_instance.PeriodActive:
-        capacity_params['genInstalledCap'][period] = {(*ng, period): base_value for ng in mp_instance.GeneratorsOfNode}
-        capacity_params['storENInstalledCap'][period] = {(*nb, period): base_value for nb in mp_instance.StoragesOfNode}
-        capacity_params['storPWInstalledCap'][period] = {(*nb, period): base_value for nb in mp_instance.StoragesOfNode}
-        capacity_params['transmissionInstalledCap'][period] = {(line_pair, period): base_value for line_pair in mp_instance.BidirectionalArc}
+
+    # for period in mp_instance.PeriodActive:
+    #     for ng in mp_instance.GeneratorsOfNode:
+    #         capacity_params['genInstalledCap'][period][(*ng, period)] = base_value
+    #     for nb in mp_instance.StoragesOfNode:
+    #         capacity_params['storENInstalledCap'][period][(*nb, period)] = base_value
+    #         capacity_params['storPWInstalledCap'][period][(*nb, period)] = base_value
+    #     for line_pair in mp_instance.BidirectionalArc:
+    #         capacity_params['transmissionInstalledCap'][period][(line_pair, period)] = base_value
 
     return capacity_params
