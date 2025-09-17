@@ -8,7 +8,7 @@ from empire.core.config import OperationalInputParams, EmpireConfiguration, Empi
 from .master_problem import create_master_problem_instance, solve_master_problem, extract_capacity_params, define_initial_capacity_params
 from .subproblem import create_subproblem_model, solve_subproblem, create_subproblem_instance, load_data
 from .cuts_v2 import define_cut_structure, CapacityVariableHandler
-from empire.core.optimization.operational import load_stochastic_input, derive_stochastic_parameters, prep_operational_parameters, define_operational_parameters, define_period_and_scenario_dependent_parameters, define_stochastic_input
+from empire.core.optimization.operational import derive_stochastic_parameters, prep_operational_parameters, define_operational_parameters, define_period_and_scenario_dependent_parameters, define_stochastic_input
 from empire.core.optimization.shared_data import define_shared_parameters
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ def create_cut(
             empire_config,
             run_config
             )
-        breakpoint()
+
         cut_structure: list[CapacityVariableHandler] = define_cut_structure(sp_instance, period_active, w)
 
         for capacity_variable_handler in cut_structure:

@@ -14,7 +14,6 @@ from pyomo.environ import (
     DataPortal,
     AbstractModel,
     Suffix, 
-    Set,
     ConcreteModel
 )
 from empire.core.optimization.objective import define_objective
@@ -22,7 +21,6 @@ from empire.core.optimization.operational import define_operational_sets, define
 from empire.core.optimization.shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
 from empire.core.optimization.out_of_sample_functions import set_investments_as_parameters
 from empire.core.optimization.lopf_module import LOPFMethod, load_line_parameters
-from empire.core.optimization.results import write_results, run_operational_model, write_operational_results, write_pre_solve
 from empire.core.optimization.solver import set_solver
 from empire.core.optimization.helpers import pickle_instance, log_problem_statistics, prepare_results_dir, prepare_temp_dir
 from empire.core.config import EmpireRunConfiguration, OperationalInputParams, EmpireConfiguration
@@ -175,9 +173,9 @@ def load_selected_operational_parameters(model, data, tab_file_path, emission_ca
 
 
 
-def create_subproblem_instance(model, data) -> ConcreteModel:
+def create_subproblem_instance(model: AbstractModel, data: DataPortal) -> ConcreteModel:
     start = time.time()
-    instance: ConcreteModel = model.create_instance(data) #, report_timing=True)
+    instance: ConcreteModel = model.create_instance(data) 
     end = time.time()
     logger.info("Building instance took [sec]: %d", end - start)
     return instance 

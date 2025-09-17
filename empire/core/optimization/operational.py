@@ -1,4 +1,4 @@
-from pyomo.environ import Constraint, Set, Var, value, BuildAction, Expression, AbstractModel, NonNegativeReals, Param, PercentFraction
+from pyomo.environ import Constraint, Set, Var, value, BuildAction, Expression, AbstractModel, NonNegativeReals, Param, PercentFraction, ConcreteModel
 import logging
 from empire.core.config import OperationalInputParams
 from .loading_utils import load_set
@@ -183,8 +183,9 @@ def prep_operational_parameters(model, num_scenarios=None) -> None:
     return 
 
 
-def derive_stochastic_parameters(instance):
-    """Set values for stochastic parameters."""
+def derive_stochastic_parameters(instance: ConcreteModel) -> None:
+    """Set values for stochastic parameters based on raw inputs.
+    E.g. compute sload from sloadRaw."""
     def _set_maxRegHydroGen(instance):
         """Assign values to maxRegHydroGen from maxRegHydroGenRaw."""
         for n in instance.Node:
