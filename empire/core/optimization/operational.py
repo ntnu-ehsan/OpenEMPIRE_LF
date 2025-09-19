@@ -2,6 +2,8 @@ from pyomo.environ import Constraint, Set, Var, value, BuildAction, Expression, 
 import logging
 from empire.core.config import OperationalInputParams
 from .loading_utils import load_set
+import pandas as pd
+
 
 logger = logging.getLogger(__name__)
 
