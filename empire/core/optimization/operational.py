@@ -183,7 +183,7 @@ def prep_operational_parameters(model, num_scenarios=None) -> None:
     return 
 
 
-def derive_stochastic_parameters(instance: ConcreteModel) -> None:
+def derive_stochastic_parameters(instance: ConcreteModel, node_unscaled_yearly_demand=None) -> None:
     """Set values for stochastic parameters based on raw inputs.
     E.g. compute sload from sloadRaw."""
     def _set_maxRegHydroGen(instance):
@@ -200,29 +200,33 @@ def derive_stochastic_parameters(instance: ConcreteModel) -> None:
                         instance.maxRegHydroGen[i, w, n, s] = total
     _set_maxRegHydroGen(instance)
 
-    def _set_sload(instance):
+    def _set_sload(instance, node_unscaled_yearly_demand_ser=None):
         # Precompute cutoff
         cutoff = list(instance.FirstHoursOfRegSeason)[-1] + instance.lengthRegSeason
 
         for n in instance.Node:
             for i in instance.PeriodActive:
                 # Compute probability-weighted raw demand
-                noderawdemand = sum(
-                    instance.sceProbab[w] * instance.seasScale[s] * instance.sloadRaw[i, w, n, h]
-                    for (s, h) in instance.HoursOfSeason
-                    if h < cutoff  # adjust if you want peak hours included
-                    for w in instance.Scenario
-                )
+                if node_unscaled_yearly_demand_ser is None:
+                    node_unscaled_yearly_demand = value(sum(
+                        instance.sceProbab[w] * instance.seasScale[s] * instance.sloadRaw[i, w, n, h]
+                        for (s, h) in instance.HoursOfSeason
+                        # if h < cutoff  # adjust if you want peak hours included
+                        for w in instance.Scenario
+                    ))
+                elif isinstance(node_unscaled_yearly_demand_ser, pd.Series):
+                    node_unscaled_yearly_demand = node_unscaled_yearly_demand.loc[n]
 
                 # Scaling factor, safe for zero demand
-                
-                hourlyscale = instance.sloadAnnualDemand[n, i] / noderawdemand if value(noderawdemand) != 0 else 0
+
+                hourlyscale = value(instance.sloadAnnualDemand[n, i]) / node_unscaled_yearly_demand if node_unscaled_yearly_demand != 0 else 0
 
                 for w in instance.Scenario:
                     for h in instance.Operationalhour:
                         instance.sload[i, w, n, h] = instance.sloadRaw[i, w, n, h] * hourlyscale 
 
-    _set_sload(instance)
+
+    _set_sload(instance, node_unscaled_yearly_demand)
 
     def _set_genCapAvail(instance):
         """Assign generator availability based on type and stochastic raw availability."""

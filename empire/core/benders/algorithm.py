@@ -168,10 +168,27 @@ def solve_sp(
     run_config: EmpireRunConfiguration
     ):
     sp_instance = create_subproblem_instance(sp_model, data)
-    derive_stochastic_parameters(sp_instance)
+    node_unscaled_yearly_demand = calc_total_raw_nodal_load(sp_instance, period_active, operational_params, empire_config, run_config)
+    derive_stochastic_parameters(sp_instance, node_unscaled_yearly_demand)
     opt = solve_subproblem(sp_instance, empire_config.optimization_solver, run_config, capacity_params)
     return sp_instance, opt
 
 
-
+def calc_total_raw_nodal_load(instance, period_active, operational_params: OperationalInputParams, empire_config: EmpireConfiguration, run_config: EmpireRunConfiguration) -> pd.DataFrame:
+    demand_data = read_tab_file(run_config.tab_file_path / 'Stochastic_ElectricLoadRaw.tab')
+    demand_data_ser = pd.Series(demand_data)
+    demand_data_ser.index.names = ['Period', 'Scenario', 'Node', 'Hour']
+    # demand_data_ser_total = demand_data_ser.groupby(['Period', 'Node']).sum()
+    sceProbab = 1 / len(operational_params.scenarios)  # Needs to be updated if non-uniform probabilities are used.
+    seasScale = read_tab_file(run_config.tab_file_path / 'General_seasonScale.tab')
+    node_unscaled_yearly_demand = pd.Series(0.0, index=instance.Node)
+    for n in instance.Node:
+        # Compute probability-weighted raw demand
+            node_unscaled_yearly_demand.loc[n] = sum(
+                sceProbab * seasScale[(s,)] * demand_data_ser[period_active, w, n, h]
+                for (s, h) in operational_params.HoursOfSeason
+                # if h < cutoff  # adjust if you want peak hours included
+                for w in instance.Scenario
+            )
+    return node_unscaled_yearly_demand
 
