@@ -107,35 +107,29 @@ def create_cut(
     expr = 0 
     scenario_objectives = {}
     cut_data = {}
-    for w in scenarios:
-        cut_data[w] = {}
-        sp_model = create_subproblem_model(run_config, empire_config, operational_input_params)
-        
+    for scenario in scenarios:
+        cut_data[scenario] = {}
 
-        # 
-        # define_shared_parameters(sp_model, empire_config.discount_rate, empire_config.leap_years_investment)  # should not be needed preferably. 
-        # define_stochastic_input(sp_model)
-        data = load_data(sp_model, run_config, empire_config, period_active, w, capacity_params, out_of_sample_flag=False)  # DUPLICATE? 
-
-            sp_model,
-            data,
+        sp_instance, opt = exe_subproblem_routine(
             capacity_params,
+            period_active,
+            scenario,
             empire_config,
             run_config,
             operational_input_params,
             )
 
-        cut_structure: list[CapacityVariableHandler] = define_cut_structure(sp_instance, period_active, w)
+        cut_structure: list[CapacityVariableHandler] = define_cut_structure(sp_instance, period_active, scenario)
 
         for capacity_variable_handler in cut_structure:
-            cut_data[w][capacity_variable_handler.capacity_var_name] = capacity_variable_handler.extract_data(sp_instance)
+            cut_data[scenario][capacity_variable_handler.capacity_var_name] = capacity_variable_handler.extract_data(sp_instance)
 
-        scenario_objectives[w] = value(sp_instance.Obj)
+        scenario_objectives[scenario] = value(sp_instance.Obj)
 
     # can pickle capacity data and cut structure here if needed
-    expr = sum(scenario_objectives[w] for w in scenarios)
-    for w in scenarios:
-        for capacity_variable_name, dual_and_coeff_total in cut_data[w].items():
+    expr = sum(scenario_objectives[scenario] for scenario in scenarios)
+    for scenario in scenarios:
+        for capacity_variable_name, dual_and_coeff_total in cut_data[scenario].items():
 
             # duals_var = duals.groupby(indices_to_keep).sum()
             # coefficients_var = coefficients.groupby(indices_to_keep).sum()

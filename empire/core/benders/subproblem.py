@@ -206,16 +206,17 @@ def load_capacity_values(
 
 
 def exe_subproblem_routine(
-    sp_model: AbstractModel,
-    data: DataPortal,
     capacity_params: dict,
+    period_active: int,
+    scenario: str,
     empire_config: EmpireConfiguration,
     run_config: EmpireRunConfiguration,
-    operational_params: OperationalInputParams,
-    period_active: list[int]
+    operational_input_params: OperationalInputParams,
     ):
+    sp_model = create_subproblem_model(run_config, empire_config, operational_input_params)
+    data = load_data(sp_model, run_config, empire_config, period_active, scenario, capacity_params, out_of_sample_flag=False)  # DUPLICATE?
     sp_instance = create_subproblem_instance(sp_model, data)
-    node_unscaled_yearly_demand_ser = calc_total_raw_nodal_load(sp_instance, period_active, operational_params, empire_config, run_config)
+    node_unscaled_yearly_demand_ser = calc_total_raw_nodal_load(sp_instance, period_active, operational_input_params, empire_config, run_config)
     derive_stochastic_parameters(sp_instance, node_unscaled_yearly_demand_ser)
     opt = solve_subproblem(sp_instance, empire_config.optimization_solver, run_config, capacity_params)
     return sp_instance, opt
