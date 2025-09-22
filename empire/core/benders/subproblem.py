@@ -8,7 +8,10 @@ from pathlib import Path
 import tempfile
 import pandas as pd
 import os
-from empire.core.optimization.loading_utils import load_dict_into_dataportal, load_parameter
+from empire.core.optimization.loading_utils import load_dict_into_dataportal, load_parameter, read_tab_file
+
+
+
 
 from pyomo.environ import (
     DataPortal,
@@ -17,7 +20,7 @@ from pyomo.environ import (
     ConcreteModel
 )
 from empire.core.optimization.objective import define_objective
-from empire.core.optimization.operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input, define_period_and_scenario_dependent_parameters
+from empire.core.optimization.operational import derive_stochastic_parameters, define_operational_sets, define_operational_constraints, prep_operational_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input, define_period_and_scenario_dependent_parameters
 from empire.core.optimization.shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
 from empire.core.optimization.out_of_sample_functions import set_investments_as_parameters
 from empire.core.optimization.lopf_module import LOPFMethod, load_line_parameters
@@ -202,3 +205,36 @@ def load_capacity_values(
     return
 
 
+def exe_subproblem_routine(
+    sp_model: AbstractModel,
+    data: DataPortal,
+    capacity_params: dict,
+    empire_config: EmpireConfiguration,
+    run_config: EmpireRunConfiguration,
+    operational_params: OperationalInputParams,
+    period_active: list[int]
+    ):
+    sp_instance = create_subproblem_instance(sp_model, data)
+    node_unscaled_yearly_demand_ser = calc_total_raw_nodal_load(sp_instance, period_active, operational_params, empire_config, run_config)
+    derive_stochastic_parameters(sp_instance, node_unscaled_yearly_demand_ser)
+    opt = solve_subproblem(sp_instance, empire_config.optimization_solver, run_config, capacity_params)
+    return sp_instance, opt
+
+
+def calc_total_raw_nodal_load(instance, period_active: int, operational_params: OperationalInputParams, empire_config: EmpireConfiguration, run_config: EmpireRunConfiguration) -> pd.DataFrame:
+    demand_data = read_tab_file(run_config.tab_file_path / 'Stochastic_ElectricLoadRaw.tab')
+    demand_data_ser = pd.Series(demand_data)
+    demand_data_ser.index.names = ['Period', 'Scenario', 'Node', 'Hour']
+    # demand_data_ser_total = demand_data_ser.groupby(['Period', 'Node']).sum()
+    sceProbab = 1 / len(operational_params.scenarios)  # Needs to be updated if non-uniform probabilities are used.
+    seasScale = read_tab_file(run_config.tab_file_path / 'General_seasonScale.tab')
+    node_unscaled_yearly_demand_ser = pd.Series(0.0, index=instance.Node)
+    for n in instance.Node:
+        # Compute probability-weighted raw demand
+            node_unscaled_yearly_demand_ser.loc[n] = sum(
+                sceProbab * seasScale[(s,)] * demand_data_ser[period_active, w, n, h]
+                for (s, h) in operational_params.HoursOfSeason
+                # if h < cutoff  # adjust if you want peak hours included
+                for w in instance.Scenario
+            )
+    return node_unscaled_yearly_demand_ser
