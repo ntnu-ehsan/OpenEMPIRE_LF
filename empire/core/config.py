@@ -166,7 +166,7 @@ class EmpireConfiguration:
 
         # Prepare a dictionary of arguments
         # Set to None if there is no default value
-        init_args = {}
+        init_args: dict[str, Parameter] = {}
         for param_name, param in init_signature.parameters.items():
             if param_name != "self":
                 # Check if the parameter has a default value

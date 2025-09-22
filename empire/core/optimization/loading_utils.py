@@ -38,7 +38,8 @@ def filter_param_by_dims(raw_data: dict, dim_indices: dict) -> dict:
 
 
 
-def load_dict_into_dataportal(data: DataPortal, param, data_dict):
+def load_dict_into_dataportal(data: DataPortal, param, data_dict: dict[tuple | str | int | float, float]):
+
     def _return_list(idx):
         b = []
         for i in idx:
@@ -48,6 +49,9 @@ def load_dict_into_dataportal(data: DataPortal, param, data_dict):
                 b.append(i)
         return b
     
+
+    if not data_dict:
+        raise ValueError(f"No data to load for parameter {param.name}")
     rows = []
     for idx, val in data_dict.items():
         if isinstance(idx, tuple):
@@ -93,8 +97,8 @@ def load_parameter(
     Only loads entries for the specified periods and scenarios.
     """
     raw_data = read_tab_file(tab_file_path)
-    
-    dim_indices = {}
+
+    dim_indices: dict[int, list[str | int]] = {}
     if periods_to_load is not None and period_indnr is not None:
         dim_indices[period_indnr] = periods_to_load
     if scenarios_to_load is not None and scenario_indnr is not None:
@@ -110,12 +114,14 @@ def load_parameter(
 
 
 
-def load_set(data, model_set, value):
+def load_set(data: DataPortal, model_set: Set, value: list | int | float | str):
     """Create a temporary .tab file with the specified period and load it into the DataPortal."""
     if isinstance(value, (int, float, str)):
         val = [value]
-    else:
+    elif isinstance(value, list):
         val = value
+    else:
+        raise ValueError(f"Unsupported type for value: {type(value)}")
     df = pd.Series(val, name="value").to_frame()
     with tempfile.NamedTemporaryFile(mode="w", suffix=".tab", delete=False) as tmpfile:
         df.to_csv(tmpfile.name, sep="\t", index=False, header=True)

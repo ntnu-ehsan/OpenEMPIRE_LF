@@ -117,7 +117,6 @@ def load_data(
     empire_config: EmpireConfiguration, 
     period: int, 
     scenario: str, 
-    capacity_params: dict, 
     out_of_sample_flag: bool, 
     sample_file_path: Path | None = None
     ) -> DataPortal:
@@ -130,7 +129,6 @@ def load_data(
 
     load_shared_parameters(model, data, run_config.tab_file_path)
     load_selected_operational_parameters(model, data, run_config.tab_file_path, empire_config.emission_cap_flag, out_of_sample_flag, period, scenario, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
-    load_capacity_values(model, data, capacity_params, period)
 
     # Load electrical data for LOPF if requested (need to split investment and operations!)
     if empire_config.lopf_flag:
@@ -138,7 +136,7 @@ def load_data(
     return data
 
 
-def load_selected_operational_parameters(model, data, tab_file_path, emission_cap_flag, out_of_sample_flag, period, scenario, sample_file_path=None, scenario_data_path=None) -> None:
+def load_selected_operational_parameters(model, data, tab_file_path, emission_cap_flag, out_of_sample_flag, period: int, scenario: str, sample_file_path=None, scenario_data_path=None) -> None:
     # Load operational generator parameters
     data.load(filename=str(tab_file_path / 'Generator_VariableOMCosts.tab'), param=model.genVariableOMCost, format="table")
 
@@ -195,8 +193,8 @@ def solve_subproblem(instance, solver_name, run_config, investment_params):
 def load_capacity_values(
     sp_model,
     data, 
-    capacity_params: dict,
-    period_active   : int
+    capacity_params: dict[str, dict[int, dict[tuple | str | int | float, float]]],
+    period_active: int
     ) -> None:
     """Load capacity values from the MP into the DataPortal for the subproblem."""
     for param_name, capacities in capacity_params.items():
@@ -206,7 +204,7 @@ def load_capacity_values(
 
 
 def exe_subproblem_routine(
-    capacity_params: dict,
+    capacity_params: dict[str, dict[int, dict[tuple | str | int | float, float]]],
     period_active: int,
     scenario: str,
     empire_config: EmpireConfiguration,
@@ -214,7 +212,8 @@ def exe_subproblem_routine(
     operational_input_params: OperationalInputParams,
     ):
     sp_model = create_subproblem_model(run_config, empire_config, operational_input_params)
-    data = load_data(sp_model, run_config, empire_config, period_active, scenario, capacity_params, out_of_sample_flag=False)  # DUPLICATE?
+    data = load_data(sp_model, run_config, empire_config, period_active, scenario, out_of_sample_flag=False) # load all data except capacities
+    load_capacity_values(sp_model, data, capacity_params, period_active) # load capacities into DataPortal
     sp_instance = create_subproblem_instance(sp_model, data)
     node_unscaled_yearly_demand_ser = calc_total_raw_nodal_load(sp_instance, period_active, operational_input_params, empire_config, run_config)
     derive_stochastic_parameters(sp_instance, node_unscaled_yearly_demand_ser)

@@ -1,4 +1,5 @@
 import os 
+from pathlib import Path
 from pyomo.environ import Param, NonNegativeReals
 from empire.utils import get_name_of_last_folder_in_path
 
@@ -31,7 +32,7 @@ def load_optimized_investments(model, data, result_file_path):
     return 
 
 
-def set_out_of_sample_path(result_file_path, sample_file_path):
+def set_out_of_sample_path(result_file_path, sample_file_path) -> Path:
     """Update result_file_path to output for given out_of_sample tree"""
     sample_tree = get_name_of_last_folder_in_path(sample_file_path)
     result_file_path = result_file_path / f"OutOfSample/{sample_tree}"

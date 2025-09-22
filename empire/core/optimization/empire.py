@@ -10,7 +10,9 @@ from pathlib import Path
 from pyomo.environ import (
     DataPortal,
     AbstractModel,
+    ConcreteModel,
     Suffix, 
+    value
 )
 from .objective import define_objective
 from .operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, derive_stochastic_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input, define_period_and_scenario_dependent_parameters, load_operational_sets
@@ -35,7 +37,7 @@ def run_empire(
         operational_input_params: OperationalInputParams,
         out_of_sample_flag: bool = False,
         sample_file_path: Path | None = None,
-        ) -> None | float:
+        ) -> float:
 
     prepare_temp_dir(empire_config.use_temporary_directory, temp_dir=empire_config.temporary_directory)
     prepare_results_dir(run_config)
@@ -119,7 +121,7 @@ def run_empire(
 
     start = time.time()
 
-    instance = model.create_instance(data) #, report_timing=True)
+    instance: ConcreteModel = model.create_instance(data) #, report_timing=True)
     derive_stochastic_parameters(instance)
 
 
@@ -149,6 +151,7 @@ def run_empire(
 
 
     post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag)  
+    return value(instance.Obj)
 
 
 def post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag):
