@@ -146,27 +146,7 @@ def run_empire(
     opt = set_solver(empire_config.optimization_solver, logger)
     logger.info("Solving...")
     results = opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
-    # breakpoint()
-    # if results.solver.termination_condition == TerminationCondition.infeasible:
-    #      lp_filename = "subproblem.lp"
-    #      gurobi_model = gp.read(lp_filename)
-    #      gurobi_model.setParam("Method", 1)  # Ensure Dual Simplex is used
-    #      gurobi_model.setParam("InfUnbdInfo", 1)  # Enable infeasibility certificate
-    #      gurobi_model.setParam("DualReductions", 0)  # Ensure extreme ray is available
-    #      gurobi_model.setParam("PreSolve", 0)   # Disable preprocessing
-    #      gurobi_model.optimize()
 
-    # # Find dual extreme points
-    # print('Dual extreme points:')
-    # dual_values = gurobi_model.getAttr("Pi", gurobi_model.getConstrs())
-    # for constr, dual_value in zip(gurobi_model.getConstrs(), dual_values):
-    #      print(constr, dual_value)
-     
-    # # Find dual extreme rays
-    # print('Dual extreme rays:')
-    # for constr in gurobi_model.getConstrs():
-    #     farkas_dual = constr.getAttr("FarkasDual")
-    #     print(constr, farkas_dual)
 
     post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag)  
 
