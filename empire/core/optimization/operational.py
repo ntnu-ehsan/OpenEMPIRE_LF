@@ -185,7 +185,7 @@ def prep_operational_parameters(model, num_scenarios=None) -> None:
     return 
 
 
-def derive_stochastic_parameters(instance: ConcreteModel, node_unscaled_yearly_demand=None) -> None:
+def derive_stochastic_parameters(instance: ConcreteModel, node_unscaled_yearly_demand_ser=None) -> None:
     """Set values for stochastic parameters based on raw inputs.
     E.g. compute sload from sloadRaw."""
     def _set_maxRegHydroGen(instance):
@@ -217,7 +217,7 @@ def derive_stochastic_parameters(instance: ConcreteModel, node_unscaled_yearly_d
                         for w in instance.Scenario
                     ))
                 elif isinstance(node_unscaled_yearly_demand_ser, pd.Series):
-                    node_unscaled_yearly_demand = node_unscaled_yearly_demand.loc[n]
+                    node_unscaled_yearly_demand = node_unscaled_yearly_demand_ser.loc[n]
 
                 # Scaling factor, safe for zero demand
 
@@ -227,8 +227,8 @@ def derive_stochastic_parameters(instance: ConcreteModel, node_unscaled_yearly_d
                     for h in instance.Operationalhour:
                         instance.sload[i, w, n, h] = instance.sloadRaw[i, w, n, h] * hourlyscale 
 
-
-    _set_sload(instance, node_unscaled_yearly_demand)
+    
+    _set_sload(instance, node_unscaled_yearly_demand_ser)
 
     def _set_genCapAvail(instance):
         """Assign generator availability based on type and stochastic raw availability."""
