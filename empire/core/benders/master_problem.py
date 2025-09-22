@@ -58,7 +58,7 @@ def create_master_problem_instance(
     define_investment_constraints(model, empire_config.north_sea_flag)
 
     # Benders specific
-    model.theta = Var(model.Period, within=NonNegativeReals)
+    model.theta = Var(model.PeriodActive, within=NonNegativeReals)
     model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)  # must be specified before defining objective 
 
     def Obj_rule(model):
