@@ -69,9 +69,14 @@ def load_dict_into_dataportal(data: DataPortal, param, data_dict):
     with tempfile.NamedTemporaryFile(mode="w", suffix=".tab", delete=False) as tmpfile:
         df.to_csv(tmpfile.name, sep="\t", index=False)
         tmpname = tmpfile.name
-        data.load(filename=tmpname, param=param, format="table")
         try:
             data.load(filename=tmpname, param=param, format="table")
+        except Exception as e:
+            print(f"Error loading parameter {param.name} from temporary file.")
+            print(f"Dataframe: {df}")
+            print(e)
+
+    os.remove(tmpname)
 
 
 def load_parameter(
