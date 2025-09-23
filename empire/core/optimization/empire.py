@@ -33,11 +33,11 @@ logger = logging.getLogger(__name__)
 def run_empire(
         run_config: EmpireRunConfiguration,
         empire_config: EmpireConfiguration,
-        periods: list[int], 
+        periods_active: list[int], 
         operational_input_params: OperationalInputParams,
         out_of_sample_flag: bool = False,
         sample_file_path: Path | None = None,
-        ) -> float:
+        ) -> tuple[float, ConcreteModel] | None:
 
     prepare_temp_dir(empire_config.use_temporary_directory, temp_dir=empire_config.temporary_directory)
     prepare_results_dir(run_config)
@@ -58,7 +58,7 @@ def run_empire(
 
     # # Data loading
     data = DataPortal()
-    load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag, load_period=True, period_active=periods)
+    load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag, load_period=True, periods_active=periods_active)
     load_operational_sets(model, data, operational_input_params.scenarios)
     load_shared_parameters(model, data, run_config.tab_file_path)
     load_operational_parameters(model, data, run_config.tab_file_path, empire_config.emission_cap_flag, out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
@@ -73,7 +73,8 @@ def run_empire(
     # Variable definitions
     if out_of_sample_flag:
         set_investments_as_parameters(model)
-        load_optimized_investments(model, data, run_config.results_path)
+        
+        load_optimized_investments(model, data, run_config.results_path, set_only_capacities=True)
         results_path = set_out_of_sample_path(run_config.results_path, sample_file_path)
         logger.info("Out-of-sample results will be saved to: %s", results_path)
 
@@ -89,7 +90,8 @@ def run_empire(
 
 
     # Constraint defintions
-    define_investment_constraints(model, empire_config.north_sea_flag)
+    if not out_of_sample_flag:
+        define_investment_constraints(model, empire_config.north_sea_flag)
     define_operational_constraints(model, logger, empire_config.emission_cap_flag, include_hydro_node_limit_constraint_flag=empire_config.include_hydro_node_limit_constraint_flag)
 
 
@@ -101,7 +103,8 @@ def run_empire(
     else:
         logger.info("LOPF constraints not activated.")
 
-
+    # Model parameter preparations
+    prep_operational_parameters(model)
 
     # Objective definition
     define_objective(model)
@@ -109,8 +112,7 @@ def run_empire(
 
     #################################################################
 
-    # Model parameter preparations
-    prep_operational_parameters(model)
+
     #######
     ##RUN##
     #######
@@ -148,11 +150,11 @@ def run_empire(
     opt = set_solver(empire_config.optimization_solver, logger)
     logger.info("Solving...")
     results = opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
-
-
-    post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag)  
-    return value(instance.Obj)
-
+    if results.solver.termination_condition == TerminationCondition.optimal:
+        post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag)  
+        return value(instance.Obj), instance
+    else:
+        raise ValueError(f"Optimization was not successful. Termination condition: {results.solver.termination_condition}.")
 
 def post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag):
     if empire_config.pickle_instance_flag:

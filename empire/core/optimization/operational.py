@@ -25,7 +25,7 @@ def define_operational_variables(
     # Define operational variables for the model
     model.genOperational = Var(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
     model.storOperational = Var(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
-    model.transmisionOperational = Var(model.DirectionalLink, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals) #flow
+    model.transmisionOperational = Var(model.DirectionalLink, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals) 
     model.storCharge = Var(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
     model.storDischarge = Var(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
     model.loadShed = Var(model.Node, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
@@ -79,7 +79,7 @@ def define_stochastic_input(model):
 
     model.sloadRaw = Param(model.Period, model.Scenario, model.Node, model.Operationalhour, default=0.0, mutable=True)
     model.sload = Param(model.Period, model.Scenario, model.Node, model.Operationalhour, default=0.0, mutable=True)
-    model.genCapAvailStochRaw = Param(model.GeneratorsOfNode, model.Operationalhour, model.Period, model.Scenario, default=1., mutable=True, within=PercentFraction)
+    model.genCapAvailStochRaw = Param(model.GeneratorsOfNode, model.Operationalhour, model.Period, model.Scenario, default=1., mutable=False, within=PercentFraction)
     model.genCapAvail = Param(model.GeneratorsOfNode, model.Operationalhour, model.Period, model.Scenario, default=0.0, mutable=True, within=PercentFraction)
     model.maxRegHydroGenRaw = Param(model.Period, model.Scenario, model.Node, model.HoursOfSeason, default=0.0, mutable=True)
     model.maxRegHydroGen = Param(model.Period, model.Scenario, model.Node, model.Season, default=0.0, mutable=True)

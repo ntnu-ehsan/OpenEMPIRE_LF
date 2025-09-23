@@ -1,14 +1,12 @@
 import logging
 import numpy as np
-import pandas as pd
-from pathlib import Path
-from pyomo.environ import AbstractModel, ConstraintList, value, DataPortal
+from pyomo.environ import AbstractModel, ConstraintList, value
 
 from empire.core.config import OperationalInputParams, EmpireConfiguration, EmpireRunConfiguration
 from .master_problem import create_master_problem_instance, solve_master_problem, extract_capacity_params, define_initial_capacity_params
 from .subproblem import create_subproblem_model, exe_subproblem_routine, load_data
 from .cuts_v2 import define_cut_structure, CapacityVariableHandler
-from empire.core.optimization.shared_data import define_shared_parameters
+from empire.core.optimization.loading_utils import filter_data
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +14,7 @@ def run_benders(
     run_config: EmpireRunConfiguration,
     empire_config: EmpireConfiguration,
     operational_input_params: OperationalInputParams,
-    periods: list[int],
+    periods_active: list[int],
     capacity_params_init: None | dict = None,
 ) -> tuple[AbstractModel | None, float | None]:
     """
@@ -43,7 +41,7 @@ def run_benders(
     """
 
     if capacity_params_init is None:
-        capacity_params = define_initial_capacity_params()
+        capacity_params = define_initial_capacity_params(mp_instance)
     else:
         capacity_params = capacity_params_init
     # del(mp_instance)
@@ -60,13 +58,12 @@ def run_benders(
     # scenario_data = load_scenario_data(data, operational_input_params.scenarios)
     # should iterate until convergence 
     
-    last_mp_obj = -1
+    last_mp_obj = -1.
     mp_instance.cut_constraints = ConstraintList()
     mp_objs = []
     for iteration in range(empire_config.max_benders_iterations):
         logger.info("Benders iteration %d", iteration + 1)
-        for i in periods:
-            
+        for i in periods_active:
             cut = create_cut(
                 mp_instance, 
                 capacity_params, 
@@ -86,7 +83,8 @@ def run_benders(
             logger.info("Benders converged.")
             for i, mp_obj in enumerate(mp_objs):
                 print(f"Iteration {i+1}: Master problem objective = {mp_obj:.2e}")
-            return mp_instance, mp_objective
+            breakpoint()
+            return mp_objective, mp_instance
         last_mp_obj = mp_objective
 
     logger.info("Benders did not converge.")
@@ -97,6 +95,7 @@ def run_benders(
 def create_cut(
         master_instance, 
         capacity_params: dict,
+        capacity_params: dict[str, dict[tuple]],
         period_active: int,
         scenarios: list[str],
         empire_config: EmpireConfiguration,
@@ -106,7 +105,8 @@ def create_cut(
 
     expr = 0 
     scenario_objectives = {}
-    cut_data = {}
+    cut_data: dict[str, dict[str, dict[tuple, float]]] = {}
+    
     for scenario in scenarios:
         cut_data[scenario] = {}
 
@@ -138,17 +138,17 @@ def create_cut(
             for inds, multiplier in dual_and_coeff_total.items():  # loops over all tuples of constraint indices
                 if capacity_variable_name == "transmissionInstalledCap":
                     # transmission capacity variable can have n1, n2 switched around
-                    if ((inds[0], inds[1]), inds[2]) in capacity_params.get(capacity_variable_name)[period_active]:
-                        inds = ((inds[0], inds[1]), inds[2])
-                    elif ((inds[1], inds[0]), inds[2]) in capacity_params.get(capacity_variable_name)[period_active]:
-                        inds = ((inds[1], inds[0]), inds[2])
+                    if (inds[0], inds[1], inds[2]) in capacity_params[capacity_variable_name]:
+                        inds = (inds[0], inds[1], inds[2])
+                    elif (inds[1], inds[0], inds[2]) in capacity_params[capacity_variable_name]:
+                        inds = (inds[1], inds[0], inds[2])
                     else:
                         raise ValueError("Transmission capacity indices not found in old capacities.")
 
                 expr += multiplier * (
                     getattr(master_instance, capacity_variable_name)[inds]
                     -
-                    value(capacity_params.get(capacity_variable_name)[period_active][inds])
+                    value(capacity_params[capacity_variable_name][inds])
                 )
             # breakpoint()
     return master_instance.theta[period_active] >= expr

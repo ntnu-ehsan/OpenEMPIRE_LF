@@ -1,6 +1,6 @@
 
 
-from pyomo.environ import DataPortal, Param
+from pyomo.environ import DataPortal, Param, Set
 from pathlib import Path
 import pandas as pd
 import tempfile
@@ -24,7 +24,7 @@ def read_tab_file(file_path: Path) -> dict:
         data[idx] = row[value_col]
     return data
 
-def filter_param_by_dims(raw_data: dict, dim_indices: dict) -> dict:
+def _filter_param_by_dims(raw_data: dict, dim_indices: dict) -> dict[tuple, float]:
     """
     Filters raw_data dict of indexed Param values by allowed values on specified dimensions.
     dim_indices: dict {dim_position: allowed_values}
@@ -37,9 +37,37 @@ def filter_param_by_dims(raw_data: dict, dim_indices: dict) -> dict:
 
 
 
+def filter_data(
+    raw_data: dict[tuple, float],
+    periods_to_load: list[int] | None = None,
+    period_indnr: int | None = None,
+    scenarios_to_load: list[str] | None = None,
+    scenario_indnr: int | None = None,
+) -> dict[tuple | str | int | float, float]:
+    """
+    Filters raw_data dict of indexed Param values by allowed values on specified periods and scenarios.
+    """
+    dim_indices: dict[int, list] = {}
+    if periods_to_load is not None and period_indnr is not None:
+        dim_indices[period_indnr] = periods_to_load
+    if scenarios_to_load is not None and scenario_indnr is not None:
+        dim_indices[scenario_indnr] = scenarios_to_load
+    return _filter_param_by_dims(
+        raw_data,
+        dim_indices=dim_indices
+    )
 
-def load_dict_into_dataportal(data: DataPortal, param, data_dict: dict[tuple | str | int | float, float]):
 
+
+def load_dict_into_dataportal(data: DataPortal, param: Param, data_dict: dict[tuple | str | int | float, float]):
+    """
+    Loads a dictionary of data into a DataPortal for a specific parameter.
+
+    Args:
+        data (DataPortal): The DataPortal instance to load data into.
+        param (Param): The parameter to load data for.
+        data_dict (dict[tuple | str | int | float, float]): The data to load, with keys as indices and values as the data.
+    """
     def _return_list(idx):
         b = []
         for i in idx:
@@ -95,23 +123,24 @@ def load_parameter(
     """
     Loads a parameter for an abstract model.
     Only loads entries for the specified periods and scenarios.
+    If no periods or scenarios are specified (periods_to_load is None and scenarios_to_load is None), loads all data.
     """
     raw_data = read_tab_file(tab_file_path)
+    if not raw_data:
+        raise ValueError(f"No data found in file {tab_file_path} for parameter {param_component.name}")
+    if periods_to_load is None and scenarios_to_load is None:
+        filtered_data = raw_data
+    else:
+        filtered_data = filter_data(
+            raw_data,
+            periods_to_load=periods_to_load,
+            period_indnr=period_indnr,
+            scenarios_to_load=scenarios_to_load,
+            scenario_indnr=scenario_indnr,
+        )
 
-    dim_indices: dict[int, list[str | int]] = {}
-    if periods_to_load is not None and period_indnr is not None:
-        dim_indices[period_indnr] = periods_to_load
-    if scenarios_to_load is not None and scenario_indnr is not None:
-        dim_indices[scenario_indnr] = scenarios_to_load
-    filtered_data = filter_param_by_dims(
-        raw_data,
-        dim_indices=dim_indices
-    )
-    try:
-        load_dict_into_dataportal(data, param_component, filtered_data)
-    except:
-        breakpoint()
-
+    load_dict_into_dataportal(data, param_component, filtered_data)
+    return 
 
 
 def load_set(data: DataPortal, model_set: Set, value: list | int | float | str):

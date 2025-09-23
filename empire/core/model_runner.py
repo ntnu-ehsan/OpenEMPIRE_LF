@@ -85,7 +85,7 @@ def run_empire_model(
     #######
     ##RUN##
     #######
-    periods = [i + 1 for i in range(int((empire_config.forecast_horizon_year - 2020) / empire_config.leap_years_investment))]
+    periods_active = [i + 1 for i in range(int((empire_config.forecast_horizon_year - 2020) / empire_config.leap_years_investment))]
     operational_input_params = define_operational_input_params(empire_config)
 
 
@@ -128,17 +128,18 @@ def run_empire_model(
             obj_value = run_empire(
                 run_config=run_config,
                 empire_config=empire_config,
-                periods=periods,
+                periods_active=periods_active,
                 operational_input_params=operational_input_params,
                 sample_file_path=sample_file_path,
                 out_of_sample_flag=False,
+                out_of_sample_flag=OUT_OF_SAMPLE,
             )
         else:
-            obj_value = run_benders(
+            obj_value, _ = run_benders(
                 run_config=run_config,
                 empire_config=empire_config,
                 operational_input_params=operational_input_params,
-                periods=periods,
+                period_active=periods_active,
             )
 
 

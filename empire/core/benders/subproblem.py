@@ -27,7 +27,7 @@ from empire.core.optimization.lopf_module import LOPFMethod, load_line_parameter
 from empire.core.optimization.solver import set_solver
 from empire.core.optimization.helpers import pickle_instance, log_problem_statistics, prepare_results_dir, prepare_temp_dir
 from empire.core.config import EmpireRunConfiguration, OperationalInputParams, EmpireConfiguration
-from empire.core.optimization.loading_utils import load_set
+from empire.core.optimization.loading_utils import load_set, filter_data
 
 
 logger = logging.getLogger(__name__)
@@ -182,7 +182,7 @@ def create_subproblem_instance(model: AbstractModel, data: DataPortal) -> Concre
     return instance 
 
 
-def solve_subproblem(instance, solver_name, run_config, investment_params):
+def solve_subproblem(instance, solver_name, run_config):
     instance.dual = Suffix(direction=Suffix.IMPORT) #Make sure the dual value is collected into solver results (if solver supplies dual information)
     opt = set_solver(solver_name, logger)
     logger.info("Solving...")
@@ -215,9 +215,9 @@ def exe_subproblem_routine(
     data = load_data(sp_model, run_config, empire_config, period_active, scenario, out_of_sample_flag=False) # load all data except capacities
     load_capacity_values(sp_model, data, capacity_params, period_active) # load capacities into DataPortal
     sp_instance = create_subproblem_instance(sp_model, data)
-    node_unscaled_yearly_demand_ser = calc_total_raw_nodal_load(sp_instance, period_active, operational_input_params, empire_config, run_config)
+    node_unscaled_yearly_demand_ser = calc_total_raw_nodal_load(sp_instance.Node, period_active, operational_input_params, empire_config, run_config)
     derive_stochastic_parameters(sp_instance, node_unscaled_yearly_demand_ser)
-    opt = solve_subproblem(sp_instance, empire_config.optimization_solver, run_config, capacity_params)
+    opt = solve_subproblem(sp_instance, empire_config.optimization_solver, run_config)
     return sp_instance, opt
 
 
@@ -228,8 +228,9 @@ def calc_total_raw_nodal_load(instance, period_active: int, operational_params: 
     # demand_data_ser_total = demand_data_ser.groupby(['Period', 'Node']).sum()
     sceProbab = 1 / len(operational_params.scenarios)  # Needs to be updated if non-uniform probabilities are used.
     seasScale = read_tab_file(run_config.tab_file_path / 'General_seasonScale.tab')
-    node_unscaled_yearly_demand_ser = pd.Series(0.0, index=instance.Node)
-    for n in instance.Node:
+    node_unscaled_yearly_demand_ser = pd.Series(0.0, index=nodes)
+
+    for n in nodes:
         # Compute probability-weighted raw demand
             node_unscaled_yearly_demand_ser.loc[n] = sum(
                 sceProbab * seasScale[(s,)] * demand_data_ser[period_active, w, n, h]

@@ -44,7 +44,7 @@ def define_shared_sets(model, north_sea_flag):
     return 
 
 
-def load_shared_sets(model, data, tab_file_path, north_sea_flag, load_period=True, period_active=None):
+def load_shared_sets(model, data, tab_file_path, north_sea_flag, load_period=True, periods_active=None):
     data.load(filename=str(tab_file_path / 'Sets_Generator.tab'),format="set", set=model.Generator)
     data.load(filename=str(tab_file_path / 'Sets_ThermalGenerators.tab'),format="set", set=model.ThermalGenerators)
     data.load(filename=str(tab_file_path / 'Sets_HydroGenerator.tab'),format="set", set=model.HydroGenerator)
@@ -65,7 +65,7 @@ def load_shared_sets(model, data, tab_file_path, north_sea_flag, load_period=Tru
     if load_period:
         data.load(filename=str(tab_file_path / 'Sets_Horizon.tab'),format="set", set=model.Period)
         from .loading_utils import load_set
-        load_set(data, model.PeriodActive, period_active)
+        load_set(data, model.PeriodActive, periods_active)
         # data.load(filename=str(tab_file_path / 'Sets_Horizon.tab'),format="set", set=model.PeriodActive)
     return 
 

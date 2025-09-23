@@ -166,7 +166,7 @@ class EmpireConfiguration:
 
         # Prepare a dictionary of arguments
         # Set to None if there is no default value
-        init_args: dict[str, Parameter] = {}
+        init_args: dict = {}
         for param_name, param in init_signature.parameters.items():
             if param_name != "self":
                 # Check if the parameter has a default value
@@ -249,7 +249,7 @@ class OperationalInputParams:
     Operationalhour: list[int]
     scenarios: list[str]
     Season: list[str]
-    HoursOfSeason: list[int]
+    HoursOfSeason: list[tuple[str, int]]
     FirstHoursOfRegSeason: list[int]
     FirstHoursOfPeakSeason: list[int]
     lengthRegSeason: int
