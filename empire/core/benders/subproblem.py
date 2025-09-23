@@ -235,6 +235,6 @@ def calc_total_raw_nodal_load(instance, period_active: int, operational_params: 
                 sceProbab * seasScale[(s,)] * demand_data_ser[period_active, w, n, h]
                 for (s, h) in operational_params.HoursOfSeason
                 # if h < cutoff  # adjust if you want peak hours included
-                for w in instance.Scenario
+                for w in operational_params.scenarios
             )
     return node_unscaled_yearly_demand_ser
