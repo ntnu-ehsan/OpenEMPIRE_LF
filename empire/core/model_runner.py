@@ -125,7 +125,7 @@ def run_empire_model(
     obj_value = None
     if not test_run:
         if not empire_config.benders_flag:
-            obj_value = run_empire(
+            obj_value, _ = run_empire(
                 run_config=run_config,
                 empire_config=empire_config,
                 periods_active=periods_active,
