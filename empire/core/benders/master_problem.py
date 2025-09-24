@@ -143,7 +143,7 @@ def solve_master_problem(
     opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
     if save_flag:
         if empire_config.pickle_instance_flag:
-            pickle_instance(instance, run_config.run_name, empire_config.use_temp_dir_flag, logger, empire_config.temporary_directory)
+            pickle_instance(instance, run_config.run_name, empire_config.use_temporary_directory, logger, empire_config.temporary_directory)
 
         write_results(instance, run_config.results_path, run_config.run_name, False, empire_config.emission_cap_flag, empire_config.print_iamc_flag, logger)
 
