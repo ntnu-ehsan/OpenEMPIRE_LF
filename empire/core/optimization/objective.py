@@ -1,8 +1,8 @@
 from pyomo.environ import (Expression, Objective, minimize)
 
-
+SCALING_FACTOR = 1e-10
 def investment_obj(model):
-    return sum(
+    return SCALING_FACTOR * sum(
         model.discount_multiplier[i]*(
         sum(model.genInvCost[g,i]* model.genInvCap[n,g,i] for (n,g) in model.GeneratorsOfNode ) + \
         sum(model.transmissionInvCost[n1,n2,i]*model.transmisionInvCap[n1,n2,i] for (n1,n2) in model.BidirectionalArc ) + \
@@ -16,9 +16,7 @@ def multiplier_rule(model,period):
         coeff=pow(1.0+model.discountrate,(-model.LeapYearsInvestment*(int(period)-1)))
     return coeff
 
-def define_objective(model, include_investment=True, include_operational=True):
-    
-
+def define_objective(model, include_investment=True, include_operational=True) -> None:
     model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)
 
     def Obj_rule(model):
@@ -26,8 +24,8 @@ def define_objective(model, include_investment=True, include_operational=True):
         if include_investment:
             obj += investment_obj(model)
         if include_operational:
-            obj += sum(model.discount_multiplier[i] * model.operationalcost[i, w] for i in model.PeriodActive for w in model.Scenario)
-        return obj
+            obj += SCALING_FACTOR * sum(model.discount_multiplier[i] * model.operationalcost[i, w] for i in model.PeriodActive for w in model.Scenario)
+        return obj 
     model.Obj = Objective(rule=Obj_rule, sense=minimize)
 
     return 
