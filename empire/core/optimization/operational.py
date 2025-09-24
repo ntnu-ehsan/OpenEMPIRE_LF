@@ -21,7 +21,7 @@ def define_operational_sets(model: AbstractModel, operational_input_params: Oper
 
 def define_operational_variables(
         model: AbstractModel
-) -> AbstractModel:
+    ):
     # Define operational variables for the model
     model.genOperational = Var(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
     model.storOperational = Var(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
@@ -205,7 +205,6 @@ def derive_stochastic_parameters(instance: ConcreteModel, node_unscaled_yearly_d
     def _set_sload(instance, node_unscaled_yearly_demand_ser=None):
         # Precompute cutoff
         cutoff = list(instance.FirstHoursOfRegSeason)[-1] + instance.lengthRegSeason
-
         for n in instance.Node:
             for i in instance.PeriodActive:
                 # Compute probability-weighted raw demand
