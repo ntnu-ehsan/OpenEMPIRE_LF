@@ -21,6 +21,8 @@ from empire.core.optimization.empire import run_empire
 from empire.core.benders.algorithm import run_benders
 from empire.core.optimization.loading_utils import read_tab_file, filter_data
 
+
+
 class TestSubProblem(unittest.TestCase):
     def assertAlmostEqualSignificant(self, a: float, b: float, sig_digits: int, msg: str | None = None, abs_tol: float = 1e-4):
         # Normalize by order of magnitude
@@ -62,7 +64,6 @@ class TestSubProblem(unittest.TestCase):
                     tab_file_path=run_config.tab_file_path,
                 )
 
-        empire_config.benders_flag = False
         obj_regular, instance = run_empire(
             run_config=deepcopy(run_config),
             empire_config=empire_config,
@@ -85,7 +86,7 @@ class TestSubProblem(unittest.TestCase):
         else:
             capacity_param_values = None
 
-        empire_config.benders_flag = True
+
         obj_benders, mp_instance = run_benders(
             run_config=deepcopy(run_config),
             empire_config=empire_config,
