@@ -39,16 +39,15 @@ def run_benders(
         Returns the final master problem instance and its objective value if converged, otherwise (None, None).
     
     """
-
+    mp_instance = create_master_problem_instance(run_config, empire_config, periods=periods_active)
+    # capacity_params = extract_capacity_params(mp_instance)
     if capacity_params_init is None:
         capacity_params = define_initial_capacity_params(mp_instance)
     else:
         capacity_params = capacity_params_init
-    # del(mp_instance)
-    mp_instance = create_master_problem_instance(run_config, empire_config, capacity_params=capacity_params, periods=periods)
+
     # solve_master_problem(mp_instance, empire_config.optimization_solver, flags, run_config, empire_config.temporary_directory, save_flag=False)
     logger.info("Creating Benders subproblem model...")
-
 
 
 
@@ -61,6 +60,7 @@ def run_benders(
     last_mp_obj = -1.
     mp_instance.cut_constraints = ConstraintList()
     mp_objs = []
+    
     for iteration in range(empire_config.max_benders_iterations):
         logger.info("Benders iteration %d", iteration + 1)
         for i in periods_active:
@@ -73,6 +73,7 @@ def run_benders(
                 run_config,
                 operational_input_params,
             )
+            
 
             mp_instance.cut_constraints.add(expr=cut)
 
@@ -94,8 +95,7 @@ def run_benders(
 
 def create_cut(
         master_instance, 
-        capacity_params: dict,
-        capacity_params: dict[str, dict[tuple]],
+        capacity_params: dict[str, dict[tuple, float]],
         period_active: int,
         scenarios: list[str],
         empire_config: EmpireConfiguration,
@@ -143,14 +143,15 @@ def create_cut(
                     elif (inds[1], inds[0], inds[2]) in capacity_params[capacity_variable_name]:
                         inds = (inds[1], inds[0], inds[2])
                     else:
+                        breakpoint()
                         raise ValueError("Transmission capacity indices not found in old capacities.")
-
                 expr += multiplier * (
                     getattr(master_instance, capacity_variable_name)[inds]
                     -
                     value(capacity_params[capacity_variable_name][inds])
                 )
-            # breakpoint()
+
+        # breakpoint()
     return master_instance.theta[period_active] >= expr
 
 
