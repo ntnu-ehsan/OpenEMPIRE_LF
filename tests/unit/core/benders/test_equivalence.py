@@ -81,7 +81,60 @@ class TestSubProblem(unittest.TestCase):
             operational_input_params=operational_input_params,
             capacity_params_init=capacity_param_values
         )
-        breakpoint()
+
+        params_to_check = [
+            'WACC',
+            'genCapitalCost',
+            'transmissionTypeCapitalCost',
+            'storPWCapitalCost',
+            'storENCapitalCost',
+            'genFixedOMCost',
+            'transmissionTypeFixedOMCost',
+            'storPWFixedOMCost',
+            'storENFixedOMCost',
+            'genInvCost',
+            'transmissionInvCost',
+            'storPWInvCost',
+            'storENInvCost',
+            'transmissionLength',
+            'genRefInitCap',
+            'genScaleInitCap',
+            'genInitCap',
+            'transmissionInitCap',
+            'storPWInitCap',
+            'storENInitCap',
+            'genMaxBuiltCap',
+            'transmissionMaxBuiltCap',
+            'storPWMaxBuiltCap',
+            'storENMaxBuiltCap',
+            'genMaxInstalledCapRaw',
+            'genMaxInstalledCap',
+            'transmissionMaxInstalledCapRaw',
+            'transmissionMaxInstalledCap',
+            'storPWMaxInstalledCap',
+            'storENMaxInstalledCap',
+            'storPWMaxInstalledCapRaw',
+            'storENMaxInstalledCapRaw',
+            'genLifetime',
+            'transmissionLifetime',
+            'storageLifetime',
+        ]
+
+        for param_name in params_to_check:
+            for idx in getattr(instance, param_name).keys():
+                val_regular = value(getattr(instance, param_name)[idx])
+                val_benders = value(getattr(mp_instance, param_name)[idx])
+                self.assertAlmostEqual(val_regular, val_benders, places=2, msg=f"Mismatch in parameter {param_name} at index {idx}")    
+
+
+
+        for param_name in ['genInvCap', 'transmisionInvCap', 'storPWInvCap', 'storENInvCap',
+                            'genInstalledCap', 'transmissionInstalledCap', 'storPWInstalledCap', 'storENInstalledCap']:
+            for idx in getattr(instance, param_name).keys():
+                val_regular = value(getattr(instance, param_name)[idx])
+                val_benders = value(getattr(mp_instance, param_name)[idx])
+                self.assertAlmostEqual(val_regular, val_benders, places=2, msg=f"Mismatch in parameter {param_name} at index {idx}")
+
         self.assertAlmostEqual(obj_regular, obj_benders, places=1)  
         return 
 
