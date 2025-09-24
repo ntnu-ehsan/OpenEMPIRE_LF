@@ -19,16 +19,16 @@ def set_investments_as_parameters(model, set_only_capacities: bool = False):
     return 
 
 
-def load_optimized_investments(model, data, result_file_path):
+def load_optimized_investments(model, data, result_file_path, set_only_capacities: bool = False):
     """Optimized investment decisions read from result file from in-sample runs"""
-    data.load(filename=str(result_file_path / 'genInvCap.tab'), param=model.genInvCap, format="table")
-    data.load(filename=str(result_file_path / 'transmisionInvCap.tab'), param=model.transmisionInvCap, format="table")
-    data.load(filename=str(result_file_path / 'storPWInvCap.tab'), param=model.storPWInvCap, format="table")
-    data.load(filename=str(result_file_path / 'storENInvCap.tab'), param=model.storENInvCap, format="table")
     data.load(filename=str(result_file_path / 'genInstalledCap.tab'), param=model.genInstalledCap, format="table")
     data.load(filename=str(result_file_path / 'transmissionInstalledCap.tab'), param=model.transmissionInstalledCap, format="table")
     data.load(filename=str(result_file_path / 'storPWInstalledCap.tab'), param=model.storPWInstalledCap, format="table")
     data.load(filename=str(result_file_path / 'storENInstalledCap.tab'), param=model.storENInstalledCap, format="table")
+    data.load(filename=str(result_file_path / 'genInvCap.tab'), param=model.genInvCap, format="table")
+    data.load(filename=str(result_file_path / 'transmisionInvCap.tab'), param=model.transmisionInvCap, format="table")
+    data.load(filename=str(result_file_path / 'storPWInvCap.tab'), param=model.storPWInvCap, format="table")
+    data.load(filename=str(result_file_path / 'storENInvCap.tab'), param=model.storENInvCap, format="table")
     return 
 
 
