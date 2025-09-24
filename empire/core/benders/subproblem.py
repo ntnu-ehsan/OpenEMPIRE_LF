@@ -193,8 +193,8 @@ def solve_subproblem(instance, solver_name, run_config):
 def load_capacity_values(
     sp_model,
     data, 
-    capacity_params: dict[str, dict[int, dict[tuple | str | int | float, float]]],
-    period_active: int
+    capacity_params: dict[str, dict[tuple]],
+    period_active: int,
     ) -> None:
     """Load capacity values from the MP into the DataPortal for the subproblem."""
     for param_name, capacities in capacity_params.items():
@@ -204,7 +204,7 @@ def load_capacity_values(
 
 
 def exe_subproblem_routine(
-    capacity_params: dict[str, dict[int, dict[tuple | str | int | float, float]]],
+    capacity_params: dict[str, dict[tuple, float]],
     period_active: int,
     scenario: str,
     empire_config: EmpireConfiguration,
@@ -221,7 +221,7 @@ def exe_subproblem_routine(
     return sp_instance, opt
 
 
-def calc_total_raw_nodal_load(instance, period_active: int, operational_params: OperationalInputParams, empire_config: EmpireConfiguration, run_config: EmpireRunConfiguration) -> pd.DataFrame:
+def calc_total_raw_nodal_load(nodes: Set, period_active: int, operational_params: OperationalInputParams, empire_config: EmpireConfiguration, run_config: EmpireRunConfiguration) -> pd.Series:
     demand_data = read_tab_file(run_config.tab_file_path / 'Stochastic_ElectricLoadRaw.tab')
     demand_data_ser = pd.Series(demand_data)
     demand_data_ser.index.names = ['Period', 'Scenario', 'Node', 'Hour']
