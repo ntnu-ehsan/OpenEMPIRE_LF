@@ -5,20 +5,16 @@ from __future__ import division
 import logging
 import time
 from pathlib import Path
-import tempfile
 import pandas as pd
-import os
-from empire.core.optimization.loading_utils import load_dict_into_dataportal, load_parameter, read_tab_file
-
-
-
-
 from pyomo.environ import (
     DataPortal,
     AbstractModel,
     Suffix, 
-    ConcreteModel
+    ConcreteModel,
+    Set
 )
+
+from empire.core.optimization.loading_utils import load_dict_into_dataportal, load_parameter, read_tab_file
 from empire.core.optimization.objective import define_objective
 from empire.core.optimization.operational import derive_stochastic_parameters, define_operational_sets, define_operational_constraints, prep_operational_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input, define_period_and_scenario_dependent_parameters
 from empire.core.optimization.shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
@@ -198,8 +194,12 @@ def load_capacity_values(
     ) -> None:
     """Load capacity values from the MP into the DataPortal for the subproblem."""
     for param_name, capacities in capacity_params.items():
-        capacity_period = capacities[period_active]
-        load_dict_into_dataportal(data, getattr(sp_model, param_name), capacity_period)
+        filtered_capacities = filter_data(
+            capacities,
+            periods_to_load=[period_active],
+            period_indnr=-1,
+        )
+        load_dict_into_dataportal(data, getattr(sp_model, param_name), filtered_capacities)
     return
 
 
