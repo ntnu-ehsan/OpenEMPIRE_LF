@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 def create_master_problem_instance(
         run_config: EmpireRunConfiguration, 
         empire_config: EmpireConfiguration, 
-        capacity_params: dict | None = None,
-        regularization_flag: bool = True,
-        regularization_weight: float = 1e6,
+        # capacity_params: dict | None = None,
+        # regularization_flag: bool = True,
+        # regularization_weight: float = 1e3,
         periods: list[int] | None = None
         ) -> ConcreteModel:
 
@@ -51,7 +51,7 @@ def create_master_problem_instance(
 
     #Load the data
     data = DataPortal()
-    load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag)
+    load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag, load_period=True, periods_active=periods)
     load_shared_parameters(model, data, run_config.tab_file_path)
     load_investment_parameters(model, data, run_config.tab_file_path)
 
@@ -60,6 +60,8 @@ def create_master_problem_instance(
 
     # Benders specific
     model.theta = Var(model.PeriodActive, within=NonNegativeReals)
+
+    # objective 
     model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)  # must be specified before defining objective 
 
     def Obj_rule(model):
@@ -68,34 +70,34 @@ def create_master_problem_instance(
         
         # Regularization: penalize deviation from previous iteration capacities
         # weight can be tuned; smaller = softer stabilization
-        if regularization_flag and capacity_params is not None:
+        # if regularization_flag and capacity_params is not None:
 
-            for period in model.PeriodActive:
-                # Generators
+        #     for period in model.PeriodActive:
+        #         # Generators
 
-                for (n, g) in model.GeneratorsOfNode:
-                    # breakpoint()
-                    prev = capacity_params['genInstalledCap'][period][(n, g, period)]
-                    curr = model.genInstalledCap[n, g, period]
-                    obj += regularization_weight * ((curr - prev)/prev) ** 2
+        #         for (n, g) in model.GeneratorsOfNode:
+        #             # breakpoint()
+        #             prev = capacity_params['genInstalledCap'][period][(n, g, period)]
+        #             curr = model.genInstalledCap[n, g, period]
+        #             obj += regularization_weight * ((curr - prev)/prev) ** 2
 
-                # Storage energy
-                for (n, b) in model.StoragesOfNode:
-                    prev = capacity_params['storENInstalledCap'][period][(n, b, period)]
-                    curr = model.storENInstalledCap[n, b, period]
-                    obj += regularization_weight * ((curr - prev)/prev) ** 2
+        #         # Storage energy
+        #         for (n, b) in model.StoragesOfNode:
+        #             prev = capacity_params['storENInstalledCap'][period][(n, b, period)]
+        #             curr = model.storENInstalledCap[n, b, period]
+        #             obj += regularization_weight * ((curr - prev)/prev) ** 2
 
-                # Storage power
-                for (n, b) in model.StoragesOfNode:
-                    prev = capacity_params['storPWInstalledCap'][period][(n, b, period)]
-                    curr = model.storPWInstalledCap[n, b, period]
-                    obj += regularization_weight * ((curr - prev)/prev) ** 2
+        #         # Storage power
+        #         for (n, b) in model.StoragesOfNode:
+        #             prev = capacity_params['storPWInstalledCap'][period][(n, b, period)]
+        #             curr = model.storPWInstalledCap[n, b, period]
+        #             obj += regularization_weight * ((curr - prev)/prev) ** 2
 
-                # Transmission
-                for (line_pair) in model.BidirectionalArc:
-                    prev = capacity_params['transmissionInstalledCap'][period][(line_pair, period)]
-                    curr = model.transmissionInstalledCap[line_pair, period]
-                    obj += regularization_weight * ((curr - prev)/prev) ** 2
+        #         # Transmission
+        #         for (line_pair) in model.BidirectionalArc:
+        #             prev = capacity_params['transmissionInstalledCap'][period][(line_pair, period)]
+        #             curr = model.transmissionInstalledCap[line_pair, period]
+        #             obj += regularization_weight * ((curr - prev)/prev) ** 2
         return obj
 
     model.Obj = Objective(rule=Obj_rule, sense=minimize)
@@ -157,7 +159,7 @@ CAPACITY_VARS = [
     'storPWInstalledCap',  # n,b,i
     'storENInstalledCap'  # n,b,i
 ]
-def extract_capacity_params(mp_instance) -> dict[str, dict[tuple]]:
+def extract_capacity_params(mp_instance) -> dict[str, dict[tuple, float]]:
     """Extract capacity parameters from the master problem instance."""
 
     capacity_params = {
@@ -172,7 +174,7 @@ def extract_capacity_params(mp_instance) -> dict[str, dict[tuple]]:
     return capacity_params
 
 
-def define_initial_capacity_params(mp_instance, base_value=0e4) -> dict[str, dict[tuple]]:
+def define_initial_capacity_params(mp_instance, base_value=1e4) -> dict[str, dict[tuple, float]]:
     """Initialize capacity params as nested defaultdicts with base_value as default."""
     capacity_params = {
         var: {} for var in CAPACITY_VARS
@@ -183,4 +185,7 @@ def define_initial_capacity_params(mp_instance, base_value=0e4) -> dict[str, dic
     capacity_params['storPWInstalledCap'] = {(*nb, period): base_value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
     capacity_params['transmissionInstalledCap'] = {(*line_pair, period): base_value for line_pair in mp_instance.BidirectionalArc for period in mp_instance.PeriodActive}
 
+    # import pickle
+    # with open("initial_capacity_params.pkl", "wb") as f:
+    #     pickle.dump(capacity_params, f)
     return capacity_params
