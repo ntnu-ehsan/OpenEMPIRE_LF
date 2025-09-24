@@ -64,7 +64,8 @@ def create_master_problem_instance(
 
     def Obj_rule(model):
         obj = investment_obj(model) + \
-            sum(model.theta[i] for i in model.PeriodActive)
+            sum(model.discount_multiplier[i] * model.theta[i] for i in model.PeriodActive)
+        
         # Regularization: penalize deviation from previous iteration capacities
         # weight can be tuned; smaller = softer stabilization
         if regularization_flag and capacity_params is not None:
