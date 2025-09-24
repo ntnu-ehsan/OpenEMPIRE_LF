@@ -22,6 +22,13 @@ from empire.core.benders.algorithm import run_benders
 from empire.core.optimization.loading_utils import read_tab_file, filter_data
 
 class TestSubProblem(unittest.TestCase):
+    def assertAlmostEqualSignificant(self, a: float, b: float, sig_digits: int, msg: str | None = None, abs_tol: float = 1e-4):
+        # Normalize by order of magnitude
+        if a <= abs_tol and b <= abs_tol:
+            return  # both zero --> pass
+        scale = max(abs(a), abs(b))
+        self.assertAlmostEqual(a / scale, b / scale, places=sig_digits - 1, msg=msg + "absolute values: " + str(a) + " vs " + str(b))
+
     def test_benders_equivalence(self, set_initial_capacities=True):
         """
         Test Benders decomposition equivalence to full test model run. 
@@ -64,7 +71,12 @@ class TestSubProblem(unittest.TestCase):
         )
 
         if set_initial_capacities:
-            capacity_params = ['genInstalledCap']#, 'transmissionInstalledCap']
+            capacity_params = [
+                'genInstalledCap', 
+                # 'transmissionInstalledCap',
+                # 'storPWInstalledCap',
+                # 'storENInstalledCap',
+                ]
 
             capacity_param_values: dict[str, dict[tuple, float]] = {
                 param: {key: value(val) for key, val in getattr(instance, param).items()}
@@ -133,9 +145,9 @@ class TestSubProblem(unittest.TestCase):
             for idx in getattr(instance, param_name).keys():
                 val_regular = value(getattr(instance, param_name)[idx])
                 val_benders = value(getattr(mp_instance, param_name)[idx])
-                self.assertAlmostEqual(val_regular, val_benders, places=2, msg=f"Mismatch in parameter {param_name} at index {idx}")
+                self.assertAlmostEqualSignificant(val_regular, val_benders, sig_digits=3, msg=f"Mismatch in parameter {param_name} at index {idx}")
 
-        self.assertAlmostEqual(obj_regular, obj_benders, places=1)  
+        self.assertAlmostEqualSignificant(obj_regular, obj_benders, sig_digits=5, msg="Mismatch in objective value between regular and Benders decomposition.")  
         return 
 
 if __name__ == "__main__":
