@@ -35,7 +35,14 @@ def set_solver(solver_name, logger):
     elif solver_name == "Gurobi":
         opt = SolverFactory('gurobi', Verbose=True)
         opt.options["Crossover"]=0
-        opt.options["Method"]=2
+        # opt.options["Method"]=2
+
+
+        opt.options["Method"] = 1   
+        opt.options["FeasibilityTol"] = 1e-9
+        opt.options["OptimalityTol"] = 1e-9
+        # Increase numerical focus (0 = default, 3 = maximum)
+        opt.options["NumericFocus"] = 3
         logger.info("Gurobi solver is being used.")
     elif solver_name == "GLPK":
         opt = SolverFactory("glpk", Verbose=True)
