@@ -122,19 +122,19 @@ def define_cut_structure(subproblem_instance: ConcreteModel, i: int, w: str) -> 
     #     capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, b, i
     #     index_names_to_keep=["Node", "Storage", "Period"]  # n, b, i
     # ),
-    CapacityVariableHandler(
-        constraint_name="storage_power_discharg_cap",
-        constraint_indices=[(n,b,h,i,w)
-            for n, b in subproblem_instance.StoragesOfNode
-            for h in subproblem_instance.Operationalhour],
-        constraint_index_names=["Node", "Storage", "Operationalhour", "Period", "Scenario"],
-        capacity_var_name="storPWInstalledCap",
-        capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, b, i
-        has_coefficient=True,
-        coefficients_subproblem_name="storageDiscToCharRatio",
-        coefficient_index_selection_func=lambda idx: (idx[1]), # b
-        index_names_to_keep=["Node", "Storage", "Period"]  # n, b, i
-    ),
+    # CapacityVariableHandler(
+    #     constraint_name="storage_power_discharg_cap",
+    #     constraint_indices=[(n,b,h,i,w)
+    #         for n, b in subproblem_instance.StoragesOfNode
+    #         for h in subproblem_instance.Operationalhour],
+    #     constraint_index_names=["Node", "Storage", "Operationalhour", "Period", "Scenario"],
+    #     capacity_var_name="storPWInstalledCap",
+    #     capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, b, i
+    #     has_coefficient=True,
+    #     coefficients_subproblem_name="storageDiscToCharRatio",
+    #     coefficient_index_selection_func=lambda idx: (idx[1]), # b
+    #     index_names_to_keep=["Node", "Storage", "Period"]  # n, b, i
+    # ),
     # CapacityVariableHandler(   # removed!
     #     constraint_name="hydro_gen_limit",
     #     constraint_indices=[(n,g,s,i,w)
