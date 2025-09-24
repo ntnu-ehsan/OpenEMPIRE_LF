@@ -75,27 +75,28 @@ def write_results(
 
     logger.info("Writing results to .csv...")
     inv_per = get_investment_periods(instance)
-    f = open(result_file_path / 'results_objective.csv', 'w', newline='')
-    writer = csv.writer(f)
-    writer.writerow(["Objective function value:" + str(value(instance.Obj))])
 
-    f = open(result_file_path / 'results_output_gen.csv', 'w', newline='')
-    writer = csv.writer(f)
-    my_string = ["Node","GeneratorType","Period","genInvCap_MW","genInstalledCap_MW","genExpectedCapacityFactor","DiscountedInvestmentCost_Euro","genExpectedAnnualProduction_GWh"]
-    writer.writerow(my_string)
-    for (n,g) in instance.GeneratorsOfNode:
-        for i in instance.PeriodActive:
-            writer.writerow([
-                n,
-                g,
-                inv_per[int(i-1)],
-                value(instance.genInvCap[n,g,i]),
-                value(instance.genInstalledCap[n,g,i]), 
-                value(sum(instance.sceProbab[w]*instance.seasScale[s]*instance.genOperational[n,g,h,i,w] for (s,h) in instance.HoursOfSeason for w in instance.Scenario)/(instance.genInstalledCap[n,g,i]*8760) if value(instance.genInstalledCap[n,g,i]) != 0 else 0), 
-                value(instance.discount_multiplier[i]*instance.genInvCap[n,g,i]*instance.genInvCost[g,i]),
-                value(sum(instance.seasScale[s]*instance.sceProbab[w]*instance.genOperational[n,g,h,i,w]/1000 for (s,h) in instance.HoursOfSeason for w in instance.Scenario))
-            ])
-    f.close()
+    with open(result_file_path / 'results_objective.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["Objective function value:" + str(value(instance.Obj))])
+
+    with open(result_file_path / 'results_output_gen.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        my_string = ["Node","GeneratorType","Period","genInvCap_MW","genInstalledCap_MW","genExpectedCapacityFactor","DiscountedInvestmentCost_Euro","genExpectedAnnualProduction_GWh"]
+        writer.writerow(my_string)
+        for (n,g) in instance.GeneratorsOfNode:
+            for i in instance.PeriodActive:
+                writer.writerow([
+                    n,
+                    g,
+                    inv_per[int(i-1)],
+                    value(instance.genInvCap[n,g,i]),
+                    value(instance.genInstalledCap[n,g,i]), 
+                    value(sum(instance.sceProbab[w]*instance.seasScale[s]*instance.genOperational[n,g,h,i,w] for (s,h) in instance.HoursOfSeason for w in instance.Scenario)/(instance.genInstalledCap[n,g,i]*8760) if value(instance.genInstalledCap[n,g,i]) != 0 else 0), 
+                    value(instance.discount_multiplier[i]*instance.genInvCap[n,g,i]*instance.genInvCost[g,i]),
+                    value(sum(instance.seasScale[s]*instance.sceProbab[w]*instance.genOperational[n,g,h,i,w]/1000 for (s,h) in instance.HoursOfSeason for w in instance.Scenario))
+                ])
+
 
     f = open(result_file_path / 'results_output_stor.csv', 'w', newline='')
     writer = csv.writer(f)
