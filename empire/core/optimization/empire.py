@@ -21,7 +21,7 @@ from .shared_data import define_shared_sets, load_shared_sets, define_shared_par
 from .out_of_sample_functions import set_investments_as_parameters, load_optimized_investments, set_out_of_sample_path
 from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
-from .solver import set_solver
+from .solver import set_solver, solve
 from .helpers import pickle_instance, log_problem_statistics, prepare_temp_dir, prepare_results_dir
 from empire.core.config import EmpireRunConfiguration, OperationalInputParams, EmpireConfiguration
 from pyomo.opt import TerminationCondition
@@ -148,13 +148,10 @@ def run_empire(
 
 
     opt = set_solver(empire_config.optimization_solver, logger)
-    logger.info("Solving...")
-    results = opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
-    if results.solver.termination_condition == TerminationCondition.optimal:
-        post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag)  
-        return value(instance.Obj), instance
-    else:
-        raise ValueError(f"Optimization was not successful. Termination condition: {results.solver.termination_condition}.")
+    _ = solve(instance, opt, run_config, logger)
+    post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag)  
+    return value(instance.Obj), instance
+
 
 def post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag):
     if empire_config.pickle_instance_flag:

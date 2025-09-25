@@ -20,7 +20,7 @@ from empire.core.optimization.operational import derive_stochastic_parameters, d
 from empire.core.optimization.shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
 from empire.core.optimization.out_of_sample_functions import set_investments_as_parameters
 from empire.core.optimization.lopf_module import LOPFMethod, load_line_parameters
-from empire.core.optimization.solver import set_solver
+from empire.core.optimization.solver import set_solver, solve
 from empire.core.optimization.helpers import pickle_instance, log_problem_statistics, prepare_results_dir, prepare_temp_dir
 from empire.core.config import EmpireRunConfiguration, OperationalInputParams, EmpireConfiguration
 from empire.core.optimization.loading_utils import load_set, filter_data
@@ -179,10 +179,10 @@ def create_subproblem_instance(model: AbstractModel, data: DataPortal) -> Concre
 
 
 def solve_subproblem(instance, solver_name, run_config):
-    instance.dual = Suffix(direction=Suffix.IMPORT) #Make sure the dual value is collected into solver results (if solver supplies dual information)
+
     opt = set_solver(solver_name, logger)
-    logger.info("Solving...")
-    opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
+    _ = solve(instance, opt, run_config, logger)
+ 
     return opt
 
 

@@ -23,7 +23,7 @@ from empire.core.optimization.objective import investment_obj, multiplier_rule
 from empire.core.optimization.investment import define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
 from empire.core.optimization.shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
 from empire.core.optimization.results import write_results, run_operational_model, write_operational_results, write_pre_solve
-from empire.core.optimization.solver import set_solver
+from empire.core.optimization.solver import set_solver, solve
 from empire.core.optimization.helpers import pickle_instance, log_problem_statistics, prepare_results_dir, prepare_temp_dir
 from empire.core.config import EmpireRunConfiguration, EmpireConfiguration
 
@@ -116,7 +116,6 @@ def create_master_problem_instance(
     start = time.time()
 
     instance = model.create_instance(data) #, report_timing=True)
-    instance.dual = Suffix(direction=Suffix.IMPORT) #Make sure the dual value is collected into solver results (if solver supplies dual information)
 
     end = time.time()
     logger.info("Building instance took [sec]: %d", end - start)
@@ -142,8 +141,8 @@ def solve_master_problem(
         instance: ConcreteModel, 
         empire_config: EmpireConfiguration, run_config: EmpireRunConfiguration, save_flag=False) -> float:
     opt = set_solver(empire_config.optimization_solver, logger)
-    logger.info("Solving...")
-    opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
+    _ = solve(instance, opt, run_config, logger)
+
     if save_flag:
         if empire_config.pickle_instance_flag:
             pickle_instance(instance, run_config.run_name, empire_config.use_temporary_directory, logger, empire_config.temporary_directory)
@@ -155,9 +154,9 @@ def solve_master_problem(
 
 CAPACITY_VARS = [
     'genInstalledCap',  # n,g,i
-    'transmissionInstalledCap',  # n1,n2, i
-    'storPWInstalledCap',  # n,b,i
-    'storENInstalledCap'  # n,b,i
+    # 'transmissionInstalledCap',  # n1,n2, i
+    # 'storPWInstalledCap',  # n,b,i
+    # 'storENInstalledCap'  # n,b,i
 ]
 def extract_capacity_params(mp_instance) -> dict[str, dict[tuple, float]]:
     """Extract capacity parameters from the master problem instance."""
@@ -167,25 +166,21 @@ def extract_capacity_params(mp_instance) -> dict[str, dict[tuple, float]]:
     }
 
     capacity_params['genInstalledCap'] = {(*ng, period): mp_instance.genInstalledCap[ng, period].value for ng in mp_instance.GeneratorsOfNode for period in mp_instance.PeriodActive}
-    capacity_params['storENInstalledCap'] = {(*nb, period): mp_instance.storENInstalledCap[nb, period].value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
-    capacity_params['storPWInstalledCap'] = {(*nb, period): mp_instance.storPWInstalledCap[nb, period].value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
-    capacity_params['transmissionInstalledCap'] = {(*line_pair, period): mp_instance.transmissionInstalledCap[line_pair, period].value for line_pair in mp_instance.BidirectionalArc for period in mp_instance.PeriodActive}
+    # capacity_params['storENInstalledCap'] = {(*nb, period): mp_instance.storENInstalledCap[nb, period].value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
+    # capacity_params['storPWInstalledCap'] = {(*nb, period): mp_instance.storPWInstalledCap[nb, period].value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
+    # capacity_params['transmissionInstalledCap'] = {(*line_pair, period): mp_instance.transmissionInstalledCap[line_pair, period].value for line_pair in mp_instance.BidirectionalArc for period in mp_instance.PeriodActive}
 
     return capacity_params
 
 
-def define_initial_capacity_params(mp_instance, base_value=1e4) -> dict[str, dict[tuple, float]]:
+def define_initial_capacity_params(mp_instance, base_value=1e3) -> dict[str, dict[tuple, float]]:
     """Initialize capacity params as nested defaultdicts with base_value as default."""
     capacity_params = {
         var: {} for var in CAPACITY_VARS
     }
 
     capacity_params['genInstalledCap'] = {(*ng, period): base_value for ng in mp_instance.GeneratorsOfNode for period in mp_instance.PeriodActive}
-    capacity_params['storENInstalledCap'] = {(*nb, period): base_value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
-    capacity_params['storPWInstalledCap'] = {(*nb, period): base_value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
-    capacity_params['transmissionInstalledCap'] = {(*line_pair, period): base_value for line_pair in mp_instance.BidirectionalArc for period in mp_instance.PeriodActive}
-
-    # import pickle
-    # with open("initial_capacity_params.pkl", "wb") as f:
-    #     pickle.dump(capacity_params, f)
+    # capacity_params['storENInstalledCap'] = {(*nb, period): base_value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
+    # capacity_params['storPWInstalledCap'] = {(*nb, period): base_value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
+    # capacity_params['transmissionInstalledCap'] = {(*line_pair, period): base_value for line_pair in mp_instance.BidirectionalArc for period in mp_instance.PeriodActive}
     return capacity_params
