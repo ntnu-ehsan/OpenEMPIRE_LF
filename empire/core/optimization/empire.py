@@ -11,7 +11,6 @@ from pyomo.environ import (
     DataPortal,
     AbstractModel,
     ConcreteModel,
-    Suffix, 
     value
 )
 from .objective import define_objective
@@ -24,8 +23,6 @@ from .results import write_results, run_operational_model, write_operational_res
 from .solver import set_solver, solve
 from .helpers import pickle_instance, log_problem_statistics, prepare_temp_dir, prepare_results_dir
 from empire.core.config import EmpireRunConfiguration, OperationalInputParams, EmpireConfiguration
-from pyomo.opt import TerminationCondition
-import gurobipy as gp
 
 logger = logging.getLogger(__name__)
 
@@ -125,9 +122,6 @@ def run_empire(
 
     instance: ConcreteModel = model.create_instance(data) #, report_timing=True)
     derive_stochastic_parameters(instance)
-
-
-    instance.dual = Suffix(direction=Suffix.IMPORT) #Make sure the dual value is collected into solver results (if solver supplies dual information)
 
     end = time.time()
     logger.info("Building instance took [sec]: %d", end - start)
