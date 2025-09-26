@@ -346,9 +346,9 @@ def define_operational_constraints(
     if False:
         def transmission_cap_rule(model, n1, n2, h, i, w):
             if (n1,n2) in model.BidirectionalArc:
-                return model.transmisionOperational[(n1,n2),h,i,w]  - model.transmissionInstalledCap[(n1,n2),i] <= 0
+                return model.transmissionOperational[(n1,n2),h,i,w]  - model.transmissionInstalledCap[(n1,n2),i] <= 0
             elif (n2,n1) in model.BidirectionalArc:
-                return model.transmisionOperational[(n1,n2),h,i,w]  - model.transmissionInstalledCap[(n2,n1),i] <= 0
+                return model.transmissionOperational[(n1,n2),h,i,w]  - model.transmissionInstalledCap[(n2,n1),i] <= 0
         model.transmission_cap = Constraint(model.DirectionalLink, model.Operationalhour, model.PeriodActive, model.Scenario, rule=transmission_cap_rule)
 
     #################################################################
