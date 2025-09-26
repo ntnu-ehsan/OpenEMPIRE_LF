@@ -130,8 +130,7 @@ def _add_kirchhoff_constraints(
     capacity_expr: Optional[Callable] = None,
     couple_to_existing_flows: bool = True,
     existing_flow_candidates: tuple[str, ...] = (
-        "transmissionOperational",   # EMPIRE’s usual name
-        "transmisionOperational",    # common misspelling in some code paths
+        "transmissionOperational",   # EMPIRE’s usual name (fixed missspelling!)
         "transFlow",
         "lineFlow",
         "flow",
