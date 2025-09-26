@@ -10,16 +10,18 @@ from pathlib import Path
 from pyomo.environ import (
     DataPortal,
     AbstractModel,
+    ConcreteModel,
     Suffix, 
+    value
 )
 from .objective import define_objective
-from .operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, derive_stochastic_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input, define_period_and_scenario_dependent_parameters
+from .operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, derive_stochastic_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input, define_period_and_scenario_dependent_parameters, load_operational_sets
 from .investment import define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
 from .shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
 from .out_of_sample_functions import set_investments_as_parameters, load_optimized_investments, set_out_of_sample_path
 from .lopf_module import LOPFMethod, load_line_parameters
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
-from .solver import set_solver
+from .solver import set_solver, solve
 from .helpers import pickle_instance, log_problem_statistics, prepare_temp_dir, prepare_results_dir
 from empire.core.config import EmpireRunConfiguration, OperationalInputParams, EmpireConfiguration
 from pyomo.opt import TerminationCondition
@@ -31,11 +33,11 @@ logger = logging.getLogger(__name__)
 def run_empire(
         run_config: EmpireRunConfiguration,
         empire_config: EmpireConfiguration,
-        periods: list[int], 
+        periods_active: list[int], 
         operational_input_params: OperationalInputParams,
         out_of_sample_flag: bool = False,
         sample_file_path: Path | None = None,
-        ) -> None | float:
+        ) -> tuple[float, ConcreteModel] | None:
 
     prepare_temp_dir(empire_config.use_temporary_directory, temp_dir=empire_config.temporary_directory)
     prepare_results_dir(run_config)
@@ -43,7 +45,7 @@ def run_empire(
     model = AbstractModel()
     
     # Set definitions
-    define_shared_sets(model, periods, empire_config.north_sea_flag)
+    define_shared_sets(model, empire_config.north_sea_flag)
     define_operational_sets(model, operational_input_params)
 
 
@@ -54,9 +56,10 @@ def run_empire(
     define_period_and_scenario_dependent_parameters(model, empire_config.emission_cap_flag)
     define_stochastic_input(model)
 
-    # Data loading
+    # # Data loading
     data = DataPortal()
-    load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag)
+    load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag, load_period=True, periods_active=periods_active)
+    load_operational_sets(model, data, operational_input_params.scenarios)
     load_shared_parameters(model, data, run_config.tab_file_path)
     load_operational_parameters(model, data, run_config.tab_file_path, empire_config.emission_cap_flag, out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
     load_stochastic_input(model, data, run_config.tab_file_path, out_of_sample_flag, sample_file_path=sample_file_path)
@@ -70,7 +73,8 @@ def run_empire(
     # Variable definitions
     if out_of_sample_flag:
         set_investments_as_parameters(model)
-        load_optimized_investments(model, data, run_config.results_path)
+        
+        load_optimized_investments(model, data, run_config.results_path, set_only_capacities=True)
         results_path = set_out_of_sample_path(run_config.results_path, sample_file_path)
         logger.info("Out-of-sample results will be saved to: %s", results_path)
 
@@ -78,9 +82,6 @@ def run_empire(
         define_investment_variables(model)
 
     define_operational_variables(model)
-    # Model parameter preparations
-    prep_operational_parameters(model)
-
 
 
     if not out_of_sample_flag:
@@ -89,8 +90,9 @@ def run_empire(
 
 
     # Constraint defintions
-    define_investment_constraints(model, empire_config.north_sea_flag)
-    define_operational_constraints(model, logger, empire_config.emission_cap_flag, include_hydro_node_limit_constraint_flag=True)
+    if not out_of_sample_flag:
+        define_investment_constraints(model, empire_config.north_sea_flag)
+    define_operational_constraints(model, logger, empire_config.emission_cap_flag, include_hydro_node_limit_constraint_flag=empire_config.include_hydro_node_limit_constraint_flag)
 
 
     if empire_config.lopf_flag:
@@ -101,7 +103,8 @@ def run_empire(
     else:
         logger.info("LOPF constraints not activated.")
 
-
+    # Model parameter preparations
+    prep_operational_parameters(model)
 
     # Objective definition
     define_objective(model)
@@ -109,13 +112,6 @@ def run_empire(
 
     #################################################################
 
-    # Data loading
-    data = DataPortal()
-    load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag)
-    load_shared_parameters(model, data, run_config.tab_file_path)
-    load_operational_parameters(model, data, run_config.tab_file_path, empire_config.emission_cap_flag, out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
-    load_stochastic_input(model, data, run_config.tab_file_path, out_of_sample_flag, sample_file_path=sample_file_path)
-    load_investment_parameters(model, data, run_config.tab_file_path)
 
     #######
     ##RUN##
@@ -127,7 +123,7 @@ def run_empire(
 
     start = time.time()
 
-    instance = model.create_instance(data) #, report_timing=True)
+    instance: ConcreteModel = model.create_instance(data) #, report_timing=True)
     derive_stochastic_parameters(instance)
 
 
@@ -152,31 +148,9 @@ def run_empire(
 
 
     opt = set_solver(empire_config.optimization_solver, logger)
-    logger.info("Solving...")
-    results = opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
-    # breakpoint()
-    # if results.solver.termination_condition == TerminationCondition.infeasible:
-    #      lp_filename = "subproblem.lp"
-    #      gurobi_model = gp.read(lp_filename)
-    #      gurobi_model.setParam("Method", 1)  # Ensure Dual Simplex is used
-    #      gurobi_model.setParam("InfUnbdInfo", 1)  # Enable infeasibility certificate
-    #      gurobi_model.setParam("DualReductions", 0)  # Ensure extreme ray is available
-    #      gurobi_model.setParam("PreSolve", 0)   # Disable preprocessing
-    #      gurobi_model.optimize()
-
-    # # Find dual extreme points
-    # print('Dual extreme points:')
-    # dual_values = gurobi_model.getAttr("Pi", gurobi_model.getConstrs())
-    # for constr, dual_value in zip(gurobi_model.getConstrs(), dual_values):
-    #      print(constr, dual_value)
-     
-    # # Find dual extreme rays
-    # print('Dual extreme rays:')
-    # for constr in gurobi_model.getConstrs():
-    #     farkas_dual = constr.getAttr("FarkasDual")
-    #     print(constr, farkas_dual)
-
+    _ = solve(instance, opt, run_config, logger)
     post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag)  
+    return value(instance.Obj), instance
 
 
 def post_process(instance, run_config, empire_config, opt, logger, out_of_sample_flag):

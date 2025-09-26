@@ -4,9 +4,10 @@ import time
 import logging 
 import cloudpickle
 import os 
+import pandas as pd
 
 from pyomo.common.tempfiles import TempfileManager
-
+import tempfile
 
 def log_problem_statistics(instance, logger):
     logger.info("----------------------Problem Statistics---------------------")
@@ -19,9 +20,9 @@ def log_problem_statistics(instance, logger):
     logger.info("TotalStorages: %s", len(instance.StoragesOfNode))
     logger.info("")
     logger.info("InvestmentUntil: %s", value(2020+int(len(instance.PeriodActive)*instance.LeapYearsInvestment.value)))
-    logger.info("Scenarios: %s", len(instance.scenarios))
-    logger.info("TotalOperationalHoursPerscenarios: %s", len(instance.Operationalhour))
-    logger.info("TotalOperationalHoursPerInvYear: %s", len(instance.Operationalhour)*len(instance.scenarios))
+    logger.info("Scenarios: %s", len(instance.Scenario))
+    logger.info("TotalOperationalHoursPerScenario: %s", len(instance.Operationalhour))
+    logger.info("TotalOperationalHoursPerInvYear: %s", len(instance.Operationalhour)*len(instance.Scenario))
     logger.info("Seasons: %s", len(instance.Season))
     logger.info("RegularSeasons: %s", len(instance.FirstHoursOfRegSeason))
     logger.info("LengthRegSeason: %s", value(instance.lengthRegSeason))

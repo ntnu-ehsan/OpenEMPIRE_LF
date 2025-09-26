@@ -6,6 +6,7 @@ temporary_directory: './'                              # Path to the temporary d
 forecast_horizon_year: 2030                            # Target or end year for the run
 number_of_scenarios: 2                                 # Number of scenarios in every investment period
 length_of_regular_season: 24                           # Number of hours in a regular season
+regular_seasons: ['winter', 'spring']
 discount_rate: 0.05                                    # Rate used to discount future cash flows to present value
 wacc: 0.05                                             # Weighted average cost of capital
 optimization_solver: "Gurobi"                          # Mathematical solver used for optimization tasks
@@ -37,5 +38,6 @@ lopf_kwargs:
   # OR if you only have susceptance:
   # reactance_from_susceptance: true
   # susceptance_param_name: "lineSusceptance"
-benders_flag: True                               # Whether to use Benders decompsition 
-max_benders_iterations: 10
+benders_flag: True                     # Whether to use Benders decompsition 
+max_benders_iterations: 50
+include_hydro_node_limit_constraint_flag: False

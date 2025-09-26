@@ -51,10 +51,9 @@ exclude = [
     "node_modules",
     "site-packages",
     "venv",
-    "empire/core/reader.py",
-    "empire/core/empire.py",
-    "empire/core/scenario_random.py"
 ]
 
 line-length = 120
 
+[tool.mypy]
+ignore_missing_imports = true

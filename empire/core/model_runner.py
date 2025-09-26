@@ -4,7 +4,6 @@ import logging
 from pathlib import Path
 
 from empire import run_empire
-from empire.core.config import (EmpireConfiguration, EmpireRunConfiguration, OperationalInputParams, Flags, 
 from empire.core.config import (EmpireConfiguration, EmpireRunConfiguration, OperationalInputParams,
                                 read_config_file)
 from empire.core.reader import generate_tab_files
@@ -86,7 +85,7 @@ def run_empire_model(
     #######
     ##RUN##
     #######
-    periods = [i + 1 for i in range(int((empire_config.forecast_horizon_year - 2020) / empire_config.leap_years_investment))]
+    periods_active = [i + 1 for i in range(int((empire_config.forecast_horizon_year - 2020) / empire_config.leap_years_investment))]
     operational_input_params = define_operational_input_params(empire_config)
 
 
@@ -126,22 +125,22 @@ def run_empire_model(
     obj_value = None
     if not test_run:
         if not empire_config.benders_flag:
-            obj_value = run_empire(
+            obj_value, _ = run_empire(
                 run_config=run_config,
                 empire_config=empire_config,
-                periods=periods,
+                periods_active=periods_active,
                 operational_input_params=operational_input_params,
                 sample_file_path=sample_file_path,
                 out_of_sample_flag=False,
+                out_of_sample_flag=OUT_OF_SAMPLE,
             )
         else:
-            obj_value = run_benders(
+            obj_value, _ = run_benders(
                 run_config=run_config,
                 empire_config=empire_config,
-                sample_file_path=sample_file_path,
-                periods=periods,
                 operational_input_params=operational_input_params,
-                )
+                period_active=periods_active,
+            )
 
 
         
