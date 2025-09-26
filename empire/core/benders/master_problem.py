@@ -151,22 +151,14 @@ def solve_master_problem(
     return value(instance.Obj)
 
 
-CAPACITY_VARS = [
-    'genInstalledCap',  # n,g,i
-    # 'transmissionInstalledCap',  # n1,n2, i
-    # 'storPWInstalledCap',  # n,b,i
-    # 'storENInstalledCap'  # n,b,i
-]
 def extract_capacity_params(mp_instance) -> dict[str, dict[tuple, float]]:
     """Extract capacity parameters from the master problem instance."""
 
-    capacity_params = {
-        var: {} for var in CAPACITY_VARS
-    }
+    capacity_params = {}
 
     capacity_params['genInstalledCap'] = {(*ng, period): mp_instance.genInstalledCap[ng, period].value for ng in mp_instance.GeneratorsOfNode for period in mp_instance.PeriodActive}
-    # capacity_params['storENInstalledCap'] = {(*nb, period): mp_instance.storENInstalledCap[nb, period].value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
-    # capacity_params['storPWInstalledCap'] = {(*nb, period): mp_instance.storPWInstalledCap[nb, period].value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
+    capacity_params['storENInstalledCap'] = {(*nb, period): mp_instance.storENInstalledCap[nb, period].value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
+    capacity_params['storPWInstalledCap'] = {(*nb, period): mp_instance.storPWInstalledCap[nb, period].value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
     capacity_params['transmissionInstalledCap'] = {(*line_pair, period): mp_instance.transmissionInstalledCap[line_pair, period].value for line_pair in mp_instance.BidirectionalArc for period in mp_instance.PeriodActive}
 
     return capacity_params
@@ -174,12 +166,10 @@ def extract_capacity_params(mp_instance) -> dict[str, dict[tuple, float]]:
 
 def define_initial_capacity_params(mp_instance, base_value=1e3) -> dict[str, dict[tuple, float]]:
     """Initialize capacity params as nested defaultdicts with base_value as default."""
-    capacity_params = {
-        var: {} for var in CAPACITY_VARS
-    }
+    capacity_params = {}
 
     capacity_params['genInstalledCap'] = {(*ng, period): base_value for ng in mp_instance.GeneratorsOfNode for period in mp_instance.PeriodActive}
-    # capacity_params['storENInstalledCap'] = {(*nb, period): base_value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
-    # capacity_params['storPWInstalledCap'] = {(*nb, period): base_value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
+    capacity_params['storENInstalledCap'] = {(*nb, period): base_value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
+    capacity_params['storPWInstalledCap'] = {(*nb, period): base_value for nb in mp_instance.StoragesOfNode for period in mp_instance.PeriodActive}
     capacity_params['transmissionInstalledCap'] = {(*line_pair, period): base_value for line_pair in mp_instance.BidirectionalArc for period in mp_instance.PeriodActive}
     return capacity_params
