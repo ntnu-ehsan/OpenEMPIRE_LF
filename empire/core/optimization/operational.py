@@ -25,7 +25,7 @@ def define_operational_variables(
     # Define operational variables for the model
     model.genOperational = Var(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
     model.storOperational = Var(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
-    model.transmisionOperational = Var(model.DirectionalLink, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals) 
+    model.transmissionOperational = Var(model.DirectionalLink, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals) 
     model.storCharge = Var(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
     model.storDischarge = Var(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
     model.loadShed = Var(model.Node, model.Operationalhour, model.PeriodActive, model.Scenario, domain=NonNegativeReals)
@@ -239,6 +239,8 @@ def derive_stochastic_parameters(instance: ConcreteModel, node_unscaled_yearly_d
                             instance.genCapAvailTypeRaw[g] * instance.genCapAvailStochRaw[n, g, h, i, w]
                         )
     _set_genCapAvail(instance)
+
+
     return 
 
 
@@ -270,13 +272,39 @@ def define_operational_constraints(
 
     def FlowBalance_rule(model, n, h, i, w):
         return sum(model.genOperational[n,g,h,i,w] for g in model.Generator if (n,g) in model.GeneratorsOfNode) \
-            + sum((model.storageDischargeEff[b]*model.storDischarge[n,b,h,i,w]-model.storCharge[n,b,h,i,w]) for b in model.Storage if (n,b) in model.StoragesOfNode) \
-            + sum((model.lineEfficiency[link,n]*model.transmisionOperational[link,n,h,i,w] - model.transmisionOperational[n,link,h,i,w]) for link in model.NodesLinked[n]) \
-            - model.sload[i,w,n,h] + model.loadShed[n,h,i,w] \
-            == 0
+                    + sum((model.lineEfficiency[link,n]*model.transmissionOperational[link,n,h,i,w] - model.transmissionOperational[n,link,h,i,w]) for link in model.NodesLinked[n]) \
+                     - model.sload[i,w,n,h] + model.loadShed[n,h,i,w] \
+                     == 0 
+                    #  + sum((model.storageDischargeEff[b]*model.storDischarge[n,b,h,i,w]-model.storCharge[n,b,h,i,w]) for b in model.Storage if (n,b) in model.StoragesOfNode) \
+                    
+                      #   \ 
+
+                     
+   
+
+            
     model.FlowBalance = Constraint(model.Node, model.Operationalhour, model.PeriodActive, model.Scenario, rule=FlowBalance_rule)
 
+
+    # drop-in replacements for deactivated constraints 
+    ################################################################
+    def set_storDischarge_to_zero(model, n, b, h, i, w):
+        return model.storDischarge[n,b,h,i,w] == 0
+
+    model.set_storDischarge_to_zero = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=set_storDischarge_to_zero)
     #################################################################
+    def set_storCharge_to_zero(model, n, b, h, i, w):
+        return model.storCharge[n,b,h,i,w] == 0
+
+    model.set_storCharge_to_zero = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=set_storCharge_to_zero)
+    #################################################################
+    def set_storOperational_to_zero(model, n, b, h, i, w):
+        return model.storOperational[n,b,h,i,w] == 0
+
+    model.set_storOperational_to_zero = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=set_storOperational_to_zero)
+
+
+
 
     def genMaxProd_rule(model, n, g, h, i, w):
             return model.genOperational[n,g,h,i,w] - model.genCapAvail[n, g, h, i, w]*model.genInstalledCap[n,g,i] <= 0
@@ -295,13 +323,13 @@ def define_operational_constraints(
         model.ramping = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=ramping_rule)
 
     #################################################################
-
-    def storage_energy_balance_rule(model, n, b, h, i, w):
-        if h in model.FirstHoursOfRegSeason or h in model.FirstHoursOfPeakSeason:
-            return model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] == 0   #
-        else:
-            return model.storageBleedEff[b]*model.storOperational[n,b,(h-1),i,w] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] == 0   #
-    model.storage_energy_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_energy_balance_rule)
+    if False:
+        def storage_energy_balance_rule(model, n, b, h, i, w):
+            if h in model.FirstHoursOfRegSeason or h in model.FirstHoursOfPeakSeason:
+                return model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] == 0   #
+            else:
+                return model.storageBleedEff[b]*model.storOperational[n,b,(h-1),i,w] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] == 0   #
+        model.storage_energy_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_energy_balance_rule)
 
     #################################################################
     print("WARNING: SKIPPING SEASONAL STORAGE BALANCE CONSTRAINT")
@@ -322,10 +350,10 @@ def define_operational_constraints(
         model.storage_operational_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_operational_cap_rule)
 
     #################################################################
-
-    def storage_power_discharg_cap_rule(model, n, b, h, i, w):
-        return model.storDischarge[n,b,h,i,w] - model.storageDiscToCharRatio[b]*model.storPWInstalledCap[n,b,i] <= 0   #
-    model.storage_power_discharg_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_power_discharg_cap_rule)
+    if False:
+        def storage_power_discharg_cap_rule(model, n, b, h, i, w):
+            return model.storDischarge[n,b,h,i,w] - model.storageDiscToCharRatio[b]*model.storPWInstalledCap[n,b,i] <= 0   #
+        model.storage_power_discharg_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_power_discharg_cap_rule)
 
     #################################################################
     if False:
