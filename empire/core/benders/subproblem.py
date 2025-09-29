@@ -210,6 +210,8 @@ def exe_subproblem_routine(
     run_config: EmpireRunConfiguration,
     operational_input_params: OperationalInputParams,
     ):
+    if not isinstance(scenario, str):
+        raise ValueError("Subproblem routine only supports single scenarios.")
     sp_model = create_subproblem_model(run_config, empire_config, operational_input_params)
     data = load_data(sp_model, run_config, empire_config, period_active, scenario, out_of_sample_flag=False) # load all data except capacities
     load_capacity_values(sp_model, data, capacity_params, period_active) # load capacities into DataPortal
