@@ -1,6 +1,7 @@
 from pyomo.environ import (Expression, Objective, minimize)
 
-SCALING_FACTOR = 1e-10
+SCALING_FACTOR = 1e-8  # scaling factor for reducing objective 
+
 def investment_obj(model):
     return SCALING_FACTOR * sum(
         model.discount_multiplier[i]*(

@@ -83,7 +83,7 @@ def run_benders(
         if np.isclose(mp_objective, last_mp_obj):
             logger.info("Benders converged.")
             for i, mp_obj in enumerate(mp_objs):
-                print(f"Iteration {i+1}: Master problem objective = {mp_obj:.2e}")
+                print(f"Iteration {i+1}: Master problem objective = {mp_obj:.6e}")
             breakpoint()
             return mp_objective, mp_instance
         last_mp_obj = mp_objective
@@ -95,7 +95,7 @@ def run_benders(
 
 def create_cut(
         master_instance, 
-        capacity_params: dict[str, dict[tuple, float]],
+        capacity_params: dict[str, dict[tuple]],
         period_active: int,
         scenarios: list[str],
         empire_config: EmpireConfiguration,
