@@ -5,6 +5,7 @@ from pyomo.environ import AbstractModel, ConstraintList, value
 from empire.core.config import OperationalInputParams, EmpireConfiguration, EmpireRunConfiguration
 from .master_problem import create_master_problem_instance, solve_master_problem, extract_capacity_params, define_initial_capacity_params
 from .subproblem import create_subproblem_model, exe_subproblem_routine, load_data
+from empire.core.optimization.objective import SCALING_FACTOR
 from .cuts_v2 import define_cut_structure, CapacityVariableHandler
 from empire.core.optimization.loading_utils import filter_data
 
