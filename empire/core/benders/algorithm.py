@@ -80,7 +80,7 @@ def run_benders(
         mp_objective = solve_master_problem(mp_instance, empire_config, run_config, save_flag=False)
         capacity_params = extract_capacity_params(mp_instance)
         mp_objs.append(mp_objective)
-        if np.isclose(mp_objective, last_mp_obj):
+        if np.isclose(mp_objective, last_mp_obj, rtol=1-8):
             logger.info("Benders converged.")
             for i, mp_obj in enumerate(mp_objs):
                 print(f"Iteration {i+1}: Master problem objective = {mp_obj:.6e}")
