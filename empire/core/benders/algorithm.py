@@ -145,9 +145,7 @@ def create_cut(
                     else:
                         breakpoint()
                         raise ValueError("Transmission capacity indices not found in old capacities.")
-
-        # breakpoint()
-                if abs(multiplier) > 1e-10:
+                if abs(multiplier) > SCALING_FACTOR * 0.01:
                     expr += multiplier * (
                         getattr(master_instance, capacity_var_name)[inds]
                         -
