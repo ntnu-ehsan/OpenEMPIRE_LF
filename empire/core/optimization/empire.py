@@ -16,7 +16,7 @@ from pyomo.environ import (
 )
 from .objective import define_objective
 from .operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, derive_stochastic_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input, define_period_and_scenario_dependent_parameters, load_operational_sets
-from .investment import define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
+from .investment import define_investment_sets, load_investment_sets,define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
 from .shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
 from .out_of_sample_functions import set_investments_as_parameters, load_optimized_investments, set_out_of_sample_path
 from .lopf_module import LOPFMethod, load_line_parameters
@@ -47,7 +47,7 @@ def run_empire(
     # Set definitions
     define_shared_sets(model, empire_config.north_sea_flag)
     define_operational_sets(model, operational_input_params)
-
+    define_investment_sets(model)
 
     # Parameter definitions
     define_shared_parameters(model, empire_config.discount_rate, empire_config.leap_years_investment)
@@ -59,6 +59,7 @@ def run_empire(
     # # Data loading
     data = DataPortal()
     load_shared_sets(model, data, run_config.tab_file_path, empire_config.north_sea_flag, load_period=True, periods_active=periods_active)
+    load_investment_sets(model, data, run_config.tab_file_path)
     load_operational_sets(model, data, operational_input_params.scenarios)
     load_shared_parameters(model, data, run_config.tab_file_path)
     load_operational_parameters(model, data, run_config.tab_file_path, empire_config.emission_cap_flag, out_of_sample_flag, sample_file_path=sample_file_path, scenario_data_path=run_config.scenario_data_path)
@@ -94,6 +95,11 @@ def run_empire(
         define_investment_constraints(model, empire_config.north_sea_flag)
     define_operational_constraints(model, logger, empire_config.emission_cap_flag, include_hydro_node_limit_constraint_flag=empire_config.include_hydro_node_limit_constraint_flag)
 
+    # Binary constraints for transmission lines investment decisions
+    model.transmissionExpansion = Var(
+    model.BidirectionalArc, model.PeriodActive, within=Binary
+    )
+    # TODO: Move the above part to master problem if it is needed
 
     if empire_config.lopf_flag:
         logger.info("LOPF constraints activated using method: %s", empire_config.lopf_method)

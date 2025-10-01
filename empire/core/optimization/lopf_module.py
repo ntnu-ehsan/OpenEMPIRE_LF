@@ -340,36 +340,97 @@ def _add_angle_opf(
     for s in ("DirectionalLink", "Node", "Operationalhour", "Scenario", "PeriodActive"):
         if not hasattr(model, s):
             raise RuntimeError(f"Model is missing required set '{s}'")
+
     A = model.DirectionalLink
     N = model.Node
     H, W, P = model.Operationalhour, model.Scenario, model.PeriodActive
 
-    # Susceptance B[(i,j)]
+    # --- Susceptance B[(i,j)] ---
     if not hasattr(model, susceptance_param_name):
-        # allow creation if absent; user can populate later
         setattr(model, susceptance_param_name, Param(A, default=0.0, mutable=True))
     B = getattr(model, susceptance_param_name)
 
-    # Variables
-    model.Theta = Var(N, H, W, P, domain=Reals)         # bus angles
-    model.FlowDC = Var(A, H, W, P, domain=Reals)         # directed DC flow
+    # --- Existing / Candidate sets ---
+    # Expect these to be defined/loaded elsewhere. If ExistingTransmission is missing, derive it.
+    if not hasattr(model, "CandidateTransmission"):
+        raise RuntimeError("Model is missing set 'CandidateTransmission'.")
+    CAND = model.CandidateTransmission
 
-    # Capacity
+    if not hasattr(model, "ExistingTransmission"):
+        # derive Existing = A \ CAND
+        model.ExistingTransmission = Set(within=A, initialize=[arc for arc in A if arc not in CAND])
+    EXIST = model.ExistingTransmission
+
+    # --- Angle bounds & Big-M for candidate Ohm's law activation ---
+    # Angle bounds for numerical stability (radians). You can adjust via .tab or after instance creation.
+    if not hasattr(model, "AngleMax"):
+        model.AngleMax = Param(default=0.6, mutable=True)  # ~34 degrees
+
+    # Bus angles with bounds ±AngleMax
+    def _theta_bounds(m, *idx):
+        amax = value(m.AngleMax)
+        return (-amax, amax)
+
+    model.Theta = Var(N, H, W, P, domain=Reals, bounds=_theta_bounds)
+
+    # Directed DC flow variable (shared for both existing & candidate corridors)
+    model.FlowDC = Var(A, H, W, P, domain=Reals)
+
+    # If caller didn’t pass a capacity expression, infer it (this should end up using transmissionInstalledCap)
     if capacity_expr is None:
         capacity_expr = _infer_capacity_expr(model)
+
     model.CapacityDir = Expression(A, P, rule=lambda m,i,j,p: capacity_expr(m,i,j,p))
 
-    # Ohm's law
-    model.OhmLawDC = Constraint(A, H, W, P,
-        rule=lambda m,i,j,h,w,p: m.FlowDC[i,j,h,w,p] == B[i,j] * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]))
+    # --- Big-M per candidate arc: M_flow[i,j] ≈ |B[i,j]| * (2*AngleMax) ---
+    # This relaxes Ohm's law when line not built.
+    if not hasattr(model, "BigMFlow"):
+        model.BigMFlow = Param(CAND, default=0.0, mutable=True)
 
-    # Thermal limits
-    model.FlowCapUp = Constraint(A, H, W, P, rule=lambda m,i,j,h,w,p:  m.FlowDC[i,j,h,w,p] <= m.CapacityDir[i,j,p])
-    model.FlowCapLo = Constraint(A, H, W, P, rule=lambda m,i,j,h,w,p: -m.CapacityDir[i,j,p] <= m.FlowDC[i,j,h,w,p])
+    def _init_bigm(m):
+        # You may refine with a safety factor, e.g., 1.1
+        for (i,j) in CAND:
+            Bij = value(B[i,j]) if (i,j) in B else 0.0
+            m.BigMFlow[(i,j)] = abs(Bij) * 2.0 * value(m.AngleMax)  # simple, stable choice
 
-    # Angle reference
+    model._InitBigMFlow = Constraint(rule=lambda m: (_init_bigm(m) or Constraint.Skip))
+
+    # -----------------------
+    # Ohm's law constraints
+    # -----------------------
+
+    # 1) Existing lines: equality always active
+    def ohm_exist(m, i, j, h, w, p):
+        return m.FlowDC[i,j,h,w,p] == B[i,j] * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p])
+    model.OhmLawDC_Exist = Constraint(EXIST, H, W, P, rule=ohm_exist)
+
+    # 2) Candidate lines: big-M activation using binary build var
+    #    Requires 'model.transmissionBuild[(i,j), p]' (binary) to be defined.
+    if not hasattr(model, "transmissionBuild"):
+        raise RuntimeError("Model is missing binary var 'transmissionBuild[(i,j),p]' for candidate transmission.")
+
+    # Upper & lower linearized envelopes:
+    def ohm_cand_ub(m, i, j, h, w, p):
+        return m.FlowDC[i,j,h,w,p] <= B[i,j] * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]) + m.BigMFlow[i,j] * (1 - m.transmissionBuild[i,j,p])
+    def ohm_cand_lb(m, i, j, h, w, p):
+        return m.FlowDC[i,j,h,w,p] >= B[i,j] * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]) - m.BigMFlow[i,j] * (1 - m.transmissionBuild[i,j,p])
+    model.OhmLawDC_Cand_UB = Constraint(CAND, H, W, P, rule=ohm_cand_ub)
+    model.OhmLawDC_Cand_LB = Constraint(CAND, H, W, P, rule=ohm_cand_lb)
+
+    # -----------------------
+    # Thermal limits (all arcs)
+    # -----------------------
+    def flow_cap_up(m, i, j, h, w, p):
+        return  m.FlowDC[i,j,h,w,p] <= m.CapacityDir[i,j,p]
+    def flow_cap_lo(m, i, j, h, w, p):
+        return -m.CapacityDir[i,j,p] <= m.FlowDC[i,j,h,w,p]
+    model.FlowCapUp = Constraint(A, H, W, P, rule=flow_cap_up)
+    model.FlowCapLo = Constraint(A, H, W, P, rule=flow_cap_lo)
+
+    # -----------------------
+    # Angle reference (slack)
+    # -----------------------
     if fix_angle_reference:
-        # pick a slack node
         slack = None
         if hasattr(model, slack_node_set_name):
             for n in getattr(model, slack_node_set_name):
@@ -381,9 +442,10 @@ def _add_angle_opf(
             raise RuntimeError("No nodes available to fix angle reference.")
         model.AngleRef = Constraint(H, W, P, rule=lambda m,h,w,p, _n=slack: m.Theta[_n,h,w,p] == 0.0)
 
-    # Bind to existing directed flow (so KCL stays unchanged)
+    # -----------------------
+    # Bind to existing directed flow var (keep KCL intact)
+    # -----------------------
     if couple_to_existing_flows:
-        # here we *equate* FlowDC (this method’s flow) to existing flow var
         FlowDir = None
         for nm in existing_flow_candidates:
             if hasattr(model, nm):
