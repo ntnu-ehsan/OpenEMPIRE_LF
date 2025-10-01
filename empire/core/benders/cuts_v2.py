@@ -89,75 +89,112 @@ def define_cut_structure(subproblem_instance: ConcreteModel, i: int, w: str) -> 
         coefficient_index_selection_func=lambda idx: (idx[0], idx[1], idx[2], idx[3], idx[4]),  # n, g, h, i, w
         index_names_to_keep=["Node", "Generator", "Period"]  # n, g, i
     ),
-    # CapacityVariableHandler(
-    #     constraint_name="ramping",
-    #     constraint_indices=[(n, g, h, i, w)  
-    #         for n, g in subproblem_instance.GeneratorsOfNode
-    #         if g in subproblem_instance.ThermalGenerators
-    #         for h in subproblem_instance.Operationalhour
-    #         if h not in subproblem_instance.FirstHoursOfRegSeason and h not in subproblem_instance.FirstHoursOfPeakSeason],
-    #     constraint_index_names=["Node", "Generator", "Operationalhour", "Period", "Scenario"],
-    #     capacity_var_name="genInstalledCap",
-    #     capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, g, i
-    #     has_coefficient=True,
-    #     coefficients_subproblem_name="genRampUpCap",
-    #     coefficient_index_selection_func=lambda idx: (idx[1],),  # n, g, h, i, w
-    #     index_names_to_keep=["Node", "Generator", "Period"]  # n, g, i
-    # ),
-    # CapacityVariableHandler(
-    #     constraint_name="storage_operational_cap",
-    #     constraint_indices=[(n,b,h,i,w)
-    #         for n, b in subproblem_instance.StoragesOfNode
-    #         for h in subproblem_instance.Operationalhour],
-    #     constraint_index_names=["Node", "Storage", "Operationalhour", "Period", "Scenario"],
-    #     capacity_var_name="storENInstalledCap",
-    #     capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, b, i
-    #     index_names_to_keep=["Node", "Storage", "Period"]  # n, b, i
-    # ),
-    # CapacityVariableHandler(
-    #     constraint_name="storage_power_charg_cap",
-    #     constraint_indices=[(n,b,h,i,w)
-    #         for n, b in subproblem_instance.StoragesOfNode
-    #         for h in subproblem_instance.Operationalhour],
-    #     constraint_index_names=["Node", "Storage", "Operationalhour", "Period", "Scenario"],
-    #     capacity_var_name="storPWInstalledCap",
-    #     capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, b, i
-    #     index_names_to_keep=["Node", "Storage", "Period"]  # n, b, i
-    # ),
-    # CapacityVariableHandler(
-    #     constraint_name="storage_power_discharg_cap",
-    #     constraint_indices=[(n,b,h,i,w)
-    #         for n, b in subproblem_instance.StoragesOfNode
-    #         for h in subproblem_instance.Operationalhour],
-    #     constraint_index_names=["Node", "Storage", "Operationalhour", "Period", "Scenario"],
-    #     capacity_var_name="storPWInstalledCap",
-    #     capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, b, i
-    #     has_coefficient=True,
-    #     coefficients_subproblem_name="storageDiscToCharRatio",
-    #     coefficient_index_selection_func=lambda idx: (idx[1]), # b
-    #     index_names_to_keep=["Node", "Storage", "Period"]  # n, b, i
-    # ),
-    # CapacityVariableHandler(   # removed!
-    #     constraint_name="hydro_gen_limit",
-    #     constraint_indices=[(n,g,s,i,w)
-    #         for n, g in subproblem_instance.GeneratorsOfNode
-    #         if g in subproblem_instance.RegHydroGenerator
-    #         for s in subproblem_instance.Season],
-    #     constraint_index_names=["Node", "Generator", "Season", "Period", "Scenario"],
-    #     capacity_var_name="genInstalledCap",
-    #     capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, g, i
-    #     index_names_to_keep=["Node", "Generator", "Period"]  # n, g, i
-    # ),
-    # CapacityVariableHandler(
-    #     constraint_name="transmission_cap",
-    #     constraint_indices=[(n1,n2,h,i,w)
-    #         for n1, n2 in subproblem_instance.DirectionalLink
-    #         for h in subproblem_instance.Operationalhour],
-    #     capacity_var_name="transmissionInstalledCap",
-    #     constraint_index_names=["Node1", "Node2", "Operationalhour", "Period", "Scenario"],
-    #     capacity_var_index_selection_func=lambda idx: ((idx[0], idx[1]), idx[3]),  # n1, n2, i
-    #     index_names_to_keep=["Node1", "Node2", "Period"]  # n1, n2, i
-    # )
+    CapacityVariableHandler(
+        constraint_name="ramping",
+        constraint_indices=[(n, g, h, i, w)  
+            for n, g in subproblem_instance.GeneratorsOfNode
+            if g in subproblem_instance.ThermalGenerators
+            for h in subproblem_instance.Operationalhour
+            if h not in subproblem_instance.FirstHoursOfRegSeason and h not in subproblem_instance.FirstHoursOfPeakSeason],
+        constraint_index_names=["Node", "Generator", "Operationalhour", "Period", "Scenario"],
+        capacity_var_name="genInstalledCap",
+        capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, g, i
+        has_coefficient=True,
+        coefficients_subproblem_name="genRampUpCap",
+        coefficient_index_selection_func=lambda idx: (idx[1],),  # n, g, h, i, w
+        index_names_to_keep=["Node", "Generator", "Period"]  # n, g, i
+    ),
+    CapacityVariableHandler(
+        constraint_name="storage_operational_cap",
+        constraint_indices=[(n,b,h,i,w)
+            for n, b in subproblem_instance.StoragesOfNode
+            for h in subproblem_instance.Operationalhour],
+        constraint_index_names=["Node", "Storage", "Operationalhour", "Period", "Scenario"],
+        capacity_var_name="storENInstalledCap",
+        capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, b, i
+        index_names_to_keep=["Node", "Storage", "Period"]  # n, b, i
+    ),
+    CapacityVariableHandler(
+        constraint_name="storage_energy_balance",
+        constraint_indices=[(n,b,h,i,w)
+            for n, b in subproblem_instance.StoragesOfNode
+            for h in subproblem_instance.Operationalhour
+            if h in subproblem_instance.FirstHoursOfRegSeason or h in subproblem_instance.FirstHoursOfPeakSeason
+            ],
+        capacity_var_name="storENInstalledCap",
+        constraint_index_names=["Node", "Storage", "Operationalhour", "Period", "Scenario"],
+        capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, b, i
+        has_coefficient=True,
+        coefficients_subproblem_name="storOperationalInit",
+        coefficient_index_selection_func=lambda idx: (idx[1],),  # b
+        index_names_to_keep=["Node", "Storage", "Period"],  # n, b, i
+        coeff_sign=1,
+    ),
+    CapacityVariableHandler(
+        constraint_name="storage_energy_balance2",
+        constraint_indices=[(n,b,h,i,w)
+            for n, b in subproblem_instance.StoragesOfNode
+            for h in subproblem_instance.Operationalhour
+            if h in subproblem_instance.FirstHoursOfRegSeason or h in subproblem_instance.FirstHoursOfPeakSeason
+            ],
+        capacity_var_name="storENInstalledCap",
+        constraint_index_names=["Node", "Storage", "Operationalhour", "Period", "Scenario"],
+        capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, b, i
+        has_coefficient=True,
+        coefficients_subproblem_name="storOperationalInit",
+        coefficient_index_selection_func=lambda idx: (idx[1],),  # b
+        index_names_to_keep=["Node", "Storage", "Period"],  # n, b, i
+        coeff_sign=-1,
+    ),
+    CapacityVariableHandler(
+        constraint_name="storage_seasonal_net_zero_balance",
+        constraint_indices=[(n,b,h,i,w)
+            for n, b in subproblem_instance.StoragesOfNode
+            for h in subproblem_instance.Operationalhour
+            if h in subproblem_instance.FirstHoursOfRegSeason or h in subproblem_instance.FirstHoursOfPeakSeason
+            ],
+        capacity_var_name="storENInstalledCap",
+        constraint_index_names=["Node", "Storage", "Operationalhour", "Period", "Scenario"],
+        capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, b, i
+        has_coefficient=True,
+        coefficients_subproblem_name="storOperationalInit",
+        coefficient_index_selection_func=lambda idx: (idx[1],),  # b
+        index_names_to_keep=["Node", "Storage", "Period"],  # n, b, i
+        coeff_sign=-1,
+    ),
+    CapacityVariableHandler(
+        constraint_name="storage_power_charg_cap",
+        constraint_indices=[(n,b,h,i,w)
+            for n, b in subproblem_instance.StoragesOfNode
+            for h in subproblem_instance.Operationalhour],
+        constraint_index_names=["Node", "Storage", "Operationalhour", "Period", "Scenario"],
+        capacity_var_name="storPWInstalledCap",
+        capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, b, i
+        index_names_to_keep=["Node", "Storage", "Period"]  # n, b, i
+    ),
+    CapacityVariableHandler(
+        constraint_name="storage_power_discharg_cap",
+        constraint_indices=[(n,b,h,i,w)
+            for n, b in subproblem_instance.StoragesOfNode
+            for h in subproblem_instance.Operationalhour],
+        constraint_index_names=["Node", "Storage", "Operationalhour", "Period", "Scenario"],
+        capacity_var_name="storPWInstalledCap",
+        capacity_var_index_selection_func=lambda idx: (idx[0], idx[1], idx[3]),  # n, b, i
+        has_coefficient=True,
+        coefficients_subproblem_name="storageDiscToCharRatio",
+        coefficient_index_selection_func=lambda idx: (idx[1]), # b
+        index_names_to_keep=["Node", "Storage", "Period"]  # n, b, i
+    ),
+    CapacityVariableHandler(
+        constraint_name="transmission_cap",
+        constraint_indices=[(n1,n2,h,i,w)
+            for n1, n2 in subproblem_instance.DirectionalLink
+            for h in subproblem_instance.Operationalhour],
+        capacity_var_name="transmissionInstalledCap",
+        constraint_index_names=["Node1", "Node2", "Operationalhour", "Period", "Scenario"],
+        capacity_var_index_selection_func=lambda idx: ((idx[0], idx[1]), idx[3]),  # n1, n2, i
+        index_names_to_keep=["Node1", "Node2", "Period"]  # n1, n2, i
+    ),
     ]
     return cut_structure
 

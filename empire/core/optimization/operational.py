@@ -276,7 +276,7 @@ def define_operational_constraints(
                     + sum((model.storageDischargeEff[b]*model.storDischarge[n,b,h,i,w]-model.storCharge[n,b,h,i,w]) for b in model.Storage if (n,b) in model.StoragesOfNode) \
                      - model.sload[i,w,n,h] + model.loadShed[n,h,i,w] \
                      == 0 
-
+               
                      
     model.FlowBalance = Constraint(model.Node, model.Operationalhour, model.PeriodActive, model.Scenario, rule=FlowBalance_rule)
 
@@ -298,20 +298,43 @@ def define_operational_constraints(
 
     #################################################################
 
+    # def storage_energy_balance_rule(model, n, b, h, i, w):
+    #     if h in model.FirstHoursOfRegSeason or h in model.FirstHoursOfPeakSeason:
+    #         return model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] >= 0   #
+    #     else: 
+    #         return model.storageBleedEff[b]*model.storOperational[n,b,(h-1),i,w] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] == 0   #
+    # model.storage_energy_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_energy_balance_rule)
+
     def storage_energy_balance_rule(model, n, b, h, i, w):
         if h in model.FirstHoursOfRegSeason or h in model.FirstHoursOfPeakSeason:
-            return model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] == 0   #
-        else:
+            return -model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] - model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]+model.storDischarge[n,b,h,i,w]+model.storOperational[n,b,h,i,w] <= 0   #
+        else: 
             return model.storageBleedEff[b]*model.storOperational[n,b,(h-1),i,w] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] == 0   #
     model.storage_energy_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_energy_balance_rule)
 
+    def storage_energy_balance_rule2(model, n, b, h, i, w):
+        if h in model.FirstHoursOfRegSeason or h in model.FirstHoursOfPeakSeason:
+            return -model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] - model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]+model.storDischarge[n,b,h,i,w]+model.storOperational[n,b,h,i,w] >= 0   #
+        else:
+            return Constraint.Skip
+    model.storage_energy_balance2 = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_energy_balance_rule2)
+
     #################################################################
+
+    # def storage_seasonal_net_zero_balance_rule(model, n, b, h, i, w):
+    #     if h in model.FirstHoursOfRegSeason:
+    #         return model.storOperational[n,b,h+value(model.lengthRegSeason)-1,i,w] - model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] >= 0  #
+    #     elif h in model.FirstHoursOfPeakSeason:
+    #         return model.storOperational[n,b,h+value(model.lengthPeakSeason)-1,i,w] - model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] >= 0  #
+    #     else:
+    #         return Constraint.Skip
+    # model.storage_seasonal_net_zero_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_seasonal_net_zero_balance_rule)
 
     def storage_seasonal_net_zero_balance_rule(model, n, b, h, i, w):
         if h in model.FirstHoursOfRegSeason:
-            return model.storOperational[n,b,h+value(model.lengthRegSeason)-1,i,w] - model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] == 0  #
+            return -model.storOperational[n,b,h+value(model.lengthRegSeason)-1,i,w] + model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] <= 0  #
         elif h in model.FirstHoursOfPeakSeason:
-            return model.storOperational[n,b,h+value(model.lengthPeakSeason)-1,i,w] - model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] == 0  #
+            return -model.storOperational[n,b,h+value(model.lengthPeakSeason)-1,i,w] + model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] <= 0  #
         else:
             return Constraint.Skip
     model.storage_seasonal_net_zero_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_seasonal_net_zero_balance_rule)
@@ -329,19 +352,19 @@ def define_operational_constraints(
     model.storage_power_discharg_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_power_discharg_cap_rule)
 
     #################################################################
-    if True:
-        def storage_power_charg_cap_rule(model, n, b, h, i, w):
-            return model.storCharge[n,b,h,i,w] - model.storPWInstalledCap[n,b,i] <= 0   #
-        model.storage_power_charg_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_power_charg_cap_rule)
+
+    def storage_power_charg_cap_rule(model, n, b, h, i, w):
+        return model.storCharge[n,b,h,i,w] - model.storPWInstalledCap[n,b,i] <= 0   #
+    model.storage_power_charg_cap = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_power_charg_cap_rule)
 
     #################################################################
-
-    def hydro_gen_limit_rule(model, n, g, s, i, w):
-        if g in model.RegHydroGenerator:
-            return sum(model.genOperational[n,g,h,i,w] for h in model.Operationalhour if (s,h) in model.HoursOfSeason) - model.maxRegHydroGen[i,w,n,s] <= 0
-        else:
-            return Constraint.Skip  #
-    model.hydro_gen_limit = Constraint(model.GeneratorsOfNode, model.Season, model.PeriodActive, model.Scenario, rule=hydro_gen_limit_rule)
+    if True:
+        def hydro_gen_limit_rule(model, n, g, s, i, w):
+            if g in model.RegHydroGenerator:
+                return sum(model.genOperational[n,g,h,i,w] for h in model.Operationalhour if (s,h) in model.HoursOfSeason) - model.maxRegHydroGen[i,w,n,s] <= 0
+            else:
+                return Constraint.Skip  #
+        model.hydro_gen_limit = Constraint(model.GeneratorsOfNode, model.Season, model.PeriodActive, model.Scenario, rule=hydro_gen_limit_rule)
 
     #################################################################
 
