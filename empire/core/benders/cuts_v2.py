@@ -20,6 +20,7 @@ class CapacityVariableHandler:
             coefficients_subproblem_name: None | str = None, 
             coefficient_index_selection_func: None | Callable = None,
             index_names_to_keep: list[str] | None = None,
+            coeff_sign: int = 1
             ):
         self.constraint_name: str = constraint_name
         self.constraint_indices: list[tuple] = constraint_indices   # all constraint indices
@@ -30,6 +31,7 @@ class CapacityVariableHandler:
         self.coefficient_param_subproblem_name: str = coefficients_subproblem_name
         self.coefficient_index_selection_func: None | Callable = coefficient_index_selection_func
         self.index_names_to_keep: list[str] | None = index_names_to_keep
+        self.coeff_sign: int = coeff_sign
 
         self.duals: pd.Series | None = None
         self.coefficients: pd.Series | None = None
@@ -46,7 +48,7 @@ class CapacityVariableHandler:
     def extract_data(self, subproblem_instance: ConcreteModel) -> pd.Series:
         self.extract_duals(subproblem_instance)
         self.extract_coefficients(subproblem_instance)
-        dual_and_coeff = self.duals * self.coefficients
+        dual_and_coeff = self.coeff_sign * self.duals * self.coefficients
         self.dual_and_coeff_total = dual_and_coeff.groupby(self.index_names_to_keep).sum()
         return self.dual_and_coeff_total
 

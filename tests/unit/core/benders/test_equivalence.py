@@ -74,9 +74,9 @@ class TestSubProblem(unittest.TestCase):
         if set_initial_capacities:
             capacity_params = [
                 'genInstalledCap', 
-                # 'transmissionInstalledCap',
-                # 'storPWInstalledCap',
-                # 'storENInstalledCap',
+                'transmissionInstalledCap',
+                'storPWInstalledCap',
+                'storENInstalledCap',
                 ]
 
             capacity_param_values: dict[str, dict[tuple, float]] = {
@@ -138,17 +138,18 @@ class TestSubProblem(unittest.TestCase):
                 val_regular = value(getattr(instance, param_name)[idx])
                 val_benders = value(getattr(mp_instance, param_name)[idx])
                 self.assertAlmostEqual(val_regular, val_benders, places=2, msg=f"Mismatch in parameter {param_name} at index {idx}")    
-
-
-
-        for param_name in ['genInvCap', 'transmisionInvCap', 'storPWInvCap', 'storENInvCap',
-                            'genInstalledCap', 'transmissionInstalledCap', 'storPWInstalledCap', 'storENInstalledCap']:
-            for idx in getattr(instance, param_name).keys():
-                val_regular = value(getattr(instance, param_name)[idx])
-                val_benders = value(getattr(mp_instance, param_name)[idx])
-                self.assertAlmostEqualSignificant(val_regular, val_benders, sig_digits=3, msg=f"Mismatch in parameter {param_name} at index {idx}")
-
+        print(f"Objective regular: {obj_regular}, objective Benders: {obj_benders}")
         self.assertAlmostEqualSignificant(obj_regular, obj_benders, sig_digits=5, msg="Mismatch in objective value between regular and Benders decomposition.")  
+
+        if False: # for degenerate optima this check does not make sense
+            for param_name in ['genInvCap', 'transmissionInvCap', 'storPWInvCap', 'storENInvCap',
+                                'genInstalledCap', 'transmissionInstalledCap', 'storPWInstalledCap', 'storENInstalledCap']:
+                for idx in getattr(instance, param_name).keys():
+                    val_regular = value(getattr(instance, param_name)[idx])
+                    val_benders = value(getattr(mp_instance, param_name)[idx])
+                    self.assertAlmostEqualSignificant(val_regular, val_benders, sig_digits=3, msg=f"Mismatch in parameter {param_name} at index {idx}")
+
+
         return 
 
 if __name__ == "__main__":

@@ -140,7 +140,7 @@ def create_cut(
                     # transmission capacity variable can have n1, n2 switched around
                     if (inds[0], inds[1], inds[2]) in capacity_params[capacity_var_name]:
                         inds = (inds[0], inds[1], inds[2])
-                    elif (inds[1], inds[0], inds[2]) in capacity_params[capacity_variable_name]:
+                    elif (inds[1], inds[0], inds[2]) in capacity_params[capacity_var_name]:
                         inds = (inds[1], inds[0], inds[2])
                     else:
                         breakpoint()
