@@ -36,7 +36,8 @@ def create_master_problem_instance(
         # capacity_params: dict | None = None,
         # regularization_flag: bool = True,
         # regularization_weight: float = 1e3,
-        periods: list[int] | None = None
+        periods: list[int] | None = None,
+        scenarios: list[str] | None = None,
         ) -> ConcreteModel:
 
     prepare_temp_dir(empire_config.use_temporary_directory, temp_dir=empire_config.temporary_directory)
@@ -65,8 +66,7 @@ def create_master_problem_instance(
 
     def Obj_rule(model):
         obj = investment_obj(model) + \
-            sum(model.theta[i] for i in model.PeriodActive)
-        
+            sum(model.theta[i, s] for i in model.PeriodActive for s in model.Scenario)
         # Regularization: penalize deviation from previous iteration capacities
         # weight can be tuned; smaller = softer stabilization
         # if regularization_flag and capacity_params is not None:
