@@ -69,7 +69,6 @@ def solve(
         logger: logging.Logger
         ):
     logger.info("Solving...")
-    instance.dual = Suffix(direction=Suffix.IMPORT) #Make sure the dual value is collected into solver results (if solver supplies dual information)
     results = opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
     if results.solver.termination_condition == TerminationCondition.optimal:
         return results

@@ -10,7 +10,8 @@ from pyomo.environ import (
     DataPortal,
     AbstractModel,
     ConcreteModel,
-    Set
+    Set,
+    Suffix
 )
 
 from empire.core.optimization.loading_utils import load_dict_into_dataportal, load_parameter, read_tab_file
@@ -174,12 +175,13 @@ def create_subproblem_instance(model: AbstractModel, data: DataPortal) -> Concre
     instance: ConcreteModel = model.create_instance(data) 
     end = time.time()
     logger.info("Building instance took [sec]: %d", end - start)
+    instance.dual = Suffix(direction=Suffix.IMPORT) #Make sure the dual value is collected into solver results (if solver supplies dual information)
     return instance 
 
 
 def solve_subproblem(instance, solver_name, run_config):
 
-    opt = set_solver(solver_name, logger)
+    opt = set_solver(solver_name, logger, solver_method=SolvingMethods.DUAL_SIMPLEX)
     _ = solve(instance, opt, run_config, logger)
  
     return opt

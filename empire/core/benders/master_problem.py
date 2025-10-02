@@ -16,7 +16,9 @@ from pyomo.environ import (
     minimize,
     Expression,
     value,
-    ConcreteModel
+    ConcreteModel,
+    Set,
+    Suffix
 )
 from empire.core.optimization.objective import investment_obj, multiplier_rule
 from empire.core.optimization.investment import define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
@@ -115,7 +117,7 @@ def create_master_problem_instance(
     start = time.time()
 
     instance = model.create_instance(data) #, report_timing=True)
-
+    instance.dual = Suffix(direction=Suffix.IMPORT) #Make sure the dual value is collected into solver results (if solver supplies dual information)
     end = time.time()
     logger.info("Building instance took [sec]: %d", end - start)
 

@@ -9,7 +9,8 @@ from pyomo.environ import (
     DataPortal,
     AbstractModel,
     ConcreteModel,
-    value
+    value,
+    Suffix
 )
 from .objective import define_objective
 from .operational import define_operational_sets, define_operational_constraints, prep_operational_parameters, derive_stochastic_parameters, define_operational_variables, define_operational_parameters, load_operational_parameters, define_stochastic_input, load_stochastic_input, define_period_and_scenario_dependent_parameters, load_operational_sets
@@ -120,6 +121,7 @@ def run_empire(
 
     instance: ConcreteModel = model.create_instance(data) #, report_timing=True)
     derive_stochastic_parameters(instance)
+    instance.dual = Suffix(direction=Suffix.IMPORT) #Make sure the dual value is collected into solver results (if solver supplies dual information)
 
     end = time.time()
     logger.info("Building instance took [sec]: %d", end - start)
