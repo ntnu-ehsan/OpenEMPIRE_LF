@@ -139,7 +139,7 @@ def run_empire_model(
                 run_config=run_config,
                 empire_config=empire_config,
                 operational_input_params=operational_input_params,
-                period_active=periods_active,
+                periods_active=periods_active,
             )
 
 
