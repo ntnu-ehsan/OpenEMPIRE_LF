@@ -55,6 +55,8 @@ class EmpireConfiguration:
         max_benders_iterations: int = 50,
         pickle_instance_flag: bool = False,
         include_hydro_node_limit_constraint_flag: bool = True,
+        parallel_benders_flag: bool = False,
+        n_cores: int = 4,
         **kwargs,
     ):
         """
@@ -137,7 +139,9 @@ class EmpireConfiguration:
         # Benders
         self.benders_flag = benders_flag
         self.max_benders_iterations = max_benders_iterations
-
+        self.parallel_benders_flag = parallel_benders_flag
+        self.n_cores = n_cores
+        
         # pickling
         self.pickle_instance_flag = pickle_instance_flag
 
