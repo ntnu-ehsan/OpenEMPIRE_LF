@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pyomo.environ import AbstractModel, ConstraintList, value
 
 from empire.core.config import OperationalInputParams, EmpireConfiguration, EmpireRunConfiguration
