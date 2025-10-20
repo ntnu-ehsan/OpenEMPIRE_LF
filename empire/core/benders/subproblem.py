@@ -219,7 +219,7 @@ def update_capacity_values(
             getattr(sp_instance, param_name)[index].value = value
     return
 
-def exe_subproblem_routine(
+def init_subproblem(
     capacity_params: dict[str, dict[tuple, float]],
     period_active: int,
     scenario: str,
@@ -235,8 +235,7 @@ def exe_subproblem_routine(
     sp_instance = create_subproblem_instance(sp_model, data)
     node_unscaled_yearly_demand_ser = calc_total_raw_nodal_load(sp_instance.Node, period_active, operational_input_params, empire_config, run_config)
     derive_stochastic_parameters(sp_instance, node_unscaled_yearly_demand_ser)
-    opt = solve_subproblem(sp_instance, empire_config.optimization_solver, run_config)
-    return sp_instance, opt
+    return sp_instance
 
 
 def calc_total_raw_nodal_load(nodes: Set, period_active: int, operational_params: OperationalInputParams, empire_config: EmpireConfiguration, run_config: EmpireRunConfiguration) -> pd.Series:
