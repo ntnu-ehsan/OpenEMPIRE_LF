@@ -131,7 +131,6 @@ def run_empire_model(
                 periods_active=periods_active,
                 operational_input_params=operational_input_params,
                 sample_file_path=sample_file_path,
-                out_of_sample_flag=False,
                 out_of_sample_flag=OUT_OF_SAMPLE,
             )
         else:
