@@ -6,10 +6,10 @@ from empire.utils import get_name_of_last_folder_in_path
 
 def set_investments_as_parameters(model, set_only_capacities: bool = False):
     # Redefine investment vars as input parameters
-    model.genInstalledCap = Param(model.GeneratorsOfNode, model.PeriodActive, domain=NonNegativeReals)
-    model.transmissionInstalledCap = Param(model.BidirectionalArc, model.PeriodActive, domain=NonNegativeReals)
-    model.storPWInstalledCap = Param(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
-    model.storENInstalledCap = Param(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
+    model.genInstalledCap = Param(model.GeneratorsOfNode, model.PeriodActive, domain=NonNegativeReals, mutable=True)
+    model.transmissionInstalledCap = Param(model.BidirectionalArc, model.PeriodActive, domain=NonNegativeReals, mutable=True)
+    model.storPWInstalledCap = Param(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals, mutable=True)
+    model.storENInstalledCap = Param(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals, mutable=True)
     if set_only_capacities: 
         return 
     model.genInvCap = Param(model.GeneratorsOfNode, model.PeriodActive, domain=NonNegativeReals)
