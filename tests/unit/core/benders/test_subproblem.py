@@ -14,6 +14,7 @@ from empire.core.reader import generate_tab_files
 from empire.core.scenario_random import generate_random_scenario
 from empire.core.optimization.empire import run_empire
 from empire.core.optimization.loading_utils import filter_data
+from empire.core.optimization.objective import SCALING_FACTOR
 
 class TestSubProblem(unittest.TestCase):
     def test_subproblem_equivalence(self):
@@ -63,7 +64,12 @@ class TestSubProblem(unittest.TestCase):
             sample_file_path=Path("Results/basic_run/dataset_test/Input/Tab")
         )
         # breakpoint()
-        capacity_params = ['genInstalledCap']
+        capacity_params = [
+            'genInstalledCap',
+            'transmissionInstalledCap',
+            'storENInstalledCap',
+            'storPWInstalledCap',
+            ]
 
         capacity_param_values = {
             param_name: {key: value for key, value in getattr(instance, param_name).items()}
@@ -106,7 +112,7 @@ class TestSubProblem(unittest.TestCase):
 
 
         operational_costs = pd.Series({
-            (i, w): instance.discount_multiplier[i] * instance.operationalcost[i, w] for i in periods_active for w in operational_input_params.scenarios
+            (i, w): SCALING_FACTOR * instance.discount_multiplier[i] * instance.operationalcost[i, w] for i in periods_active for w in operational_input_params.scenarios
         })
 
         specific_operational_cost = operational_costs.loc[(period_active, scenario)]
@@ -115,6 +121,8 @@ class TestSubProblem(unittest.TestCase):
         # for capacity_var, capacity_dict in filtered_params.items():
         #     for idx, cap in capacity_dict.items():
         #         self.assertAlmostEqual(installed_caps[idx], cap, places=2)
+
+
         self.assertAlmostEqual(value(sp_instance.Obj), value(specific_operational_cost), places=1)  
         
 

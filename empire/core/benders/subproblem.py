@@ -20,7 +20,7 @@ from empire.core.optimization.operational import derive_stochastic_parameters, d
 from empire.core.optimization.shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
 from empire.core.optimization.out_of_sample_functions import set_investments_as_parameters
 from empire.core.optimization.lopf_module import LOPFMethod, load_line_parameters
-from empire.core.optimization.solver import set_solver, solve
+from empire.core.optimization.solver import set_solver, solve, SolvingMethods
 from empire.core.optimization.helpers import pickle_instance, log_problem_statistics, prepare_results_dir, prepare_temp_dir
 from empire.core.config import EmpireRunConfiguration, OperationalInputParams, EmpireConfiguration
 from empire.core.optimization.loading_utils import load_set, filter_data
@@ -164,6 +164,7 @@ def load_selected_operational_parameters(model, data, tab_file_path, emission_ca
 
     load_parameter(data, tab_file_path / 'Stochastic_HydroGenMaxSeasonalProduction.tab', model.maxRegHydroGenRaw, periods_to_load=[period], period_indnr=0, scenarios_to_load=[scenario], scenario_indnr=1)
     load_parameter(data, tab_file_path / 'Stochastic_StochasticAvailability.tab', model.genCapAvailStochRaw, periods_to_load=[period], period_indnr=3, scenarios_to_load=[scenario], scenario_indnr=4)
+
     load_parameter(data, tab_file_path / 'Stochastic_ElectricLoadRaw.tab', model.sloadRaw, periods_to_load=[period], period_indnr=0, scenarios_to_load=[scenario], scenario_indnr=1)
 
     return 
@@ -190,15 +191,16 @@ def solve_subproblem(instance, solver_name, run_config):
 def load_capacity_values(
     sp_model,
     data, 
-    capacity_params: dict[str, dict[tuple]],
+    capacity_params: dict[str, dict[tuple, float]],
     period_active: int,
     ) -> None:
     """Load capacity values from the MP into the DataPortal for the subproblem."""
+
     for param_name, capacities in capacity_params.items():
         filtered_capacities = filter_data(
             capacities,
             periods_to_load=[period_active],
-            period_indnr=-1,
+            period_indnr=-1,  # period index is always last in the tuple
         )
         load_dict_into_dataportal(data, getattr(sp_model, param_name), filtered_capacities)
     return
@@ -241,7 +243,8 @@ def init_subproblem(
 def calc_total_raw_nodal_load(nodes: Set, period_active: int, operational_params: OperationalInputParams, empire_config: EmpireConfiguration, run_config: EmpireRunConfiguration) -> pd.Series:
     demand_data = read_tab_file(run_config.tab_file_path / 'Stochastic_ElectricLoadRaw.tab')
     demand_data_ser = pd.Series(demand_data)
-    demand_data_ser.index.names = ['Period', 'Scenario', 'Node', 'Hour']
+    all_indices = [(period_active, w, n, h) for w in operational_params.scenarios for n in nodes for (s, h) in operational_params.HoursOfSeason]
+    demand_data_ser = demand_data_ser.reindex(pd.MultiIndex.from_tuples(all_indices, names=['PeriodActive', 'Scenario', 'Node', 'Hour']), fill_value=0.0)
     # demand_data_ser_total = demand_data_ser.groupby(['Period', 'Node']).sum()
     sceProbab = 1 / len(operational_params.scenarios)  # Needs to be updated if non-uniform probabilities are used.
     seasScale = read_tab_file(run_config.tab_file_path / 'General_seasonScale.tab')

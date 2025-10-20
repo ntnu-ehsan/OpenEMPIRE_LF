@@ -56,11 +56,11 @@ def create_scenario_cut(
         )
         
     # storage_energy_balance
-    if hasattr(sp_instance, 'storage_energy_balance'):
+    if hasattr(sp_instance, 'storage_energy_balance_upper'):
         expr += sum(
             sum(
                 sp_instance.storOperationalInit[b] *
-                sp_instance.dual[sp_instance.storage_energy_balance[n, b, h, period_active, scenario]]
+                sp_instance.dual[sp_instance.storage_energy_balance_upper[n, b, h, period_active, scenario]]
                 for h in sp_instance.Operationalhour
                 if h in sp_instance.FirstHoursOfRegSeason or h in sp_instance.FirstHoursOfPeakSeason
                 )
@@ -70,12 +70,11 @@ def create_scenario_cut(
             for n, b in sp_instance.StoragesOfNode
         )
 
-    # storage_energy_balance2
-    if hasattr(sp_instance, 'storage_energy_balance2'):
+    if hasattr(sp_instance, 'storage_energy_balance_lower'):
         expr += sum(
             sum(
                 -sp_instance.storOperationalInit[b] *
-                sp_instance.dual[sp_instance.storage_energy_balance2[n, b, h, period_active, scenario]]
+                sp_instance.dual[sp_instance.storage_energy_balance_lower[n, b, h, period_active, scenario]]
                 for h in sp_instance.Operationalhour
                 if h in sp_instance.FirstHoursOfRegSeason or h in sp_instance.FirstHoursOfPeakSeason
                 )

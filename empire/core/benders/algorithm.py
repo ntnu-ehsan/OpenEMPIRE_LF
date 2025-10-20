@@ -2,6 +2,7 @@ import logging
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pyomo.environ import AbstractModel, ConstraintList, value
+from time import time
 
 from empire.core.config import OperationalInputParams, EmpireConfiguration, EmpireRunConfiguration
 from .master_problem import create_master_problem_instance, solve_master_problem, extract_capacity_params, define_initial_capacity_params
@@ -41,6 +42,7 @@ def run_benders(
         Returns the final master problem instance and its objective value if converged, otherwise (None, None).
     
     """
+    timer_start = time()
     mp_instance = create_master_problem_instance(run_config, empire_config, periods=periods_active, scenarios=operational_input_params.scenarios)
     # capacity_params = extract_capacity_params(mp_instance)
     if capacity_params_init is None:
@@ -99,6 +101,7 @@ def run_benders(
         last_mp_obj = mp_objective
 
     logger.info("Benders did not converge.")
+    print("Benders did not converge.")
     return None, None
 
 

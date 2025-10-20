@@ -5,8 +5,6 @@ import os
 import time
 from pathlib import Path
 from collections import defaultdict
-
-
 from pyomo.environ import (
     DataPortal,
     AbstractModel,
@@ -20,11 +18,12 @@ from pyomo.environ import (
     Set,
     Suffix
 )
+
 from empire.core.optimization.objective import investment_obj, multiplier_rule
 from empire.core.optimization.investment import define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
 from empire.core.optimization.shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
 from empire.core.optimization.results import write_results, run_operational_model, write_operational_results, write_pre_solve
-from empire.core.optimization.solver import set_solver, solve
+from empire.core.optimization.solver import set_solver, solve, SolvingMethods
 from empire.core.optimization.helpers import pickle_instance, log_problem_statistics, prepare_results_dir, prepare_temp_dir
 from empire.core.config import EmpireRunConfiguration, EmpireConfiguration
 
@@ -61,10 +60,11 @@ def create_master_problem_instance(
     define_investment_constraints(model, empire_config.north_sea_flag)
 
     # Benders specific
-    model.theta = Var(model.PeriodActive, within=NonNegativeReals)
+    model.Scenario = Set(initialize=scenarios if scenarios is not None else [])
+    model.theta = Var(model.PeriodActive, model.Scenario, within=NonNegativeReals)
 
-    # objective 
-    model.discount_multiplier=Expression(model.PeriodActive, rule=multiplier_rule)  # must be specified before defining objective 
+    # objective
+    model.discount_multiplier = Expression(model.PeriodActive, rule=multiplier_rule)  # must be specified before defining objective
 
     def Obj_rule(model):
         obj = investment_obj(model) + \
@@ -141,7 +141,7 @@ def create_master_problem_instance(
 def solve_master_problem(
         instance: ConcreteModel, 
         empire_config: EmpireConfiguration, run_config: EmpireRunConfiguration, save_flag=False) -> float:
-    opt = set_solver(empire_config.optimization_solver, logger)
+    opt = set_solver(empire_config.optimization_solver, logger, solver_method=SolvingMethods.BARRIER)
     _ = solve(instance, opt, run_config, logger)
 
     if save_flag:

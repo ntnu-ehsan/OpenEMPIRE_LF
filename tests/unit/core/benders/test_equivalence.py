@@ -20,7 +20,7 @@ from empire.core.scenario_random import generate_random_scenario
 from empire.core.optimization.empire import run_empire
 from empire.core.benders.algorithm import run_benders
 from empire.core.optimization.loading_utils import read_tab_file, filter_data
-
+from empire.logger import get_empire_logger
 
 
 class TestSubProblem(unittest.TestCase):
@@ -31,15 +31,32 @@ class TestSubProblem(unittest.TestCase):
         scale = max(abs(a), abs(b))
         self.assertAlmostEqual(a / scale, b / scale, places=sig_digits - 1, msg=msg + "absolute values: " + str(a) + " vs " + str(b))
 
-    def test_benders_equivalence(self, set_initial_capacities=True):
+    def test_benders_equivalence(self, set_initial_capacities=True, test_system_flag=True, force_flag=True) -> None:
         """
         Test Benders decomposition equivalence to full test model run. 
         """
         # Define fixed capacities for testing
-        config = read_config_file(Path("config/testrun.yaml"))
+        if test_system_flag:
+            config_file_str = "config/testrun.yaml"
+            dataset = "test"  
+        else:
+            config_file_str = "config/run.yaml"
+            dataset = "europe_v51"
+            
+        config = read_config_file(Path(config_file_str))
         empire_config = EmpireConfiguration.from_dict(config=config)
 
-        run_path = Path.cwd() / "Results/basic_run/dataset_test"
+
+
+        run_path = Path.cwd() / f"Results/basic_run/dataset_{dataset}"
+
+        if (run_path / "Output/results_objective.csv").exists() and not force_flag:
+            raise ValueError("There already exists results for this analysis run.")
+
+        run_config = setup_run_paths(version=dataset, empire_config=empire_config, run_path=run_path)
+        logger = get_empire_logger(run_config=run_config)
+
+
         run_config = setup_run_paths(version='test', empire_config=empire_config, run_path=run_path)
 
         # Define operational input parameters
@@ -71,6 +88,7 @@ class TestSubProblem(unittest.TestCase):
             operational_input_params=operational_input_params,
         )
 
+
         if set_initial_capacities:
             capacity_params = [
                 'genInstalledCap', 
@@ -94,6 +112,8 @@ class TestSubProblem(unittest.TestCase):
             operational_input_params=operational_input_params,
             capacity_params_init=capacity_param_values
         )
+        if obj_benders is None:
+            self.fail("Benders decomposition did not converge.")
 
         params_to_check = [
             'WACC',
