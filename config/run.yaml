@@ -42,3 +42,5 @@ lopf_kwargs:
 benders_flag: True                              # Whether to use Benders decompsition 
 max_benders_iterations: 10
 include_hydro_node_limit_constraint_flag: False
+parallel_benders_flag: True
+n_cores: 8
