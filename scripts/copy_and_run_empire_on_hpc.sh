@@ -30,7 +30,7 @@ SCHEDULER_SCRIPT=$(jq -r ".$CLUSTER.SCHEDULER_SCRIPT" $CONFIG_FILE)
 # Compress files while excluding certain directories on the local machine
 cd $LOCAL_DIR
 tar --exclude='./.*' \
-    --exclude='./Results/*/' \
+    --exclude='./Results/*' \
     --exclude='./docs/*/' \
     --exclude='./notebooks/*/' \
     --exclude='*__pycache__*' \
@@ -40,7 +40,7 @@ tar --exclude='./.*' \
 scp myfiles.tar.gz $REMOTE_USER@$REMOTE_SERVER:$REMOTE_DIR
 
 # Decompress the files on the remote server and then remove the tarball
-ssh $REMOTE_USER@$REMOTE_SERVER << EOF
+ssh -tt $REMOTE_USER@$REMOTE_SERVER /bin/bash << EOF
     cd $REMOTE_DIR
     tar -xvzf myfiles.tar.gz
     rm myfiles.tar.gz
@@ -52,13 +52,13 @@ rm $LOCAL_DIR/myfiles.tar.gz
 echo "Transfer complete!"
 
 # 
-ssh $REMOTE_USER@$REMOTE_SERVER "chmod +x $REMOTE_DIR/scripts/*"
+ssh -tt $REMOTE_USER@$REMOTE_SERVER /bin/bash "chmod +x $REMOTE_DIR/scripts/*"
 echo "Made files in the scripts folder executable"
 
 
 if [[ $CLUSTER = "Solstorm" ]]; then
     echo "Starting SGE job!"
-    ssh $REMOTE_USER@$REMOTE_SERVER "cd $REMOTE_DIR && sh $SCHEDULER_SCRIPT"
+    ssh -tt $REMOTE_USER@$REMOTE_SERVER /bin/bash "cd $REMOTE_DIR && sh $SCHEDULER_SCRIPT"
 elif [[ $CLUSTER = "IDUN" ]]; then
     echo "Starting SLURM job!"
     ssh $REMOTE_USER@$REMOTE_SERVER "sbatch $REMOTE_DIR/$SCHEDULER_SCRIPT"
