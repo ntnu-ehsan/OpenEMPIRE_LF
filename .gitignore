@@ -146,3 +146,5 @@ config/cluster.json
 config/app.yaml
 *.lp
 Data handler/test/~$Sets.xlsx
+config/cluster.sample.json
+*.gz
