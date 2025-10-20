@@ -203,6 +203,21 @@ def load_capacity_values(
         load_dict_into_dataportal(data, getattr(sp_model, param_name), filtered_capacities)
     return
 
+def update_capacity_values(
+    sp_instance,
+    capacity_params: dict[str, dict[tuple, float]],
+    period_active: int,  # period index is always last in the tuple
+    ) -> None:
+    """Update capacity values in the subproblem instance from the MP capacities."""
+    for param_name, capacities in capacity_params.items():
+        filtered_capacities = filter_data(
+            capacities,
+            periods_to_load=[period_active],
+            period_indnr=-1,
+        )
+        for index, value in filtered_capacities.items():
+            getattr(sp_instance, param_name)[index].value = value
+    return
 
 def exe_subproblem_routine(
     capacity_params: dict[str, dict[tuple, float]],
