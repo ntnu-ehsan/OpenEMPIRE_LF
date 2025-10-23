@@ -48,9 +48,6 @@ class EmpireConfiguration:
         len_peak_season: int = 24,
         leap_years_investment: int = 5,
         time_format: str = "%d/%m/%Y %H:%M",
-        lopf_flag: bool = False,
-        lopf_method: str = "kirchhoff",
-        lopf_kwargs: dict | None = None,
         benders_flag: bool = False,
         max_benders_iterations: int = 50,
         pickle_instance_flag: bool = False,
@@ -130,11 +127,6 @@ class EmpireConfiguration:
         self.n_reg_season = len(regular_seasons)
         self.periods = [i + 1 for i in range(int((self.forecast_horizon_year - 2020) / self.leap_years_investment))]
         self.n_periods = len(self.periods)
-
-        # OPF
-        self.lopf_flag = bool(lopf_flag)
-        self.lopf_method = str(lopf_method)
-        self.lopf_kwargs = {} if lopf_kwargs is None else dict(lopf_kwargs)
 
         # Benders
         self.benders_flag = benders_flag
