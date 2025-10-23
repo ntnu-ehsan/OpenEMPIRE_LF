@@ -202,8 +202,6 @@ def derive_stochastic_parameters(instance: ConcreteModel, node_unscaled_yearly_d
     _set_maxRegHydroGen(instance)
 
     def _set_sload(instance, node_unscaled_yearly_demand_ser=None):
-        # Precompute cutoff
-        cutoff = list(instance.FirstHoursOfRegSeason)[-1] + instance.lengthRegSeason
         for n in instance.Node:
             for i in instance.PeriodActive:
                 # Compute probability-weighted raw demand
@@ -295,26 +293,6 @@ def define_operational_constraints(
                 return Constraint.Skip
     model.ramping = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=ramping_rule)
 
-    #################################################################
-
-    # def storage_energy_balance_rule(model, n, b, h, i, w):
-    #     if h in model.FirstHoursOfRegSeason or h in model.FirstHoursOfPeakSeason:
-    #         return model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] >= 0   #
-    #     else: 
-    #         return model.storageBleedEff[b]*model.storOperational[n,b,(h-1),i,w] + model.storageChargeEff[b]*model.storCharge[n,b,h,i,w]-model.storDischarge[n,b,h,i,w]-model.storOperational[n,b,h,i,w] == 0   #
-    # model.storage_energy_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_energy_balance_rule)
-
-
-    #################################################################
-
-    # def storage_seasonal_net_zero_balance_rule(model, n, b, h, i, w):
-    #     if h in model.FirstHoursOfRegSeason:
-    #         return model.storOperational[n,b,h+value(model.lengthRegSeason)-1,i,w] - model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] >= 0  #
-    #     elif h in model.FirstHoursOfPeakSeason:
-    #         return model.storOperational[n,b,h+value(model.lengthPeakSeason)-1,i,w] - model.storOperationalInit[b]*model.storENInstalledCap[n,b,i] >= 0  #
-    #     else:
-    #         return Constraint.Skip
-    # model.storage_seasonal_net_zero_balance = Constraint(model.StoragesOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=storage_seasonal_net_zero_balance_rule)
 
     #################################################################
 
