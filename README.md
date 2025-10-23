@@ -186,6 +186,7 @@ Run the test using the following command:
 ```shell
 C:\Users\name\path_to_folder> python scripts/run.py -d test
 ```
+Add -f to force the run even if results are already written. 
 
 **No-Optimization Test**: To execute a test run without performing optimization, use:
 
