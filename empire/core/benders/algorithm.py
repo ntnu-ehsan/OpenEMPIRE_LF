@@ -122,36 +122,39 @@ def create_cut(
         cut_structure: list[CapacityVariableHandler] = define_cut_structure(sp_instance, period_active, scenario)
 
         for capacity_variable_handler in cut_structure:
-            cut_data[scenario][capacity_variable_handler.capacity_var_name] = capacity_variable_handler.extract_data(sp_instance)
+            cut_data[scenario][(capacity_variable_handler.constraint_name, capacity_variable_handler.capacity_var_name)] = capacity_variable_handler.extract_data(sp_instance)
 
         scenario_objectives[scenario] = value(sp_instance.Obj)
 
     # can pickle capacity data and cut structure here if needed
     expr = sum(scenario_objectives[scenario] for scenario in scenarios)
     for scenario in scenarios:
-        for capacity_variable_name, dual_and_coeff_total in cut_data[scenario].items():
+        for (constraint_name, capacity_var_name), dual_and_coeff_total in cut_data[scenario].items():
 
             # duals_var = duals.groupby(indices_to_keep).sum()
             # coefficients_var = coefficients.groupby(indices_to_keep).sum()
             # breakpoint()
             # 
             for inds, multiplier in dual_and_coeff_total.items():  # loops over all tuples of constraint indices
-                if capacity_variable_name == "transmissionInstalledCap":
+                if capacity_var_name == "transmissionInstalledCap":
                     # transmission capacity variable can have n1, n2 switched around
-                    if (inds[0], inds[1], inds[2]) in capacity_params[capacity_variable_name]:
+                    if (inds[0], inds[1], inds[2]) in capacity_params[capacity_var_name]:
                         inds = (inds[0], inds[1], inds[2])
-                    elif (inds[1], inds[0], inds[2]) in capacity_params[capacity_variable_name]:
+                    elif (inds[1], inds[0], inds[2]) in capacity_params[capacity_var_name]:
                         inds = (inds[1], inds[0], inds[2])
                     else:
                         breakpoint()
                         raise ValueError("Transmission capacity indices not found in old capacities.")
-                expr += multiplier * (
-                    getattr(master_instance, capacity_variable_name)[inds]
-                    -
-                    value(capacity_params[capacity_variable_name][inds])
-                )
 
         # breakpoint()
+                if abs(multiplier) > 1e-10:
+                    expr += multiplier * (
+                        getattr(master_instance, capacity_var_name)[inds]
+                        -
+                        value(capacity_params[capacity_var_name][inds])
+                    )
+
+
     return master_instance.theta[period_active] >= expr
 
 

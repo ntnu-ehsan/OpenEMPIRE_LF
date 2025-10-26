@@ -9,7 +9,6 @@ import pandas as pd
 from pyomo.environ import (
     DataPortal,
     AbstractModel,
-    Suffix, 
     ConcreteModel,
     Set
 )
