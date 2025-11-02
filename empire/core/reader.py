@@ -2,6 +2,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any
+from empire.core.config import EmpireConfiguration
 
 import pandas as pd
 
@@ -55,7 +56,7 @@ def read_sets(excelfile: pd.ExcelFile, sheet: str, tab_file_path: Path,
         tab_file_path.mkdir(parents=True, exist_ok=True)
         save_csv_frame.to_csv(tab_file_path / f"{filename}_{column}.tab", header=True, index=None, sep='\t', mode='w')        
 
-def generate_tab_files(file_path, tab_file_path, config: Any):
+def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) -> None:
     """
     Read column value from excel sheet and save as .tab file "sheet.tab"
 
