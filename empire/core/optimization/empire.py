@@ -90,11 +90,6 @@ def run_empire(
         define_investment_constraints(model, empire_config.north_sea_flag)
     define_operational_constraints(model, logger, empire_config.emission_cap_flag, include_hydro_node_limit_constraint_flag=empire_config.include_hydro_node_limit_constraint_flag)
 
-    # Binary constraints for transmission lines investment decisions
-    model.transmissionExpansion = Var(
-    model.BidirectionalArc, model.PeriodActive, within=Binary
-    )
-    # TODO: Move the above part to master problem if it is needed
 
     if empire_config.lopf_flag:
         logger.info("LOPF constraints activated using method: %s", empire_config.lopf_method)
