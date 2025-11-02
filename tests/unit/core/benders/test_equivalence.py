@@ -48,7 +48,7 @@ class TestSubProblem(unittest.TestCase):
         # Define active periods for testing
         periods_active = [1, 2]  
 
-        generate_tab_files(file_path=run_config.dataset_path, tab_file_path=run_config.tab_file_path)
+        generate_tab_files(file_path=run_config.dataset_path, tab_file_path=run_config.tab_file_path, config=empire_config)
 
         with open(run_config.empire_path / "config/countries.json", "r", encoding="utf-8") as file:
             dict_countries = json.load(file)

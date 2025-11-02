@@ -37,7 +37,7 @@ class TestSubProblem(unittest.TestCase):
         scenario = operational_input_params.scenarios[1]
         period_active = periods_active[1]
 
-        generate_tab_files(file_path=run_config.dataset_path, tab_file_path=run_config.tab_file_path)
+        generate_tab_files(file_path=run_config.dataset_path, tab_file_path=run_config.tab_file_path, lopf_flag=empire_config.lopf_flag, , config=empire_config)
 
         with open(run_config.empire_path / "config/countries.json", "r", encoding="utf-8") as file:
             dict_countries = json.load(file)

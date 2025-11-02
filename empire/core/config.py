@@ -85,6 +85,8 @@ class EmpireConfiguration:
         :param n_peak_seasons:  Peak seasons.
         :param leap_years_investment: Years between investment decisions
         :param time_format: Time format
+        :param lopf_flag: Whether to use LP-OPF or not.
+        :param lopf_method: Method used for LP-OPF. Options: "kirchhoff", "angle", "ptdf".
 
         """
         # Model parameters

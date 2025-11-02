@@ -120,7 +120,7 @@ def run_empire_model(
             )
         check_scenarios_exist_and_copy(run_config)
 
-    generate_tab_files(file_path=run_config.dataset_path, tab_file_path=run_config.tab_file_path)
+    generate_tab_files(file_path=run_config.dataset_path, tab_file_path=run_config.tab_file_path, config=empire_config)
 
     obj_value = None
     if not test_run:

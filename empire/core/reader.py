@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -54,15 +55,16 @@ def read_sets(excelfile: pd.ExcelFile, sheet: str, tab_file_path: Path,
         tab_file_path.mkdir(parents=True, exist_ok=True)
         save_csv_frame.to_csv(tab_file_path / f"{filename}_{column}.tab", header=True, index=None, sep='\t', mode='w')        
 
-
-def generate_tab_files(file_path, tab_file_path):
+def generate_tab_files(file_path, tab_file_path, config: Any):
     """
     Read column value from excel sheet and save as .tab file "sheet.tab"
 
     :param file_path: Path to the dataset.
     :param tab_file_path: Path to save the .tab files.
+    :param config: Configuration object (previously annotated as EmpireConfiguration).
     """
     
+    logger.info("Generating .tab-files...")
     logger.info("Generating .tab-files...")
 
     # Reading Excel workbooks using our function read_file
@@ -115,6 +117,9 @@ def generate_tab_files(file_path, tab_file_path):
     read_file(TransmissionExcelData, 'TypeFixedOMCost', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
     read_file(TransmissionExcelData, 'InitialCapacity', [0, 1, 2, 3], tab_file_path,  "Transmission", skipheaders=2)
     read_file(TransmissionExcelData, 'Lifetime', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
+    if config.lopf_flag:
+        read_file(TransmissionExcelData, 'XperLength', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
+        read_file(TransmissionExcelData, 'BperLength', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
 
     #Reading Node
     logger.info("Reading Node.xlsx")
