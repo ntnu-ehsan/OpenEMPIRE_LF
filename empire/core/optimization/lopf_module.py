@@ -1,5 +1,5 @@
 from __future__ import annotations
-from pyomo.environ import (Set, Var, Constraint, NonNegativeReals, value, Param, Expression, Reals, ConstraintList)
+from pyomo.environ import (Set, Var, Constraint, PositiveReals, value, Param, Expression, Reals, ConstraintList)
 from collections import defaultdict, deque
 from typing import  Dict,List, Tuple, Optional, Callable
 
@@ -349,6 +349,9 @@ def _add_angle_opf(
     if not hasattr(model, susceptance_param_name):
         setattr(model, susceptance_param_name, Param(A, default=0.0, mutable=True))
     B = getattr(model, susceptance_param_name)
+    
+    if (i,j) not in B:
+        logger.warning(f"Susceptance for line ({i},{j}) missing; assuming 0.")
 
     # --- Existing / Candidate sets ---
     # Expect these to be defined/loaded elsewhere. If ExistingTransmission is missing, derive it.
@@ -372,6 +375,7 @@ def _add_angle_opf(
         return (-amax, amax)
 
     model.Theta = Var(N, H, W, P, domain=Reals, bounds=_theta_bounds)
+    
 
     # Directed DC flow variable (shared for both existing & candidate corridors)
     model.FlowDC = Var(A, H, W, P, domain=Reals)
@@ -407,8 +411,10 @@ def _add_angle_opf(
     # 2) Candidate lines: big-M activation using binary build var
     #    Requires 'model.transmissionBuild[(i,j), p]' (binary) to be defined.
     if not hasattr(model, "transmissionBuild"):
-        raise RuntimeError("Model is missing binary var 'transmissionBuild[(i,j),p]' for candidate transmission.")
-
+        logger.info("Binary variable 'transmissionBuild' not found; assuming all candidate lines are active.")
+        def always_built(m, i, j, p): return 1
+        model.transmissionBuild = Param(CAND, P, initialize=always_built)
+    
     # Upper & lower linearized envelopes:
     def ohm_cand_ub(m, i, j, h, w, p):
         return m.FlowDC[i,j,h,w,p] <= B[i,j] * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]) + m.BigMFlow[i,j] * (1 - m.transmissionBuild[i,j,p])

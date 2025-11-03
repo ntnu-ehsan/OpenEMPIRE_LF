@@ -16,7 +16,7 @@ from .operational import define_operational_sets, define_operational_constraints
 from .investment import define_investment_sets, load_investment_sets,define_investment_constraints, prep_investment_parameters, define_investment_variables, load_investment_parameters, define_investment_parameters
 from .shared_data import define_shared_sets, load_shared_sets, define_shared_parameters, load_shared_parameters
 from .out_of_sample_functions import set_investments_as_parameters, load_optimized_investments, set_out_of_sample_path
-from .lopf_module import LOPFMethod, load_line_parameters
+from .lopf_module import LOPFMethod, load_line_parameters, add_lopf_constraints
 from .results import write_results, run_operational_model, write_operational_results, write_pre_solve
 from .solver import set_solver, solve
 from .helpers import pickle_instance, log_problem_statistics, prepare_temp_dir, prepare_results_dir
@@ -62,8 +62,9 @@ def run_empire(
     load_investment_parameters(model, data, run_config.tab_file_path)
 
     # Load electrical data for LOPF if requested (need to split investment and operations!)
+    # TODO: Splitting investment and operations data loading.
     if empire_config.lopf_flag:
-        load_line_parameters(model, run_config.tab_file_path, data, empire_config.lopf_kwargs, logger)
+        load_line_parameters(model, data, run_config.tab_file_path, empire_config.lopf_kwargs)
 
 
     # Variable definitions
