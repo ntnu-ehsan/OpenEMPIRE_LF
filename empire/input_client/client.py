@@ -4,12 +4,15 @@ import openpyxl
 import pandas as pd
 
 from empire.input_client.sheets_structure import sheets
+from empire.core.config import get_empire_config
 
 
 class BaseClient:
     DEFAULT_SKIPROWS = None
     DEFAULT_USECOLS = None
     DEFAULT_STARTROW = None
+    
+    empire_config = get_empire_config()
 
     def _read_from_sheet(self, file_path: Path, sheet_name: str, **kwargs) -> pd.DataFrame:
         """
@@ -43,14 +46,29 @@ class BaseClient:
             df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=startrow, **kwargs)
 
     def validate(self):
-        """Validate if the Excel file has the expected sheet names."""
         name = self.__class__.__name__.split("Client", maxsplit=1)[0]
         wb = openpyxl.load_workbook(self.file)
-        if set(wb.sheetnames) != set(sheets[name]):
+        expected_sheets = set(sheets[name])
+        found_sheets = set(wb.sheetnames)
+
+        # --- Conditional LOPF sheet check ---
+        # If LOPF is disabled, ignore missing Reactance sheet in Transmission.xlsx
+        if not self.empire_config.lopf_flag and name == "Transmission":
+            if "LineReactance" in expected_sheets:
+                expected_sheets.remove("LineReactance")
+
+        # --- Validation ---
+        missing = expected_sheets - found_sheets
+        extra = found_sheets - expected_sheets
+
+        if missing:
             raise ValueError(
-                f"Sheetnames in {self.file} dont match expected sheet names for {name}."
-                f"Expected: {sheets[name]}, Found: {wb.sheetnames}"
+                f"Missing required sheets in {self.file}: {missing}. "
+                f"Expected sheets: {expected_sheets}"
             )
+
+        if extra:
+            print(f"Warning: Extra sheets found in {self.file}: {extra}")
 
 
 class SetsClient(BaseClient):
@@ -335,6 +353,13 @@ class TransmissionClient(BaseClient):
 
     def set_lifetime(self, df: pd.DataFrame):
         self._write_to_sheet(df, self.file, "Lifetime")
+        
+    def get_line_reactance(self):
+        return self._read_from_sheet(self.file, "LineReactance")
+
+    def set_line_reactance(self, df: pd.DataFrame):
+        self._write_to_sheet(df, self.file, "LineReactance")
+
 
     def _order_type_and_period(self, df):
         """Some yaml files rearranges order of columns. Attempt to fix this."""
