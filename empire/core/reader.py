@@ -119,7 +119,7 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
     read_file(TransmissionExcelData, 'InitialCapacity', [0, 1, 2, 3], tab_file_path,  "Transmission", skipheaders=2)
     read_file(TransmissionExcelData, 'Lifetime', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
     if config.lopf_flag:
-        read_file(TransmissionExcelData, 'LineReactance', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
+        read_file(TransmissionExcelData, 'lineReactance', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
         
 
     #Reading Node

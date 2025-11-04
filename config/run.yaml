@@ -29,14 +29,13 @@ leap_years_investment: 10                               # Number of years per pe
 time_format: "%d/%m/%Y %H:%M"                          # Time format for scenario data files
 
 lopf_flag: False
-lopf_method: "kirchhoff"
+lopf_method: "angle"
 lopf_kwargs:
   couple_to_existing_flows: false
   # existing_flow_candidates: ["transmisionOperational"]
-  reactance_param_name: "lineReactance"   # <— matches your .tab
-  reactance_from_susceptance: false       # we’re providing reactance directly
+  reactance_param_name: "lineReactance"   # <— matches the .tab
+  reactance_from_susceptance: False       # we’re providing reactance directly
   # OR if you only have susceptance:
-  # reactance_from_susceptance: true
   # susceptance_param_name: "lineSusceptance"
 
 benders_flag: True                              # Whether to use Benders decompsition 
