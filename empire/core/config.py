@@ -257,3 +257,22 @@ class OperationalInputParams:
     lengthRegSeason: int
     lengthPeakSeason: int
 
+
+def get_empire_config(config_path: Path | str | None = None) -> EmpireConfiguration:
+    """
+    Safely load and return an EmpireConfiguration from a YAML config file.
+
+    :param config_path: Path to the config file. Defaults to 'config/run.yaml' if None.
+    :return: EmpireConfiguration instance.
+    :raises ValueError: If the file is not found or YAML parsing fails.
+    """
+    if config_path is None:
+        config_path = Path("config/run.yaml")
+    
+    try:
+        config_dict = read_config_file(Path(config_path))
+        return EmpireConfiguration.from_dict(config_dict)
+    except FileNotFoundError:
+        raise ValueError(f"Configuration file not found at {config_path}")
+    except yaml.YAMLError as e:
+        raise ValueError(f"Error parsing configuration file: {e}")
