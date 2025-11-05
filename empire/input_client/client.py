@@ -54,8 +54,8 @@ class BaseClient:
         # --- Conditional LOPF sheet check ---
         # If LOPF is disabled, ignore missing Reactance sheet in Transmission.xlsx
         if not self.empire_config.lopf_flag and name == "Transmission":
-            if "LineReactance" in expected_sheets:
-                expected_sheets.remove("LineReactance")
+            if "lineReactance" in expected_sheets:
+                expected_sheets.remove("lineReactance")
 
         # --- Validation ---
         missing = expected_sheets - found_sheets
@@ -68,7 +68,7 @@ class BaseClient:
             )
 
         if extra:
-            print(f"Warning: Extra sheets found in {self.file}: {extra}")
+            print(f"Warning: Extra sheets found in {self.file}: {extra}, lopf_flag={self.empire_config.lopf_flag}")
 
 
 class SetsClient(BaseClient):
@@ -355,10 +355,10 @@ class TransmissionClient(BaseClient):
         self._write_to_sheet(df, self.file, "Lifetime")
         
     def get_line_reactance(self):
-        return self._read_from_sheet(self.file, "LineReactance")
+        return self._read_from_sheet(self.file, "lineReactance")
 
     def set_line_reactance(self, df: pd.DataFrame):
-        self._write_to_sheet(df, self.file, "LineReactance")
+        self._write_to_sheet(df, self.file, "lineReactance")
 
 
     def _order_type_and_period(self, df):

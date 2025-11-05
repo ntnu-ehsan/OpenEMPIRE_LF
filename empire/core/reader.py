@@ -28,7 +28,11 @@ def read_file(excelfile: pd.ExcelFile, sheet: str, columns: list,
     data_nonempty = data_table.dropna()
 
     save_csv_frame = pd.DataFrame(data_nonempty)
-    save_csv_frame.replace('\s', '', regex=True, inplace=True)
+    # Only run whitespace replacement on object (string) columns to avoid
+    # pandas downcasting FutureWarning when replace touches numeric columns.
+    obj_cols = save_csv_frame.select_dtypes(include=["object"]).columns
+    if len(obj_cols) > 0:
+        save_csv_frame[obj_cols] = save_csv_frame[obj_cols].replace(r"\s", "", regex=True)
 
     tab_file_path.mkdir(parents=True, exist_ok=True)
     save_csv_frame.to_csv(tab_file_path / f"{filename}_{sheet.strip()}.tab", header=True, index=None, sep='\t', mode='w')
@@ -52,7 +56,10 @@ def read_sets(excelfile: pd.ExcelFile, sheet: str, tab_file_path: Path,
         data_nonempty = data_table.dropna()
         data_nonempty.replace(" ", "")
         save_csv_frame = pd.DataFrame(data_nonempty)
-        save_csv_frame.replace('\s', '', regex=True, inplace=True)
+        # Only clean whitespace on object columns to avoid dtype downcasting warnings.
+        obj_cols = save_csv_frame.select_dtypes(include=["object"]).columns
+        if len(obj_cols) > 0:
+            save_csv_frame[obj_cols] = save_csv_frame[obj_cols].replace(r"\s", "", regex=True)
         tab_file_path.mkdir(parents=True, exist_ok=True)
         save_csv_frame.to_csv(tab_file_path / f"{filename}_{column}.tab", header=True, index=None, sep='\t', mode='w')        
 
@@ -87,7 +94,7 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
     read_file(SetsExcelData, 'GeneratorsOfTechnology', [0, 1], tab_file_path, "Sets", skipheaders=2)
     read_file(SetsExcelData, 'DirectionalLines', [0, 1], tab_file_path, "Sets", skipheaders=2)
     read_file(SetsExcelData, 'LineTypeOfDirectionalLines', [0, 1, 2], tab_file_path, "Sets", skipheaders=2)
-    read_file(SetsExcelData, 'CandidateTransmission ', [0, 1], tab_file_path, "Transmission", skipheaders=2)
+    
 
     # Reading GeneratorPeriod
     logger.info("Reading Generator.xlsx")
@@ -119,8 +126,9 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
     read_file(TransmissionExcelData, 'TypeFixedOMCost', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
     read_file(TransmissionExcelData, 'InitialCapacity', [0, 1, 2, 3], tab_file_path,  "Transmission", skipheaders=2)
     read_file(TransmissionExcelData, 'Lifetime', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
+    read_file(TransmissionExcelData, 'CandidateTransmission', [0, 1], tab_file_path, "Transmission", skipheaders=2)
     if config.lopf_flag:
-        read_file(TransmissionExcelData, 'LineReactance', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
+        read_file(TransmissionExcelData, 'lineReactance', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
         
 
     #Reading Node

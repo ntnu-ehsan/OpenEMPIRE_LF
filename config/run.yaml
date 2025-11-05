@@ -28,8 +28,8 @@ north_sea_flag: True                                        # Whether the north 
 leap_years_investment: 10                               # Number of years per period (default: 5)
 time_format: "%d/%m/%Y %H:%M"                          # Time format for scenario data files
 
-lopf_flag: False
-lopf_method: "kirchhoff"
+lopf_flag: True
+lopf_method: "angle"
 lopf_kwargs:
   couple_to_existing_flows: false
   # existing_flow_candidates: ["transmisionOperational"]
