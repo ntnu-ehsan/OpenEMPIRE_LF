@@ -31,7 +31,7 @@ def read_file(excelfile: pd.ExcelFile, sheet: str, columns: list,
     save_csv_frame.replace('\s', '', regex=True, inplace=True)
 
     tab_file_path.mkdir(parents=True, exist_ok=True)
-    save_csv_frame.to_csv(tab_file_path / f"{filename}_{sheet}.tab", header=True, index=None, sep='\t', mode='w')
+    save_csv_frame.to_csv(tab_file_path / f"{filename}_{sheet.strip()}.tab", header=True, index=None, sep='\t', mode='w')
 
 def read_sets(excelfile: pd.ExcelFile, sheet: str, tab_file_path: Path, 
               filename: str) -> None:
@@ -87,6 +87,7 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
     read_file(SetsExcelData, 'GeneratorsOfTechnology', [0, 1], tab_file_path, "Sets", skipheaders=2)
     read_file(SetsExcelData, 'DirectionalLines', [0, 1], tab_file_path, "Sets", skipheaders=2)
     read_file(SetsExcelData, 'LineTypeOfDirectionalLines', [0, 1, 2], tab_file_path, "Sets", skipheaders=2)
+    read_file(SetsExcelData, 'CandidateTransmission ', [0, 1], tab_file_path, "Transmission", skipheaders=2)
 
     # Reading GeneratorPeriod
     logger.info("Reading Generator.xlsx")

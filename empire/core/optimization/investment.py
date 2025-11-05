@@ -63,8 +63,10 @@ def load_investment_sets(model, data, tab_file_path) -> None:
     """
     Load investment sets (e.g., candidate transmission lines).
     """
-    data.load(filename=str(tab_file_path / "Transmission_Candidates.tab"),
-              set=model.CandidateTransmission)
+    candidate_file = tab_file_path / "Transmission_CandidateTransmission.tab"
+    if candidate_file.exists():
+        data.load(filename=str(candidate_file),
+                  set=model.CandidateTransmission)
     return
 
 def load_investment_parameters(model, data, tab_file_path) -> None:
