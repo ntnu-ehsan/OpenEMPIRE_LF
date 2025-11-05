@@ -31,10 +31,10 @@ time_format: "%d/%m/%Y %H:%M"                          # Time format for scenari
 lopf_flag: True
 lopf_method: "angle"
 lopf_kwargs:
-  couple_to_existing_flows: False
+  couple_to_existing_flows: false
   # existing_flow_candidates: ["transmisionOperational"]
-  reactance_param_name: "lineReactance"   # <— matches the .tab
-  reactance_from_susceptance: False       # we’re providing reactance directly
+  reactance_param_name: "lineReactance"   # <— matches your .tab
+  reactance_from_susceptance: false       # we’re providing reactance directly
   # OR if you only have susceptance:
   # reactance_from_susceptance: true
   # susceptance_param_name: "lineSusceptance"

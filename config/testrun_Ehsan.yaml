@@ -29,15 +29,15 @@ north_sea_flag: False                                       # Whether the north 
 leap_years_investment: 5                               # Number of years per period (default: 5)
 time_format: "%d/%m/%Y %H:%M"                          # Time format for scenario data files
 lopf_flag: True
-lopf_method: "angle"
+lopf_method: "kirchhoff"
 lopf_kwargs:
   couple_to_existing_flows: false
   # existing_flow_candidates: ["transmisionOperational"]
-  reactance_param_name: "lineReactance"   # <— matches the .tab
+  reactance_param_name: "lineReactance"   # <— matches your .tab
   reactance_from_susceptance: false       # we’re providing reactance directly
   # OR if you only have susceptance:
   # reactance_from_susceptance: true
   # susceptance_param_name: "lineSusceptance"
-benders_flag: False                     # Whether to use Benders decompsition 
+benders_flag: True                     # Whether to use Benders decompsition 
 max_benders_iterations: 50
 include_hydro_node_limit_constraint_flag: False

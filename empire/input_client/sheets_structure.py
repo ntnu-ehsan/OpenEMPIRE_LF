@@ -42,7 +42,7 @@ sheets = {
         "InitialCapacity",
         "MaxInstallCapacityRaw",
         "Lifetime",
-        "lineReactance",
+        "LineReactance",
     ],
     "Storage": [
         "InitialPowerCapacity",

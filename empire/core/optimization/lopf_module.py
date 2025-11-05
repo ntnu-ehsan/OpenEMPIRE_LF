@@ -1,10 +1,7 @@
 from __future__ import annotations
-import logging
-from pyomo.environ import (Set, Var, Constraint, PositiveReals, value, Param, Expression, Reals)
+from pyomo.environ import (Set, Var, Constraint, PositiveReals, value, Param, Expression, Reals, ConstraintList)
 from collections import defaultdict, deque
 from typing import  Dict,List, Tuple, Optional, Callable
-
-logger = logging.getLogger(__name__)
 
 class LOPFMethod:
     """Enumeration of available LOPF methods."""
@@ -46,8 +43,7 @@ def add_lopf_constraints(model, method: str = LOPFMethod.KIRCHHOFF, **kwargs):
     if method.lower() == LOPFMethod.KIRCHHOFF:
         return _add_kirchhoff_constraints(model, **kwargs)
     elif method.lower() == LOPFMethod.ANGLE:
-        # Route to the angle-based DC-OPF implementation
-        return _add_angle_opf(model, **kwargs)
+        return _add_angle_constraints(model, **kwargs)
     elif method.lower() == LOPFMethod.PTDF:
         return _add_ptdf_constraints(model, **kwargs)
     else:
@@ -350,25 +346,12 @@ def _add_angle_opf(
     H, W, P = model.Operationalhour, model.Scenario, model.PeriodActive
 
     # --- Susceptance B[(i,j)] ---
-    # Prefer an existing susceptance parameter on DirectionalLink. If missing,
-    # derive B from reactance X on BidirectionalArc where possible: B = 1/X.
     if not hasattr(model, susceptance_param_name):
-        # Create a derived susceptance parameter with initializer that maps from
-        # undirected reactance if available; else stays at 0.0
-        def _b_init(m, i, j):
-            # If we have an undirected reactance Param, invert it for both directions
-            X_name = "lineReactance"
-            if hasattr(m, X_name):
-                X = getattr(m, X_name)
-                # Map directed (i,j) to the stored undirected pair
-                pair = (i, j) if (i, j) in m.BidirectionalArc else ((j, i) if (j, i) in m.BidirectionalArc else None)
-                if pair is not None and pair in X:
-                    x = float(X[pair])
-                    if abs(x) > 1e-9:
-                        return 1.0 / x
-            return 0.0
-        setattr(model, susceptance_param_name, Param(A, initialize=_b_init, default=0.0, mutable=True))
+        setattr(model, susceptance_param_name, Param(A, default=0.0, mutable=True))
     B = getattr(model, susceptance_param_name)
+    
+    if (i,j) not in B:
+        logger.warning(f"Susceptance for line ({i},{j}) missing; assuming 0.")
 
     # --- Existing / Candidate sets ---
     # Expect these to be defined/loaded elsewhere. If ExistingTransmission is missing, derive it.
@@ -476,49 +459,32 @@ def _add_angle_opf(
                 break
         if FlowDir is not None:
             model.DC_Bind = Constraint(A, H, W, P, rule=lambda m,i,j,h,w,p: FlowDir[i,j,h,w,p] == m.FlowDC[i,j,h,w,p])
-    return model
 
 
-def load_line_parameters(model, data, tab_file_path, lopf_kwargs=None):
-    """Ensure line parameter Params exist on the model and load available .tab files.
+def load_line_parameters(model, tab_file_path, data, lopf_kwargs, logger):
+    """Load line parameters for linear OPF
+    Read kwargs to see whether we should derive X from B
 
-    Matches the call site in empire.core.optimization.empire.run_empire:
-        load_line_parameters(model, data, run_config.tab_file_path, empire_config.lopf_kwargs)
-
-    Behavior:
-      - Define model.lineReactance on BidirectionalArc if missing
-      - Define model.lineSusceptance on DirectionalLink if missing
-      - Prefer loading reactance from 'Transmission_lineReactance.tab' (or 'Transmission_lineReactance.tab')
-      - Else, load susceptance from 'Transmission_lineSusceptance.tab'
+    Args:
+        model (_type_): _description_
+        tab_file_path (_type_): _description_
+        data (_type_): _description_
+        LOPF_KWARGS (_type_): _description_
+        logger (_type_): _description_
     """
-    # Ensure Params exist for DataPortal
-    if not hasattr(model, "BidirectionalArc") or not hasattr(model, "DirectionalLink"):
-        raise RuntimeError("Model must define BidirectionalArc and DirectionalLink before loading line parameters.")
-
-    if not hasattr(model, "lineReactance"):
-        model.lineReactance = Param(model.BidirectionalArc, default=0.001, mutable=True)
-
     rx_from_b = bool(lopf_kwargs and lopf_kwargs.get("reactance_from_susceptance", False))
 
-    # Support both capitalization variants from the Excel sheet name
-    reactance_tab_candidates = [
-        tab_file_path / "Transmission_lineReactance.tab",
-        tab_file_path / "Transmission_lineReactance.tab",
-    ]
-    susceptance_tab = tab_file_path / "Transmission_lineSusceptance.tab"
+    # Try to load reactance (preferred for Kirchhoff formulation)
+    reactance_tab = tab_file_path / 'Transmission_lineReactance.tab'
+    susceptance_tab = tab_file_path / 'Transmission_lineSusceptance.tab'
 
-    reactance_tab = next((p for p in reactance_tab_candidates if p.exists()), None)
-
-    if reactance_tab and not rx_from_b:
+    if reactance_tab.exists() and not rx_from_b:
         data.load(filename=str(reactance_tab), param=model.lineReactance, format="table")
-        logger.info("Loaded %s for DC-OPF.", reactance_tab.name)
+        logger.info("Loaded Transmission_lineReactance.tab for DC-OPF.")
     elif susceptance_tab.exists():
-        if not hasattr(model, "lineSusceptance"):
-            model.lineSusceptance = Param(model.DirectionalLink, default=0.0, mutable=True)
         data.load(filename=str(susceptance_tab), param=model.lineSusceptance, format="table")
-        logger.info("Loaded %s for DC-OPF.", susceptance_tab.name)
+        logger.info("Loaded Transmission_lineSusceptance.tab for DC-OPF (will invert to reactance if configured).")
     else:
-        logger.warning(
-            "No electrical line parameter (.tab) found for DC-OPF. "
-            "Provide Transmission_lineReactance.tab (preferred) or Transmission_lineSusceptance.tab."
-        )
+        logger.warning("No electrical line parameter (.tab) found for DC-OPF (reactance/susceptance). "
+                    "If using Kirchhoff, set lopf_kwargs.reactance_from_susceptance=True and provide susceptance, "
+                    "or provide Transmission_lineReactance.tab.")
