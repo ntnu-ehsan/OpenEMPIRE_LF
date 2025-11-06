@@ -87,10 +87,13 @@ def load_investment_parameters(model, data, tab_file_path) -> None:
     data.load(filename=str(tab_file_path / 'Transmission_TypeCapitalCost.tab'), param=model.transmissionTypeCapitalCost, format="table")
     data.load(filename=str(tab_file_path / 'Transmission_TypeFixedOMCost.tab'), param=model.transmissionTypeFixedOMCost, format="table")
     data.load(filename=str(tab_file_path / 'Transmission_Lifetime.tab'), param=model.transmissionLifetime, format="table")
-    data.load(filename=str(tab_file_path / 'Transmission_LineBlockCapacity.tab'),
-          param=model.transmissionLineBlockCap, format="table") #TODO: Check the tab file name and path
-    data.load(filename=str(tab_file_path / 'Transmission_LineBlockCapacity.tab'),
-          param=model.transmissionLineBlockCapGlobal) #TODO: Check the tab file name and path
+    candidate_block_file = tab_file_path / 'Transmission_LineBlockCapacity.tab'
+    if candidate_block_file.exists():
+        data.load(filename=str(candidate_block_file), param=model.transmissionLineBlockCap, format="table")
+
+    global_block_file = tab_file_path / 'Transmission_LineBlockCapacityGlobal.tab'
+    if global_block_file.exists():
+        data.load(filename=str(global_block_file), param=model.transmissionLineBlockCapGlobal)
 
     # storage
     data.load(filename=str(tab_file_path / 'Storage_EnergyCapitalCost.tab'), param=model.storENCapitalCost, format="table")
@@ -258,17 +261,33 @@ def define_investment_constraints(
     # model.installedCapDefinitionTrans = Constraint(model.BidirectionalArc, model.PeriodActive, rule=lifetime_rule_trans)
 
     #TODO: I replaced the above constraint with the below constraint. Check if it is correct.
-
     def lifetime_rule_trans(model, n1, n2, i):
-        if (n1,n2) in model.CandidateTransmission:
-            return Constraint.Skip  # handled by binary constraint
-        startPeriod = 1
-        if value(1+i-model.transmissionLifetime[n1,n2]/model.LeapYearsInvestment) > startPeriod:
-            startPeriod = value(1+i-model.transmissionLifetime[n1,n2]/model.LeapYearsInvestment)
-        return sum(model.transmissionInvCap[n1,n2,j] for j in model.PeriodActive if j >= startPeriod and j <= i) \
-            - model.transmissionInstalledCap[n1,n2,i] + model.transmissionInitCap[n1,n2,i] == 0
+        # existing (non-candidate) lines: keep the old lifetime accumulation
+        if (n1, n2) not in model.CandidateTransmission:
+            startPeriod = 1
+            if value(1 + i - model.transmissionLifetime[n1, n2] / model.LeapYearsInvestment) > startPeriod:
+                startPeriod = value(1 + i - model.transmissionLifetime[n1, n2] / model.LeapYearsInvestment)
+            return (
+                sum(model.transmissionInvCap[n1, n2, j]
+                    for j in model.PeriodActive if j >= startPeriod and j <= i)
+                - model.transmissionInstalledCap[n1, n2, i]
+                + model.transmissionInitCap[n1, n2, i]
+                == 0
+            )
 
+        # candidate lines: installed cap = init + block * sum_{j<=i} build[j]
+        # prefer per-line block, fall back to global
+        block = model.transmissionLineBlockCap.get((n1, n2), None)
+        if block is None:
+            block = model.transmissionLineBlockCapGlobal
+        return (
+            model.transmissionInstalledCap[n1, n2, i]
+            == model.transmissionInitCap[n1, n2, i]
+            + sum(block * model.transmissionBuild[n1, n2, j]
+                    for j in model.PeriodActive if j <= i)
+        )
     model.installedCapDefinitionTrans = Constraint(model.BidirectionalArc, model.PeriodActive, rule=lifetime_rule_trans)
+
 
     ############################################################
 
@@ -328,14 +347,6 @@ def define_investment_constraints(
     model.power_energy_relate = Constraint(model.StoragesOfNode, model.PeriodActive, rule=power_energy_relate_rule)
 
     ############################################################
-
-    #TODO: Check all the possible conflicts between this conatraint and the other transmission constraints
-    def candidate_line_fixed_cap_rule(model, n1, n2, i):
-        return model.transmissionInstalledCap[n1, n2, i] == \
-            model.transmissionLineBlockCapGlobal * model.transmissionBuild[n1, n2, i]
-
-    model.candidate_line_cap = Constraint(model.CandidateTransmission, model.PeriodActive,
-                                        rule=candidate_line_fixed_cap_rule)
 
 
     if north_sea_flag:
