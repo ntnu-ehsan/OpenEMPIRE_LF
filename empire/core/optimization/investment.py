@@ -112,7 +112,9 @@ def load_investment_parameters(model, data, tab_file_path) -> None:
 
 def define_investment_variables(model: AbstractModel) -> None:
     model.genInvCap = Var(model.GeneratorsOfNode, model.PeriodActive, domain=NonNegativeReals)
-    model.transmissionInvCap = Var(model.BidirectionalArc, model.PeriodActive, domain=NonNegativeReals)
+    # The following line is commented out as the countinious expansion of candidate lines is not currently allowed.
+    # But it has not been deleted in case we want to re-enable it in the future.
+    #model.transmissionInvCap = Var(model.BidirectionalArc, model.PeriodActive, domain=NonNegativeReals)
     model.transmissionBuild = Var(model.CandidateTransmission, model.PeriodActive, within=Binary)
     model.storPWInvCap = Var(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
     model.storENInvCap = Var(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
@@ -230,11 +232,24 @@ def define_investment_constraints(
         return sum(model.genInvCap[n,g,j]  for j in model.PeriodActive if j>=startPeriod and j<=i ) - model.genInstalledCap[n,g,i] + model.genInitCap[n,g,i]== 0   #
     model.installedCapDefinitionGen = Constraint(model.GeneratorsOfNode, model.PeriodActive, rule=lifetime_rule_gen)
 
+    # Transmission installed capacity evolution (purely binary for candidates; fixed for non-candidates)
     def lifetime_rule_trans(model, n1, n2, i):
-        startPeriod=1
-        if value(1+i-model.transmissionLifetime[n1,n2]*(1/model.LeapYearsInvestment))>startPeriod:
-            startPeriod=value(1+i-model.transmissionLifetime[n1,n2]/model.LeapYearsInvestment)
-        return sum(model.transmissionInvCap[n1,n2,j]  for j in model.PeriodActive if j>=startPeriod and j<=i )- model.transmissionInstalledCap[n1,n2,i] + model.transmissionInitCap[n1,n2,i] == 0   #
+        # Non-candidate lines: capacity is fixed at initial level in all periods
+        if (n1, n2) not in model.CandidateTransmission:
+            return model.transmissionInstalledCap[n1, n2, i] == model.transmissionInitCap[n1, n2, i]
+
+        # Candidate lines: installed cap = init + block * cumulative builds up to i
+            # Prefer per-line block; fall back to global if per-line is zero/missing
+        blk = model.transmissionLineBlockCap[n1, n2] \
+            if (n1, n2) in model.transmissionLineBlockCap \
+            else model.transmissionLineBlockCapGlobal
+
+        return (
+            model.transmissionInstalledCap[n1, n2, i]
+            == model.transmissionInitCap[n1, n2, i]
+            + sum(blk * model.transmissionBuild[n1, n2, j]
+                for j in model.PeriodActive if j <= i)
+        )
     model.installedCapDefinitionTrans = Constraint(model.BidirectionalArc, model.PeriodActive, rule=lifetime_rule_trans)
 
     def lifetime_rule_storEN(model, n, b, i):
@@ -253,59 +268,23 @@ def define_investment_constraints(
 
     ############################################################
 
-    # def lifetime_rule_trans(model, n1, n2, i):
-    #     startPeriod=1
-    #     if value(1+i-model.transmissionLifetime[n1,n2]*(1/model.LeapYearsInvestment))>startPeriod:
-    #         startPeriod=value(1+i-model.transmissionLifetime[n1,n2]/model.LeapYearsInvestment)
-    #     return sum(model.transmissionInvCap[n1,n2,j]  for j in model.PeriodActive if j>=startPeriod and j<=i )- model.transmissionInstalledCap[n1,n2,i] + model.transmissionInitCap[n1,n2,i] == 0   #
-    # model.installedCapDefinitionTrans = Constraint(model.BidirectionalArc, model.PeriodActive, rule=lifetime_rule_trans)
-
-    #TODO: I replaced the above constraint with the below constraint. Check if it is correct.
-    def lifetime_rule_trans(model, n1, n2, i):
-        # existing (non-candidate) lines: keep the old lifetime accumulation
-        if (n1, n2) not in model.CandidateTransmission:
-            startPeriod = 1
-            if value(1 + i - model.transmissionLifetime[n1, n2] / model.LeapYearsInvestment) > startPeriod:
-                startPeriod = value(1 + i - model.transmissionLifetime[n1, n2] / model.LeapYearsInvestment)
-            return (
-                sum(model.transmissionInvCap[n1, n2, j]
-                    for j in model.PeriodActive if j >= startPeriod and j <= i)
-                - model.transmissionInstalledCap[n1, n2, i]
-                + model.transmissionInitCap[n1, n2, i]
-                == 0
-            )
-
-        # candidate lines: installed cap = init + block * sum_{j<=i} build[j]
-        # prefer per-line block, fall back to global
-        block = model.transmissionLineBlockCap.get((n1, n2), None)
-        if block is None:
-            block = model.transmissionLineBlockCapGlobal
-        return (
-            model.transmissionInstalledCap[n1, n2, i]
-            == model.transmissionInitCap[n1, n2, i]
-            + sum(block * model.transmissionBuild[n1, n2, j]
-                    for j in model.PeriodActive if j <= i)
-        )
-    model.installedCapDefinitionTrans = Constraint(model.BidirectionalArc, model.PeriodActive, rule=lifetime_rule_trans)
-
-
-    ############################################################
-
     def investment_gen_cap_rule(model, t, n, i):
         return sum(model.genInvCap[n,g,i] for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology) - model.genMaxBuiltCap[n,t,i] <= 0
     model.investment_gen_cap = Constraint(model.Technology, model.Node, model.PeriodActive, rule=investment_gen_cap_rule)
 
     ############################################################
 
-    # def investment_trans_cap_rule(model, n1, n2, i):
-    #     return model.transmissionInvCap[n1,n2,i] - model.transmissionMaxBuiltCap[n1,n2,i] <= 0
-
-    #TODO: I replaced the above constraint with the below constraint. Check if it is correct.
-
+    # Limit per-period build on candidate lines by max build cap
     def investment_trans_cap_rule(model, n1, n2, i):
-        if (n1,n2) in model.CandidateTransmission:
+        if (n1, n2) not in model.CandidateTransmission:
             return Constraint.Skip
-        return model.transmissionInvCap[n1,n2,i] <= model.transmissionMaxBuiltCap[n1,n2,i]
+        # Per-period build (MW) = block size * binary decision
+        blk = model.transmissionLineBlockCap[n1, n2] \
+              if (n1, n2) in model.transmissionLineBlockCap \
+              else model.transmissionLineBlockCapGlobal
+        if value(blk) == 0:
+            blk = model.transmissionLineBlockCapGlobal
+        return blk * model.transmissionBuild[n1, n2, i] <= model.transmissionMaxBuiltCap[n1, n2, i]
     model.investment_trans_cap = Constraint(model.BidirectionalArc, model.PeriodActive, rule=investment_trans_cap_rule)
 
     ############################################################

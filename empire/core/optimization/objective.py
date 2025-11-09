@@ -1,25 +1,30 @@
-from pyomo.environ import (Expression, Objective, minimize)
+from pyomo.environ import (Expression, Objective, minimize, value)
 
 SCALING_FACTOR = 1e-10
 
 
 def investment_obj(model):
+    def _get_block_cap(m, n1, n2):
+        """Helper to get block capacity: per-line if available and positive, else global."""
+        if (n1, n2) in m.transmissionLineBlockCap:
+            blk = value(m.transmissionLineBlockCap[n1, n2])
+            if blk > 0:
+                return m.transmissionLineBlockCap[n1, n2]
+        return m.transmissionLineBlockCapGlobal
+    
     return SCALING_FACTOR * sum(
         model.discount_multiplier[i] * (
             # Generator investment costs
             sum(model.genInvCost[g,i] * model.genInvCap[n,g,i] for (n,g) in model.GeneratorsOfNode) +
 
-            #TODO: Check the investment cost on TEP. I added aditional term for the binary variables.
-            # Also I commented out the existing constraint for the continuous expansion.
-            
-            # Transmission: existing (continuous expansion)
-            # sum(model.transmissionInvCost[n1,n2,i] * model.transmissionInvCap[n1,n2,i]
-            #     for (n1,n2) in model.BidirectionalArc
-            #     if (n1,n2) not in model.CandidateTransmission) +
-
-            # Transmission: candidate (binary expansion, fixed block)
-            sum(model.transmissionInvCost[n1,n2,i] * model.transmissionBuild[n1,n2,i]
-                for (n1,n2) in model.CandidateTransmission) +
+            # Transmission: candidate lines (binary expansion with fixed block capacity)
+            # Cost is per MW; multiply by block size to get total cost per build
+            sum(
+                model.transmissionInvCost[n1, n2, i]
+                * _get_block_cap(model, n1, n2)
+                * model.transmissionBuild[n1, n2, i]
+                for (n1, n2) in model.CandidateTransmission
+            ) +
 
             # Storage investment costs (power + energy parts)
             sum((model.storPWInvCost[b,i] * model.storPWInvCap[n,b,i] +

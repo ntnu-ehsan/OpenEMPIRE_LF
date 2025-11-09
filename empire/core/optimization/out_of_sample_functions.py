@@ -13,6 +13,8 @@ def set_investments_as_parameters(model, set_only_capacities: bool = False):
     if set_only_capacities: 
         return 
     model.genInvCap = Param(model.GeneratorsOfNode, model.PeriodActive, domain=NonNegativeReals)
+    # For transmission: use transmissionInvCap (derived from capacity changes) for backward compatibility
+    # Note: This represents per-period capacity additions, not a decision variable
     model.transmissionInvCap = Param(model.BidirectionalArc, model.PeriodActive, domain=NonNegativeReals)
     model.storPWInvCap = Param(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
     model.storENInvCap = Param(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)

@@ -64,7 +64,7 @@ def run_empire(
     # Load electrical data for LOPF if requested (need to split investment and operations!)
     # TODO: Splitting investment and operations data loading.
     if empire_config.lopf_flag:
-        load_line_parameters(model, data, run_config.tab_file_path, empire_config.lopf_kwargs)
+        load_line_parameters(model, run_config.tab_file_path, data, empire_config.lopf_kwargs, logger)
 
 
     # Variable definitions

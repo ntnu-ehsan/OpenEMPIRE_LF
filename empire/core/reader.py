@@ -127,6 +127,9 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
     read_file(TransmissionExcelData, 'InitialCapacity', [0, 1, 2, 3], tab_file_path,  "Transmission", skipheaders=2)
     read_file(TransmissionExcelData, 'Lifetime', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
     read_file(TransmissionExcelData, 'CandidateTransmission', [0, 1], tab_file_path, "Transmission", skipheaders=2)
+    # Optional: per-line block sizes for binary transmission expansion (preferred)
+    # If present, this sheet should have columns: FromNode, ToNode, LineBlockCap
+    read_file(TransmissionExcelData, 'LineBlockCapacity', [0, 1, 2], tab_file_path, "Transmission", skipheaders=2)
     if config.lopf_flag:
         read_file(TransmissionExcelData, 'lineReactance', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
         
@@ -144,6 +147,9 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
     read_file(GeneralExcelData, 'seasonScale', [0, 1], tab_file_path, "General", skipheaders=2)
     read_file(GeneralExcelData, 'CO2Cap', [0, 1], tab_file_path, "General", skipheaders=2)
     read_file(GeneralExcelData, 'CO2Price', [0, 1], tab_file_path, "General", skipheaders=2)
+    # Optional: global fallback block size (scalar). If present, provide a sheet
+    # named 'LineBlockCapacityGlobal' with the value in the first column.
+    read_file(GeneralExcelData, 'LineBlockCapacityGlobal', [0], tab_file_path, "General", skipheaders=2)
     
     #Reading Storage
     logger.info("Reading Storage.xlsx")

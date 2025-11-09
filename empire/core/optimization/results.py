@@ -3,7 +3,30 @@ import csv
 import os
 import time
 
-from pyomo.environ import value
+from pyomo.environ import value, Suffix
+from pyomo.opt import TerminationCondition
+
+
+def get_dual_value(instance, constraint_ref, default=0.0):
+    """
+    Safely get dual value from a constraint.
+    Returns default value if dual is not available (e.g., when LOPF modifies constraints).
+    
+    Args:
+        instance: Pyomo model instance
+        constraint_ref: Reference to the constraint (e.g., instance.FlowBalance[n,h,i,w])
+        default: Default value to return if dual is not available
+    
+    Returns:
+        Dual value or default
+    """
+    try:
+        if hasattr(instance, 'dual') and constraint_ref in instance.dual:
+            return value(instance.dual[constraint_ref])
+        else:
+            return default
+    except (KeyError, AttributeError):
+        return default
 
 
 def get_investment_periods(instance):
@@ -119,17 +142,36 @@ def write_results(
     f = open(result_file_path / 'results_output_transmission.csv', 'w', newline='')
     writer = csv.writer(f)
     writer.writerow(["BetweenNode","AndNode","Period","transmissionInvCap_MW","transmissionInstalledCap_MW","DiscountedInvestmentCost_Euro","transmissionExpectedAnnualVolume_GWh","ExpectedAnnualLosses_GWh"])
-    for (n1,n2) in instance.BidirectionalArc:
+    for (n1, n2) in instance.BidirectionalArc:
         for i in instance.PeriodActive:
+            # Compute investment this period as change in installed cap
+            if int(i) == 1:
+                inv_cap = value(instance.transmissionInstalledCap[n1, n2, i] - instance.transmissionInitCap[n1, n2, i])
+            else:
+                inv_cap = value(instance.transmissionInstalledCap[n1, n2, i] - instance.transmissionInstalledCap[n1, n2, i - 1])
+
+            # Compute discounted investment cost using binary Build and block size (only for candidate lines)
+            if (n1, n2) in instance.CandidateTransmission:
+                try:
+                    blk = instance.transmissionLineBlockCap[n1, n2]
+                except KeyError:
+                    blk = instance.transmissionLineBlockCapGlobal
+                if value(blk) == 0:
+                    blk = instance.transmissionLineBlockCapGlobal
+                build = instance.transmissionBuild[n1, n2, i]
+                inv_cost = value(instance.discount_multiplier[i] * instance.transmissionInvCost[n1, n2, i] * blk * build)
+            else:
+                inv_cost = 0.0
+
             writer.writerow([
                 n1,
                 n2,
-                inv_per[int(i-1)],
-                value(instance.transmissionInvCap[n1,n2,i]),
-                value(instance.transmissionInstalledCap[n1,n2,i]), 
-                value(instance.discount_multiplier[i]*instance.transmissionInvCap[n1,n2,i]*instance.transmissionInvCost[n1,n2,i]), 
-                value(sum(instance.sceProbab[w]*instance.seasScale[s]*(instance.transmissionOperational[n1,n2,h,i,w]+instance.transmissionOperational[n2,n1,h,i,w])/1000 for (s,h) in instance.HoursOfSeason for w in instance.Scenario)), 
-                value(sum(instance.sceProbab[w]*instance.seasScale[s]*((1 - instance.lineEfficiency[n1,n2])*instance.transmissionOperational[n1,n2,h,i,w] + (1 - instance.lineEfficiency[n2,n1])*instance.transmissionOperational[n2,n1,h,i,w])/1000 for (s,h) in instance.HoursOfSeason for w in instance.Scenario))
+                inv_per[int(i - 1)],
+                inv_cap,
+                value(instance.transmissionInstalledCap[n1, n2, i]),
+                inv_cost,
+                value(sum(instance.sceProbab[w] * instance.seasScale[s] * (instance.transmissionOperational[n1, n2, h, i, w] + instance.transmissionOperational[n2, n1, h, i, w]) / 1000 for (s, h) in instance.HoursOfSeason for w in instance.Scenario)),
+                value(sum(instance.sceProbab[w] * instance.seasScale[s] * ((1 - instance.lineEfficiency[n1, n2]) * instance.transmissionOperational[n1, n2, h, i, w] + (1 - instance.lineEfficiency[n2, n1]) * instance.transmissionOperational[n2, n1, h, i, w]) / 1000 for (s, h) in instance.HoursOfSeason for w in instance.Scenario))
             ])
     f.close()
 
@@ -191,7 +233,7 @@ def write_results(
                             value(sum(instance.transmissionOperational[link,n,h,i,w] for link in instance.NodesLinked[n])), 
                             value(sum(-(1 - instance.lineEfficiency[link,n])*instance.transmissionOperational[link,n,h,i,w] for link in instance.NodesLinked[n])), 
                             value(instance.loadShed[n,h,i,w]), 
-                            value(instance.dual[instance.FlowBalance[n,h,i,w]]/(instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w])),
+                            get_dual_value(instance, instance.FlowBalance[n,h,i,w], 0.0)/(instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w]),
                             value(sum(instance.genOperational[n,g,h,i,w]*instance.genCO2TypeFactor[g]*(3.6/instance.genEfficiency[g,i]) for g in instance.Generator if (n,g) in instance.GeneratorsOfNode)/sum(instance.genOperational[n,g,h,i,w] for g in instance.Generator if (n,g) in instance.GeneratorsOfNode) if value(sum(instance.genOperational[n,g,h,i,w] for g in instance.Generator if (n,g) in instance.GeneratorsOfNode)) != 0 else 0)])
                         writer.writerow(my_string)
         f.close()
@@ -303,12 +345,12 @@ def write_results(
             my_string=[inv_per[int(i-1)],w, 
             value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w]*instance.genCO2TypeFactor[g]*(3.6/instance.genEfficiency[g,i]) for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason))]
             if EMISSION_CAP_FLAG:
-                my_string.extend([value(instance.dual[instance.emission_cap[i,w]]/(instance.operationalDiscountrate*instance.sceProbab[w]*1e6)),value(instance.CO2cap[i]*1e6)])
+                my_string.extend([get_dual_value(instance, instance.emission_cap[i,w], 0.0)/(instance.operationalDiscountrate*instance.sceProbab[w]*1e6),value(instance.CO2cap[i]*1e6)])
             else:
                 my_string.extend([value(instance.CO2price[i]),0])
             my_string.extend([value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w]/1000 for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason)), 
             value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w]*instance.genCO2TypeFactor[g]*(3.6/instance.genEfficiency[g,i]) for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason)/sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w] for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason)), 
-            value(sum(instance.dual[instance.FlowBalance[n,h,i,w]]/(instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w]) for n in instance.Node for (s,h) in instance.HoursOfSeason)/value(len(instance.HoursOfSeason)*len(instance.Node))),
+            sum(get_dual_value(instance, instance.FlowBalance[n,h,i,w], 0.0)/(instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w]) for n in instance.Node for (s,h) in instance.HoursOfSeason)/value(len(instance.HoursOfSeason)*len(instance.Node)),
             value(sum(instance.seasScale[s]*(instance.genCapAvail[n,g,h,i,w]*instance.genInstalledCap[n,g,i] - instance.genOperational[n,g,h,i,w])/1000 for (n,g) in instance.GeneratorsOfNode if g == 'Hydrorun-of-the-river' or g == 'Windonshore' or g == 'Windoffshore' or g == 'Solar' for (s,h) in instance.HoursOfSeason)), 
             value(sum(instance.seasScale[s]*((1 - instance.storageDischargeEff[b])*instance.storDischarge[n,b,h,i,w] + (1 - instance.storageChargeEff[b])*instance.storCharge[n,b,h,i,w])/1000 for (n,b) in instance.StoragesOfNode for (s,h) in instance.HoursOfSeason)), 
             value(sum(instance.seasScale[s]*((1 - instance.lineEfficiency[n1,n2])*instance.transmissionOperational[n1,n2,h,i,w] + (1 - instance.lineEfficiency[n2,n1])*instance.transmissionOperational[n2,n1,h,i,w])/1000 for (n1,n2) in instance.BidirectionalArc for (s,h) in instance.HoursOfSeason))])
@@ -345,12 +387,27 @@ def write_results(
             writer.writerow([n,g,i,value(instance.genInvCap[n,g,i])])
     f.close()
 
+    f = open(result_file_path / 'transmissionBuild.tab', 'w', newline='')
+    writer = csv.writer(f, delimiter='\t')
+    writer.writerow(["FromNode","ToNode","Period","transmissionBuild"])
+    for (n1,n2) in instance.CandidateTransmission:
+        for i in instance.PeriodActive:
+            writer.writerow([n1,n2,i,value(instance.transmissionBuild[n1,n2,i])])
+    f.close()
+
+    # Also write transmissionInvCap for backward compatibility with out-of-sample runs
+    # Computed as change in installed capacity
     f = open(result_file_path / 'transmissionInvCap.tab', 'w', newline='')
     writer = csv.writer(f, delimiter='\t')
     writer.writerow(["FromNode","ToNode","Period","transmissionInvCap"])
     for (n1,n2) in instance.BidirectionalArc:
         for i in instance.PeriodActive:
-            writer.writerow([n1,n2,i,value(instance.transmissionInvCap[n1,n2,i])])
+            # Compute investment this period as change in installed cap
+            if int(i) == 1:
+                inv_cap = value(instance.transmissionInstalledCap[n1, n2, i] - instance.transmissionInitCap[n1, n2, i])
+            else:
+                inv_cap = value(instance.transmissionInstalledCap[n1, n2, i] - instance.transmissionInstalledCap[n1, n2, i - 1])
+            writer.writerow([n1,n2,i,inv_cap])
     f.close()
 
     f = open(result_file_path / 'storPWInvCap.tab', 'w', newline='')
@@ -507,12 +564,18 @@ def write_results(
         f = row_write(f, "Europe", "Capacity|Electricity", "GW", "Year", [value(sum(instance.genInstalledCap[n,g,i]*GWperMW for (n,g) in instance.GeneratorsOfNode)) for i in instance.PeriodActive]) #Total European installed generator capacity 
         f = row_write(f, "Europe", "Investment|Energy Supply|Electricity", "billion US$2010/yr", "Year", [value((1/instance.LeapYearsInvestment)*USD10perEUR18* \
                     sum(instance.genInvCost[g,i]*instance.genInvCap[n,g,i] for (n,g) in instance.GeneratorsOfNode) + \
-                    sum(instance.transmissionInvCost[n1,n2,i]*instance.transmissionInvCap[n1,n2,i] for (n1,n2) in instance.BidirectionalArc) + \
+                    sum(instance.transmissionInvCost[n1,n2,i] * \
+                        ((instance.transmissionLineBlockCap[n1,n2] if value(instance.transmissionLineBlockCap[n1,n2]) > 0 else instance.transmissionLineBlockCapGlobal) \
+                         * instance.transmissionBuild[n1,n2,i]) \
+                        for (n1,n2) in instance.CandidateTransmission) + \
                     sum((instance.storPWInvCost[b,i]*instance.storPWInvCap[n,b,i]+instance.storENInvCost[b,i]*instance.storENInvCap[n,b,i]) for (n,b) in instance.StoragesOfNode)) for i in instance.PeriodActive]) #Total European investment cost (gen+stor+trans)
         f = row_write(f, "Europe", "Investment|Energy Supply|Electricity|Electricity storage", "billion US$2010/yr", "Year", [value((1/instance.LeapYearsInvestment)*USD10perEUR18* \
                     sum((instance.storPWInvCost[b,i]*instance.storPWInvCap[n,b,i]+instance.storENInvCost[b,i]*instance.storENInvCap[n,b,i]) for (n,b) in instance.StoragesOfNode)) for i in instance.PeriodActive]) #Total European storage investment cost
         f = row_write(f, "Europe", "Investment|Energy Supply|Electricity|Transmission and Distribution", "billion US$2010/yr", "Year", [value((1/instance.LeapYearsInvestment)*USD10perEUR18* \
-                    sum(instance.transmissionInvCost[n1,n2,i]*instance.transmissionInvCap[n1,n2,i] for (n1,n2) in instance.BidirectionalArc)) for i in instance.PeriodActive]) #Total European transmission investment cost
+                    sum(instance.transmissionInvCost[n1,n2,i] * \
+                        ((instance.transmissionLineBlockCap[n1,n2] if value(instance.transmissionLineBlockCap[n1,n2]) > 0 else instance.transmissionLineBlockCapGlobal) \
+                         * instance.transmissionBuild[n1,n2,i]) \
+                        for (n1,n2) in instance.CandidateTransmission)) for i in instance.PeriodActive]) #Total European transmission investment cost
         for w in instance.Scenario:
             f = row_write(f, "Europe", "Emissions|CO2|Energy|Supply|Electricity", "Mt CO2/yr", "Year", [value(Mtonperton*sum(instance.seasScale[s]*instance.genCO2TypeFactor[g]*(GJperMWh/instance.genEfficiency[g,i])* \
                     instance.genOperational[n,g,h,i,w] for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason)) for i in instance.PeriodActive], Scenario+"|"+str(w)) #Total European emissions per scenario
@@ -524,7 +587,7 @@ def write_results(
             for (s,h) in instance.HoursOfSeason:
                 for n in instance.Node:
                     f = row_write(f, dict_countries_reversed[str(n)], "Price|Secondary Energy|Electricity", "US$2010/GJ", seasonhours[h-1], \
-                        [value(instance.dual[instance.FlowBalance[n,h,i,w]]/(GJperMWh*instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w])) for i in instance.PeriodActive], Scenario+"|"+str(w)+str(s))
+                        [get_dual_value(instance, instance.FlowBalance[n,h,i,w], 0.0)/(GJperMWh*instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w]) for i in instance.PeriodActive], Scenario+"|"+str(w)+str(s))
         for g in instance.Generator:
             f = row_write(f, "Europe", "Capacity|Electricity|"+dict_generators[str(g)], "GW", "Year", [value(sum(instance.genInstalledCap[n,g,i]*GWperMW for n in instance.Node if (n,g) in instance.GeneratorsOfNode)) for i in instance.PeriodActive]) #Total European installed generator capacity per type
             f = row_write(f, "Europe", "Capital Cost|Electricity|"+dict_generators[str(g)], "US$2010/kW", "Year", [value(instance.genCapitalCost[g,i]*USD10perEUR18) for i in instance.PeriodActive]) #Capital generator cost
@@ -560,9 +623,11 @@ def run_operational_model(
         for i in instance.PeriodActive:
             instance.genInvCap[n,g,i].fix()
 
-    for (n1,n2) in instance.BidirectionalArc:
+    # For transmission: fix binary build decisions for candidate lines
+    # Non-candidate lines have no investment variable (capacity is fixed at initial)
+    for (n1,n2) in instance.CandidateTransmission:
         for i in instance.PeriodActive:        
-            instance.transmissionInvCap[n1,n2,i].fix()
+            instance.transmissionBuild[n1,n2,i].fix()
 
     for (n,b) in instance.StoragesOfNode:
         for i in instance.PeriodActive:
@@ -571,7 +636,29 @@ def run_operational_model(
 
     logger.info("Resolving")
 
-    opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{instance_name}_resolved.log")
+    # Ensure dual suffix is present on the instance so solver can return dual values
+    try:
+        instance.dual = Suffix(direction=Suffix.IMPORT)
+    except Exception:
+        # If a dual suffix already exists or other issue, continue; solver may still return duals
+        logger.debug("Could not (re)create dual suffix on instance; continuing")
+
+    # Request duals from the solver (some solvers require explicit suffix request)
+    try:
+        results = opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{instance_name}_resolved.log", suffixes=["dual"])  # type: ignore[arg-type]
+    except TypeError:
+        # Some solver interfaces/versions may not accept 'suffixes' kwarg; fall back to plain solve
+        results = opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{instance_name}_resolved.log")
+
+    # Check termination condition
+    if hasattr(results, 'solver') and getattr(results.solver, 'termination_condition', None) is not None:
+        if results.solver.termination_condition != TerminationCondition.optimal:
+            logger.error("Resolved operational model termination_condition: %s", results.solver.termination_condition)
+            raise ValueError(f"Resolved operational model was not optimal. Termination condition: {results.solver.termination_condition}.")
+    else:
+        # If results object doesn't contain solver information, warn but continue
+        logger.warning("Solver results did not include termination condition information after resolving.")
+
     return 
 
 def write_operational_results(
@@ -613,7 +700,7 @@ def write_operational_results(
                         value(sum(instance.transmissionOperational[link,n,h,i,w] for link in instance.NodesLinked[n])), 
                         value(sum(-(1 - instance.lineEfficiency[link,n])*instance.transmissionOperational[link,n,h,i,w] for link in instance.NodesLinked[n])), 
                         value(instance.loadShed[n,h,i,w]), 
-                        value(instance.dual[instance.FlowBalance[n,h,i,w]]/(instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w])),
+                        get_dual_value(instance, instance.FlowBalance[n,h,i,w], 0.0)/(instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w]),
                         value(sum(instance.genOperational[n,g,h,i,w]*instance.genCO2TypeFactor[g]*(3.6/instance.genEfficiency[g,i]) for g in instance.Generator if (n,g) in instance.GeneratorsOfNode)/sum(instance.genOperational[n,g,h,i,w] for g in instance.Generator if (n,g) in instance.GeneratorsOfNode) if value(sum(instance.genOperational[n,g,h,i,w] for g in instance.Generator if (n,g) in instance.GeneratorsOfNode)) != 0 else 0)])
                     writer.writerow(my_string)
     f.close()
@@ -626,6 +713,6 @@ def write_operational_results(
             my_string=[inv_per[int(i-1)],w, 
             value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w]*instance.genCO2TypeFactor[g]*(3.6/instance.genEfficiency[g,i]) for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason))]
             if emission_cap_flag:
-                my_string.extend([value(instance.dual[instance.emission_cap[i,w]]/(instance.operationalDiscountrate*instance.sceProbab[w]*1e6)),value(instance.CO2cap[i]*1e6)])
+                my_string.extend([get_dual_value(instance, instance.emission_cap[i,w], 0.0)/(instance.operationalDiscountrate*instance.sceProbab[w]*1e6),value(instance.CO2cap[i]*1e6)])
             else:
                 my_string.extend([value(instance.CO2price[i]),0])

@@ -2,6 +2,9 @@ from __future__ import annotations
 from pyomo.environ import (Set, Var, Constraint, PositiveReals, value, Param, Expression, Reals, ConstraintList)
 from collections import defaultdict, deque
 from typing import  Dict,List, Tuple, Optional, Callable
+import logging
+
+logger = logging.getLogger(__name__)
 
 class LOPFMethod:
     """Enumeration of available LOPF methods."""
@@ -326,16 +329,24 @@ def _fundamental_cycles(NodeSet, LineSet) -> Tuple[List[List[Tuple]], Dict[Tuple
 # ---------------------------
 # Method B: Angle-based DC
 # ---------------------------
-def _add_angle_opf(
+def _add_angle_constraints(
     model,
     *,
-    susceptance_param_name: str = "lineSusceptance",  # on DirectionalLink
+    reactance_param_name: str = "lineReactance",  # Required: reactance X on DirectionalLink
+    # Angle-specific args
     capacity_expr: Optional[Callable] = None,
     couple_to_existing_flows: bool = True,
     existing_flow_candidates = ("transmissionOperational", "TransFlow", "lineFlow", "flow"),
     fix_angle_reference: bool = True,
     slack_node_set_name: str = "SlackNode",
+    **kwargs  # Accept any other kwargs without error (e.g., susceptance_param_name, reactance_from_susceptance)
 ):
+    """
+    Angle-based DC-OPF formulation.
+    
+    Requires reactance X[i,j] to be provided on DirectionalLink.
+    Susceptance B = 1/X is derived internally for Ohm's law constraints.
+    """
     # Required sets
     for s in ("DirectionalLink", "Node", "Operationalhour", "Scenario", "PeriodActive"):
         if not hasattr(model, s):
@@ -345,13 +356,34 @@ def _add_angle_opf(
     N = model.Node
     H, W, P = model.Operationalhour, model.Scenario, model.PeriodActive
 
-    # --- Susceptance B[(i,j)] ---
-    if not hasattr(model, susceptance_param_name):
-        setattr(model, susceptance_param_name, Param(A, default=0.0, mutable=True))
-    B = getattr(model, susceptance_param_name)
+    # --- Derive Susceptance B = 1/X from Reactance ---
+    if not hasattr(model, reactance_param_name):
+        raise RuntimeError(
+            f"Angle-based LOPF requires reactance parameter '{reactance_param_name}' on DirectionalLink. "
+            f"Load it via load_line_parameters() before calling add_lopf_constraints()."
+        )
     
-    if (i,j) not in B:
-        logger.warning(f"Susceptance for line ({i},{j}) missing; assuming 0.")
+    X = getattr(model, reactance_param_name)
+    eps = 1e-9  # Guard against division by zero
+    
+    def _b_init(m, i, j):
+        """Derive susceptance B = 1 / X for each arc."""
+        try:
+            # Try direct access; on AbstractModels this may raise before sets are constructed
+            xij = float(X[i, j])
+        except Exception:
+            # Fallback to a small value if reactance not yet available for this index
+            xij = eps
+        if abs(xij) < eps:
+            logger.warning("Reactance near zero for line (%s,%s); using minimum value for susceptance.", i, j)
+            xij = eps
+        return 1.0 / xij
+    
+    # Create derived susceptance parameter
+    model.lineSusceptance = Param(A, initialize=_b_init, within=Reals, mutable=True)
+    B = model.lineSusceptance
+    logger.info("Derived susceptance B=1/X from reactance '%s' for angle-based DC-OPF.", reactance_param_name)
+    
 
     # --- Existing / Candidate sets ---
     # Expect these to be defined/loaded elsewhere. If ExistingTransmission is missing, derive it.
@@ -360,8 +392,10 @@ def _add_angle_opf(
     CAND = model.CandidateTransmission
 
     if not hasattr(model, "ExistingTransmission"):
-        # derive Existing = A \ CAND
-        model.ExistingTransmission = Set(within=A, initialize=[arc for arc in A if arc not in CAND])
+        # derive Existing = A \ CAND using a rule (works with AbstractModel)
+        def _existing_init(m):
+            return [arc for arc in m.DirectionalLink if arc not in m.CandidateTransmission]
+        model.ExistingTransmission = Set(within=A, initialize=_existing_init)
     EXIST = model.ExistingTransmission
 
     # --- Angle bounds & Big-M for candidate Ohm's law activation ---
@@ -437,16 +471,23 @@ def _add_angle_opf(
     # Angle reference (slack)
     # -----------------------
     if fix_angle_reference:
-        slack = None
-        if hasattr(model, slack_node_set_name):
-            for n in getattr(model, slack_node_set_name):
-                slack = n; break
-        if slack is None:
-            for n in N:
-                slack = n; break
-        if slack is None:
-            raise RuntimeError("No nodes available to fix angle reference.")
-        model.AngleRef = Constraint(H, W, P, rule=lambda m,h,w,p, _n=slack: m.Theta[_n,h,w,p] == 0.0)
+        # Determine slack node at instance-construction time inside the constraint rule
+        def _angle_ref_rule(m, h, w, p):
+            # Prefer an explicit SlackNode set if provided
+            slack_n = None
+            if hasattr(m, slack_node_set_name):
+                for nn in getattr(m, slack_node_set_name):
+                    slack_n = nn
+                    break
+            if slack_n is None:
+                for nn in m.Node:
+                    slack_n = nn
+                    break
+            if slack_n is None:
+                raise RuntimeError("No nodes available to fix angle reference.")
+            return m.Theta[slack_n, h, w, p] == 0.0
+
+        model.AngleRef = Constraint(H, W, P, rule=_angle_ref_rule)
 
     # -----------------------
     # Bind to existing directed flow var (keep KCL intact)
