@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pyexpat import model
 from pyomo.environ import (Set, Var, Constraint, PositiveReals, value, Param, Expression, Reals, ConstraintList)
 from collections import defaultdict, deque
 from typing import  Dict,List, Tuple, Optional, Callable
@@ -57,10 +58,48 @@ def add_lopf_constraints(model, method: str = LOPFMethod.KIRCHHOFF, **kwargs):
 # Shared Helpers
 # ---------------------------
 def _infer_capacity_expr(model):
-    """Return (m,i,j,p) -> capacity expression for undirected (i,j)."""
+    """Return (m,i,j,p) -> capacity expression for undirected (i,j).
+
+    This helper inspects the model for common components that represent
+    transmission capacity and returns a single callable with signature
+    (m, i, j, p) -> capacity. The callable abstracts over different
+    representations (installed-capacity Var, initial-capacity Param,
+    incremental build Vars/Params, or legacy component names) so the
+    LOPF code can request a capacity value without duplicating lookup
+    logic.
+
+    Behaviour highlights:
+        - Tries several common component names to support historical
+            naming variants.
+        - If only init + build components exist, constructs capacity by
+            summing initial capacity and cumulative builds up to period p.
+        - Performs safe lookups that try the reversed node ordering
+            (j,i,p) when (i,j,p) is not present to tolerate orientation
+            differences in input data.
+        - Raises a RuntimeError if no plausible capacity source is found
+            (caller may instead pass an explicit capacity_expr argument).
+    """
     # helper: look up component by name on the instance
     def _by_name(name: str):
-        return lambda m, i, j, p, _n=name: getattr(m, _n)[i, j, p]
+        # Return a callable that safely looks up component values by (i,j,p).
+        # If the direct ordering (i,j,p) is not present, try the reversed ordering (j,i,p).
+        # If neither exists, log a warning and return 0.0 as a safe fallback to allow model
+        # construction to continue. This prevents a KeyError during Expression construction
+        # when input data uses the opposite orientation for corridor keys.
+        logger.debug('_by_name: looking up capacity component "%s"', name)
+        def _safe_lookup(m, i, j, p, _n=name):
+            comp = getattr(m, _n)
+            try:
+                return comp[i, j, p]
+            except Exception:
+                logger.debug('Capacity lookup: component "%s" missing index (%s,%s,%s); trying reversed order', _n, i, j, p)
+                try:
+                    return comp[j, i, p]
+                except Exception:
+                    logger.warning("Capacity lookup: component '%s' missing index (%s,%s,%s) and (%s,%s,%s); returning 0.0",
+                                   _n, i, j, p, j, i, p)
+                    return 0.0
+        return _safe_lookup
 
     # Prefer an installed-capacity variable if it exists
     for name in ("transmissionInstalledCap", "installedTransmissionCap", "TransInstalledCap", 'Transmission_InitialCapacity'):
@@ -347,42 +386,84 @@ def _add_angle_constraints(
     Requires reactance X[i,j] to be provided on DirectionalLink.
     Susceptance B = 1/X is derived internally for Ohm's law constraints.
     """
+    # log what kwargs were passed
+    logger.debug("Angle-based LOPF called with kwargs: %s", kwargs)
+    
     # Required sets
     for s in ("DirectionalLink", "Node", "Operationalhour", "Scenario", "PeriodActive"):
         if not hasattr(model, s):
             raise RuntimeError(f"Model is missing required set '{s}'")
 
-    A = model.DirectionalLink
-    N = model.Node
-    H, W, P = model.Operationalhour, model.Scenario, model.PeriodActive
+    A = model.DirectionalLink; 
+    N = model.Node; 
+    H = model.Operationalhour; 
+    W = model.Scenario; 
+    P = model.PeriodActive; 
 
-    # --- Derive Susceptance B = 1/X from Reactance ---
+    # --- Reactance input & Susceptance derivation (accept BidirectionalArc or DirectionalLink) ---
     if not hasattr(model, reactance_param_name):
         raise RuntimeError(
-            f"Angle-based LOPF requires reactance parameter '{reactance_param_name}' on DirectionalLink. "
-            f"Load it via load_line_parameters() before calling add_lopf_constraints()."
+            f"Angle-based LOPF requires reactance parameter '{reactance_param_name}' present on either "
+            f"DirectionalLink or BidirectionalArc. Load it via load_line_parameters() before calling add_lopf_constraints()."
         )
-    
-    X = getattr(model, reactance_param_name)
+
+    logger.debug("Reactance parameter '%s' found.", reactance_param_name)
     eps = 1e-9  # Guard against division by zero
-    
-    def _b_init(m, i, j):
-        """Derive susceptance B = 1 / X for each arc."""
+
+    # Log index set type on the abstract component (for info)
+    logger.debug("Reactance parameter '%s' indexed by: %s", reactance_param_name, type(getattr(model, reactance_param_name).index_set()))
+
+    # Derive a directional reactance Param regardless of the original index set.
+    # IMPORTANT: Reference the instance component via 'm', not the abstract one via 'model'.
+    # This guarantees we can look up X[i,j] for every directed arc during instance construction.
+    def _react_dir_init(m, i, j):
+        RX = getattr(m, reactance_param_name)
+        # helper to fetch numeric value safely
+        def _get(ii, jj):
+            try:
+                return float(value(RX[ii, jj]))
+            except Exception:
+                logger.debug("_react_dir_init: Reactance lookup failed for (%s,%s).", ii, jj)
+                return None
+        x = _get(i, j)
+        if x is None:
+            x = _get(j, i)
+        if x is None:
+            logger.warning("Missing reactance data for arc (%s,%s); using reciprocal of eps.", i, j)
+            try:
+                logger.debug("%s keys: %s", reactance_param_name, list(RX.keys())[:10])
+            except Exception:
+                pass
+            return 1.0 / eps
+        return x
+    model._reactance_dir = Param(A, initialize=_react_dir_init, within=PositiveReals)
+    X = model._reactance_dir
+    logger.debug("Directional reactance parameter synthesized for angle-based DC-OPF from '%s'.", reactance_param_name)
+
+    # Helper: compute susceptance B = 1/X on-the-fly in a safe way.
+    def _get_B_val(m, i, j):
+        """Return susceptance for directional arc (i,j).
+
+        This avoids relying on a derived Param that may not yet be
+        constructed. It attempts to read a directional reactance `X[i,j]`.
+        If that fails, it tries the reversed ordering `X[j,i]` (to support
+        undirected input). If both fail, it falls back to a large reactance
+        (small susceptance) and logs a warning.
+        """
+        logger.debug("Getting susceptance for arc (%s,%s).", i, j)
         try:
-            # Try direct access; on AbstractModels this may raise before sets are constructed
             xij = float(X[i, j])
         except Exception:
-            # Fallback to a small value if reactance not yet available for this index
-            xij = eps
+            logger.debug("_get_B_val: Directional reactance lookup failed for (%s,%s); trying reversed ordering.", i, j)
+            try:
+                xij = float(X[j, i])
+            except Exception:
+                logger.warning("Missing reactance for directed arc (%s,%s); using reciprocal of eps.", i, j)
+                xij = 1.0 / eps
         if abs(xij) < eps:
-            logger.warning("Reactance near zero for line (%s,%s); using minimum value for susceptance.", i, j)
+            logger.warning("_get_B_val: Reactance near zero for line (%s,%s); using minimum value for susceptance.", i, j)
             xij = eps
         return 1.0 / xij
-    
-    # Create derived susceptance parameter
-    model.lineSusceptance = Param(A, initialize=_b_init, within=Reals, mutable=True)
-    B = model.lineSusceptance
-    logger.info("Derived susceptance B=1/X from reactance '%s' for angle-based DC-OPF.", reactance_param_name)
     
 
     # --- Existing / Candidate sets ---
@@ -423,15 +504,18 @@ def _add_angle_constraints(
     # --- Big-M per candidate arc: M_flow[i,j] ≈ |B[i,j]| * (2*AngleMax) ---
     # This relaxes Ohm's law when line not built.
     if not hasattr(model, "BigMFlow"):
-        model.BigMFlow = Param(CAND, default=0.0, mutable=True)
+        # Use a Param initializer instead of iterating CAND at construction
+        # time. This is AbstractModel-safe because Pyomo will call the
+        # initializer once per index when the instance is built.
+        def _bigm_init(m, i, j):
+            # compute susceptance safely without relying on a constructed Param
+            try:
+                Bij = _get_B_val(m, i, j)
+            except Exception:
+                Bij = 0.0
+            return abs(Bij) * 2.0 * value(m.AngleMax)
 
-    def _init_bigm(m):
-        # You may refine with a safety factor, e.g., 1.1
-        for (i,j) in CAND:
-            Bij = value(B[i,j]) if (i,j) in B else 0.0
-            m.BigMFlow[(i,j)] = abs(Bij) * 2.0 * value(m.AngleMax)  # simple, stable choice
-
-    model._InitBigMFlow = Constraint(rule=lambda m: (_init_bigm(m) or Constraint.Skip))
+        model.BigMFlow = Param(CAND, initialize=_bigm_init, default=0.0, mutable=True)
 
     # -----------------------
     # Ohm's law constraints
@@ -439,7 +523,7 @@ def _add_angle_constraints(
 
     # 1) Existing lines: equality always active
     def ohm_exist(m, i, j, h, w, p):
-        return m.FlowDC[i,j,h,w,p] == B[i,j] * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p])
+        return m.FlowDC[i,j,h,w,p] == _get_B_val(m, i, j) * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p])
     model.OhmLawDC_Exist = Constraint(EXIST, H, W, P, rule=ohm_exist)
 
     # 2) Candidate lines: big-M activation using binary build var
@@ -451,9 +535,9 @@ def _add_angle_constraints(
     
     # Upper & lower linearized envelopes:
     def ohm_cand_ub(m, i, j, h, w, p):
-        return m.FlowDC[i,j,h,w,p] <= B[i,j] * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]) + m.BigMFlow[i,j] * (1 - m.transmissionBuild[i,j,p])
+        return m.FlowDC[i,j,h,w,p] <= _get_B_val(m, i, j) * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]) + m.BigMFlow[i,j] * (1 - m.transmissionBuild[i,j,p])
     def ohm_cand_lb(m, i, j, h, w, p):
-        return m.FlowDC[i,j,h,w,p] >= B[i,j] * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]) - m.BigMFlow[i,j] * (1 - m.transmissionBuild[i,j,p])
+        return m.FlowDC[i,j,h,w,p] >= _get_B_val(m, i, j) * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]) - m.BigMFlow[i,j] * (1 - m.transmissionBuild[i,j,p])
     model.OhmLawDC_Cand_UB = Constraint(CAND, H, W, P, rule=ohm_cand_ub)
     model.OhmLawDC_Cand_LB = Constraint(CAND, H, W, P, rule=ohm_cand_lb)
 
@@ -522,6 +606,8 @@ def load_line_parameters(model, tab_file_path, data, lopf_kwargs, logger):
     if reactance_tab.exists() and not rx_from_b:
         data.load(filename=str(reactance_tab), param=model.lineReactance, format="table")
         logger.info("Loaded Transmission_lineReactance.tab for DC-OPF.")
+        logger.debug("lineReactance dimen: %s", model.lineReactance.index_set().dimen)
+        #logger.debug("lineReactance keys: %s", list(model.lineReactance.keys())[:10])
     elif susceptance_tab.exists():
         data.load(filename=str(susceptance_tab), param=model.lineSusceptance, format="table")
         logger.info("Loaded Transmission_lineSusceptance.tab for DC-OPF (will invert to reactance if configured).")

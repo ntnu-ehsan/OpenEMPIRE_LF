@@ -131,8 +131,10 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
     # If present, this sheet should have columns: FromNode, ToNode, LineBlockCap
     read_file(TransmissionExcelData, 'LineBlockCapacity', [0, 1, 2], tab_file_path, "Transmission", skipheaders=2)
     if config.lopf_flag:
-        read_file(TransmissionExcelData, 'lineReactance', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
-        
+        # check the value of reactance_param_name in config. If it's lineSusceptance, read that sheet, else read lineReactance
+        param_name = config.lopf_kwargs.get("reactance_param_name", "lineReactance")
+        logger.debug("LOPF is enabled, reading %s from Transmission.xlsx", param_name)
+        read_file(TransmissionExcelData, param_name, [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
 
     #Reading Node
     logger.info("Reading Node.xlsx")

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import openpyxl
@@ -56,6 +57,7 @@ class BaseClient:
         if not self.empire_config.lopf_flag and name == "Transmission":
             if "lineReactance" in expected_sheets:
                 expected_sheets.remove("lineReactance")
+                logging.debug(f"LOPF disabled: Ignoring 'lineReactance' sheet check in {self.file}")
 
         # --- Validation ---
         missing = expected_sheets - found_sheets

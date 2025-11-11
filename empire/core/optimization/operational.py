@@ -43,8 +43,8 @@ def define_operational_parameters(
     model.lengthPeakSeason = Param(initialize=operational_input_params.lengthPeakSeason, mutable=False)
 
     model.lineEfficiency = Param(model.DirectionalLink, default=0.97, mutable=True)
-    model.lineReactance   = Param(model.BidirectionalArc, default=0.0, mutable=True)
-    model.lineSusceptance = Param(model.BidirectionalArc, default=0.0, mutable=True)
+    model.lineReactance   = Param(model.DirectionalLink, default=0.0, mutable=True)
+    model.lineSusceptance = Param(model.DirectionalLink, default=0.0, mutable=True)
     model.storageChargeEff = Param(model.Storage, default=1.0, mutable=True)
     model.storageDischargeEff = Param(model.Storage, default=1.0, mutable=True)
     model.storageBleedEff = Param(model.Storage, default=1.0, mutable=True)

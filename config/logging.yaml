@@ -11,7 +11,7 @@ handlers:
     stream: ext://sys.stdout
   file_handler:
     class: logging.FileHandler
-    level: INFO
+    level: DEBUG
     formatter: simple
     filename: logs.txt 
 loggers:
@@ -20,5 +20,5 @@ loggers:
     handlers: [console, file_handler]
     propagate: no
 root:
-  level: INFO
+  level: DEBUG
   handlers: [console]
