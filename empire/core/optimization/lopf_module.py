@@ -387,6 +387,9 @@ def _add_angle_constraints(
     Susceptance B = 1/X is derived internally for Ohm's law constraints.
     """
     # log what kwargs were passed
+    logger.info("=" * 70)
+    logger.info("SETTING UP ANGLE-BASED DC-OPF")
+    logger.info("=" * 70)
     logger.debug("Angle-based LOPF called with kwargs: %s", kwargs)
     
     # Required sets
@@ -416,14 +419,34 @@ def _add_angle_constraints(
     # Derive a directional reactance Param regardless of the original index set.
     # IMPORTANT: Reference the instance component via 'm', not the abstract one via 'model'.
     # This guarantees we can look up X[i,j] for every directed arc during instance construction.
+    # اینجا راکتاس را از مدل میخواند و اگر موجود نبود یک مقدار بزرگ برایش در نظر می گیرد
     def _react_dir_init(m, i, j):
         RX = getattr(m, reactance_param_name)
+        # Extra diagnostics: check set membership to help trace orientation/index issues
+        if logger.isEnabledFor(logging.DEBUG):
+            try:
+                A_dbg = getattr(m, 'DirectionalLink', None)
+                C_dbg = getattr(m, 'CandidateTransmission', None)
+                in_A_ij = (i, j) in A_dbg if A_dbg is not None else None
+                in_A_ji = (j, i) in A_dbg if A_dbg is not None else None
+                in_C_ij = (i, j) in C_dbg if C_dbg is not None else None
+                in_C_ji = (j, i) in C_dbg if C_dbg is not None else None
+                logger.debug(
+                    "RX init: arc (%s,%s): in DirectionalLink=%s (rev=%s); in Candidate=%s (rev=%s)",
+                    i, j, in_A_ij, in_A_ji, in_C_ij, in_C_ji
+                )
+            except Exception:
+                pass
         # helper to fetch numeric value safely
         def _get(ii, jj):
             try:
                 return float(value(RX[ii, jj]))
-            except Exception:
-                logger.debug("_react_dir_init: Reactance lookup failed for (%s,%s).", ii, jj)
+            except Exception as e:
+                if logger.isEnabledFor(logging.DEBUG):
+                    try:
+                        logger.debug("_react_dir_init: Reactance lookup failed for (%s,%s) with %s.", ii, jj, type(e).__name__)
+                    except Exception:
+                        pass
                 return None
         x = _get(i, j)
         if x is None:
@@ -431,7 +454,7 @@ def _add_angle_constraints(
         if x is None:
             logger.warning("Missing reactance data for arc (%s,%s); using reciprocal of eps.", i, j)
             try:
-                logger.debug("%s keys: %s", reactance_param_name, list(RX.keys())[:10])
+                logger.debug("%s sample keys: %s", reactance_param_name, list(RX.keys())[:10])
             except Exception:
                 pass
             return 1.0 / eps
@@ -450,17 +473,48 @@ def _add_angle_constraints(
         undirected input). If both fail, it falls back to a large reactance
         (small susceptance) and logs a warning.
         """
-        logger.debug("Getting susceptance for arc (%s,%s).", i, j)
+        # logger.debug("Getting susceptance for arc (%s,%s).", i, j)
+        # Use the synthesized instance Param instead of the abstract reference
+        X_inst = m._reactance_dir
+        # Extra diagnostics: membership and availability
+        if logger.isEnabledFor(logging.DEBUG):
+            try:
+                A_dbg = getattr(m, 'DirectionalLink', None)
+                C_dbg = getattr(m, 'CandidateTransmission', None)
+                in_A_ij = (i, j) in A_dbg if A_dbg is not None else None
+                in_A_ji = (j, i) in A_dbg if A_dbg is not None else None
+                in_C_ij = (i, j) in C_dbg if C_dbg is not None else None
+                in_C_ji = (j, i) in C_dbg if C_dbg is not None else None
+                try:
+                    has_X_ij = (i, j) in X_inst
+                except Exception:
+                    has_X_ij = None
+                try:
+                    has_X_ji = (j, i) in X_inst
+                except Exception:
+                    has_X_ji = None
+                logger.debug(
+                    # "Arc (%s,%s): in DirectionalLink=%s (rev=%s); in Candidate=%s (rev=%s); X has ij=%s, ji=%s",
+                    i, j, in_A_ij, in_A_ji, in_C_ij, in_C_ji, has_X_ij, has_X_ji
+                )
+            except Exception:
+                pass
         try:
-            xij = float(X[i, j])
-        except Exception:
+            xij = float(X_inst[i, j])
+        except Exception as e_ij:
             logger.debug("_get_B_val: Directional reactance lookup failed for (%s,%s); trying reversed ordering.", i, j)
             try:
-                xij = float(X[j, i])
-            except Exception:
+                xij = float(X_inst[j, i])
+            except Exception as e_ji:
                 logger.warning("Missing reactance for directed arc (%s,%s); using reciprocal of eps.", i, j)
+                if logger.isEnabledFor(logging.DEBUG):
+                    try:
+                        logger.debug("Lookup errors: ij=%s, ji=%s", type(e_ij).__name__, type(e_ji).__name__)
+                    except Exception:
+                        pass
                 xij = 1.0 / eps
         if abs(xij) < eps:
+            logger.debug("_get_B_val: Reactance near zero for line (%s,%s); using minimum value for susceptance.", i, j)
             logger.warning("_get_B_val: Reactance near zero for line (%s,%s); using minimum value for susceptance.", i, j)
             xij = eps
         return 1.0 / xij
@@ -502,20 +556,27 @@ def _add_angle_constraints(
     model.CapacityDir = Expression(A, P, rule=lambda m,i,j,p: capacity_expr(m,i,j,p))
 
     # --- Big-M per candidate arc: M_flow[i,j] ≈ |B[i,j]| * (2*AngleMax) ---
-    # This relaxes Ohm's law when line not built.
-    if not hasattr(model, "BigMFlow"):
-        # Use a Param initializer instead of iterating CAND at construction
-        # time. This is AbstractModel-safe because Pyomo will call the
-        # initializer once per index when the instance is built.
-        def _bigm_init(m, i, j):
-            # compute susceptance safely without relying on a constructed Param
+    # Previous implementation used a Param initializer calling _get_B_val early,
+    # which triggered lookups before X was fully initialized, producing spurious
+    # "Missing reactance" warnings. Replace with an Expression that evaluates
+    # after all Params are built.
+    eps_local = eps
+    if hasattr(model, "BigMFlow"):
+        logger.debug("BigMFlow already defined; skipping re-definition.")
+    else:
+        def _bigm_expr(m, i, j):
+            # Use the synthesized directional reactance Param directly.
             try:
-                Bij = _get_B_val(m, i, j)
+                xval = float(m._reactance_dir[i, j])
             except Exception:
-                Bij = 0.0
+                # Fallback: rely on _get_B_val (will log once if truly missing)
+                Bij = _get_B_val(m, i, j)
+                return abs(Bij) * 2.0 * value(m.AngleMax)
+            if xval < eps_local:  # guard near-zero reactance
+                xval = eps_local
+            Bij = 1.0 / xval
             return abs(Bij) * 2.0 * value(m.AngleMax)
-
-        model.BigMFlow = Param(CAND, initialize=_bigm_init, default=0.0, mutable=True)
+        model.BigMFlow = Expression(CAND, rule=_bigm_expr)
 
     # -----------------------
     # Ohm's law constraints
@@ -581,9 +642,40 @@ def _add_angle_constraints(
         for nm in existing_flow_candidates:
             if hasattr(model, nm):
                 FlowDir = getattr(model, nm)
+                logger.info(f"Coupling DC-OPF flows to existing variable '{nm}'")
                 break
         if FlowDir is not None:
             model.DC_Bind = Constraint(A, H, W, P, rule=lambda m,i,j,h,w,p: FlowDir[i,j,h,w,p] == m.FlowDC[i,j,h,w,p])
+            logger.info("DC-OPF flow binding constraint (DC_Bind) added successfully")
+        else:
+            logger.warning(f"Could not find existing flow variable to bind. Tried: {existing_flow_candidates}")
+    
+    # Log completion summary
+    logger.info("=" * 70)
+    logger.info("ANGLE-BASED DC-OPF SETUP COMPLETE")
+    logger.info("=" * 70)
+    logger.info("  Bus angle variables (Theta) created for all nodes")
+    logger.info("  DC flow variables (FlowDC) created for all directional arcs")
+    logger.info("  Constraints added:")
+    logger.info("    - Ohm's law for existing lines (OhmLawDC_Exist)")
+    logger.info("    - Big-M Ohm's law for candidate lines (OhmLawDC_Cand_UB/LB)")
+    logger.info("    - Thermal capacity limits (FlowCapUp/Lo)")
+    if fix_angle_reference:
+        logger.info(f"    - Angle reference constraint (AngleRef) for slack node")
+    logger.info(f"  Angle bounds: defined by AngleMax parameter (default ±0.6 rad or ±34°)")
+    logger.info(f"  Flow coupling: {'Active' if couple_to_existing_flows else 'Inactive'}")
+    logger.info("=" * 70)
+    
+    return model
+
+
+def _add_ptdf_constraints(model, **kwargs):
+    """Placeholder for a PTDF-based DC-OPF formulation.
+
+    This is not yet implemented. The router can call this stub,
+    so keep a clear exception until the implementation is provided.
+    """
+    raise NotImplementedError("PTDF formulation is not implemented yet.")
 
 
 def load_line_parameters(model, tab_file_path, data, lopf_kwargs, logger):

@@ -6,6 +6,9 @@ import time
 from pyomo.environ import value, Suffix
 from pyomo.opt import TerminationCondition
 
+# Import LOPF results module
+from .lopf_results import write_angle_based_results, log_lopf_diagnostics
+
 
 def get_dual_value(instance, constraint_ref, default=0.0):
     """
@@ -102,6 +105,13 @@ def write_results(
     with open(result_file_path / 'results_objective.csv', 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(["Objective function value:" + str(value(instance.Obj))])
+    
+    # Write Load Flow / DC-OPF results if angle-based formulation was used
+    try:
+        write_angle_based_results(instance, result_file_path, logger)
+        log_lopf_diagnostics(instance, logger)
+    except Exception as e:
+        logger.warning(f"Could not write LOPF results: {e}")
 
     with open(result_file_path / 'results_output_gen.csv', 'w', newline='') as f:
         writer = csv.writer(f)
