@@ -152,6 +152,9 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
     # Optional: global fallback block size (scalar). If present, provide a sheet
     # named 'LineBlockCapacityGlobal' with the value in the first column.
     read_file(GeneralExcelData, 'LineBlockCapacityGlobal', [0], tab_file_path, "General", skipheaders=2)
+    # Optional: nominal voltage for DC-OPF actual unit conversion
+    # If present, provide a sheet named 'NominalVoltage' with a single scalar value in kV
+    read_file(GeneralExcelData, 'NominalVoltage', [0], tab_file_path, "General", skipheaders=2)
     
     #Reading Storage
     logger.info("Reading Storage.xlsx")

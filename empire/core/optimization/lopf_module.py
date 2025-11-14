@@ -373,11 +373,11 @@ def _add_angle_constraints(
     *,
     reactance_param_name: str = "lineReactance",  # Required: reactance X on DirectionalLink
     # Angle-specific args
-    capacity_expr: Optional[Callable] = None,
-    couple_to_existing_flows: bool = True,
-    existing_flow_candidates = ("transmissionOperational", "TransFlow", "lineFlow", "flow"),
-    fix_angle_reference: bool = True,
-    slack_node_set_name: str = "SlackNode",
+    capacity_expr: Optional[Callable] = None,   # If None, infer from model components
+    couple_to_existing_flows: bool = True,  # If True (recommended), couple FlowDC to the existing flow variables
+    existing_flow_candidates = ("transmissionOperational", "TransFlow", "lineFlow", "flow"),    # Existing flow variable candidates. In Existing version of EMPIRE it is "transmissionOperational".
+    fix_angle_reference: bool = True,   # If True, fix angle at slack node(s) to zero
+    slack_node_set_name: str = "SlackNode", # Name of SlackNode Set(model.Node)
     **kwargs  # Accept any other kwargs without error (e.g., susceptance_param_name, reactance_from_susceptance)
 ):
     """
@@ -419,7 +419,6 @@ def _add_angle_constraints(
     # Derive a directional reactance Param regardless of the original index set.
     # IMPORTANT: Reference the instance component via 'm', not the abstract one via 'model'.
     # This guarantees we can look up X[i,j] for every directed arc during instance construction.
-    # اینجا راکتاس را از مدل میخواند و اگر موجود نبود یک مقدار بزرگ برایش در نظر می گیرد
     def _react_dir_init(m, i, j):
         RX = getattr(m, reactance_param_name)
         # Extra diagnostics: check set membership to help trace orientation/index issues
@@ -473,7 +472,6 @@ def _add_angle_constraints(
         undirected input). If both fail, it falls back to a large reactance
         (small susceptance) and logs a warning.
         """
-        # logger.debug("Getting susceptance for arc (%s,%s).", i, j)
         # Use the synthesized instance Param instead of the abstract reference
         X_inst = m._reactance_dir
         # Extra diagnostics: membership and availability
@@ -494,7 +492,7 @@ def _add_angle_constraints(
                 except Exception:
                     has_X_ji = None
                 logger.debug(
-                    # "Arc (%s,%s): in DirectionalLink=%s (rev=%s); in Candidate=%s (rev=%s); X has ij=%s, ji=%s",
+                    "Arc (%s,%s): in DirectionalLink=%s (rev=%s); in Candidate=%s (rev=%s); X has ij=%s, ji=%s",
                     i, j, in_A_ij, in_A_ji, in_C_ij, in_C_ji, has_X_ij, has_X_ji
                 )
             except Exception:
@@ -538,6 +536,22 @@ def _add_angle_constraints(
     if not hasattr(model, "AngleMax"):
         model.AngleMax = Param(default=0.6, mutable=True)  # ~34 degrees
 
+    # --- Voltage magnitude squared (V²) for converting per-unit to actual values ---
+    # This parameter converts the per-unit DC power flow equation to actual MW.
+    # In per-unit: P = B * (θ_i - θ_j)
+    # In actual units: P_MW = (V²/X) * (θ_i - θ_j) = B * V² * (θ_i - θ_j)
+    # where V is the system nominal voltage magnitude in kV
+    # V² is computed from NominalVoltage loaded from General.xlsx
+    # Expected to be loaded from General.xlsx (NominalVoltage sheet in kV)
+    if not hasattr(model, "NominalVoltage"):
+        model.NominalVoltage = Param(default=400.0, mutable=True)  # Default: 400 kV (typical EHV transmission)
+    
+    # Compute VoltageSquared from NominalVoltage (V² = V_kV²)
+    if not hasattr(model, "VoltageSquared"):
+        def _voltage_squared_init(m):
+            return value(m.NominalVoltage) ** 2
+        model.VoltageSquared = Param(initialize=_voltage_squared_init, mutable=True)
+
     # Bus angles with bounds ±AngleMax
     def _theta_bounds(m, *idx):
         amax = value(m.AngleMax)
@@ -555,11 +569,12 @@ def _add_angle_constraints(
 
     model.CapacityDir = Expression(A, P, rule=lambda m,i,j,p: capacity_expr(m,i,j,p))
 
-    # --- Big-M per candidate arc: M_flow[i,j] ≈ |B[i,j]| * (2*AngleMax) ---
+    # --- Big-M per candidate arc: M_flow[i,j] ≈ |B[i,j]| * V² * (2*AngleMax) ---
     # Previous implementation used a Param initializer calling _get_B_val early,
     # which triggered lookups before X was fully initialized, producing spurious
     # "Missing reactance" warnings. Replace with an Expression that evaluates
     # after all Params are built.
+    # Updated to include V² scaling for actual units.
     eps_local = eps
     if hasattr(model, "BigMFlow"):
         logger.debug("BigMFlow already defined; skipping re-definition.")
@@ -571,20 +586,23 @@ def _add_angle_constraints(
             except Exception:
                 # Fallback: rely on _get_B_val (will log once if truly missing)
                 Bij = _get_B_val(m, i, j)
-                return abs(Bij) * 2.0 * value(m.AngleMax)
+                return abs(Bij) * value(m.VoltageSquared) * 2.0 * value(m.AngleMax)
             if xval < eps_local:  # guard near-zero reactance
                 xval = eps_local
             Bij = 1.0 / xval
-            return abs(Bij) * 2.0 * value(m.AngleMax)
+            return abs(Bij) * value(m.VoltageSquared) * 2.0 * value(m.AngleMax)
         model.BigMFlow = Expression(CAND, rule=_bigm_expr)
 
     # -----------------------
     # Ohm's law constraints
     # -----------------------
+    # DC power flow equation in actual units:
+    # P_MW = (V²/X) * (θ_i - θ_j) = B * V² * (θ_i - θ_j)
+    # where V² is the voltage magnitude squared in kV²
 
     # 1) Existing lines: equality always active
     def ohm_exist(m, i, j, h, w, p):
-        return m.FlowDC[i,j,h,w,p] == _get_B_val(m, i, j) * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p])
+        return m.FlowDC[i,j,h,w,p] == _get_B_val(m, i, j) * m.VoltageSquared * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p])
     model.OhmLawDC_Exist = Constraint(EXIST, H, W, P, rule=ohm_exist)
 
     # 2) Candidate lines: big-M activation using binary build var
@@ -596,9 +614,9 @@ def _add_angle_constraints(
     
     # Upper & lower linearized envelopes:
     def ohm_cand_ub(m, i, j, h, w, p):
-        return m.FlowDC[i,j,h,w,p] <= _get_B_val(m, i, j) * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]) + m.BigMFlow[i,j] * (1 - m.transmissionBuild[i,j,p])
+        return m.FlowDC[i,j,h,w,p] <= _get_B_val(m, i, j) * m.VoltageSquared * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]) + m.BigMFlow[i,j] * (1 - m.transmissionBuild[i,j,p])
     def ohm_cand_lb(m, i, j, h, w, p):
-        return m.FlowDC[i,j,h,w,p] >= _get_B_val(m, i, j) * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]) - m.BigMFlow[i,j] * (1 - m.transmissionBuild[i,j,p])
+        return m.FlowDC[i,j,h,w,p] >= _get_B_val(m, i, j) * m.VoltageSquared * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]) - m.BigMFlow[i,j] * (1 - m.transmissionBuild[i,j,p])
     model.OhmLawDC_Cand_UB = Constraint(CAND, H, W, P, rule=ohm_cand_ub)
     model.OhmLawDC_Cand_LB = Constraint(CAND, H, W, P, rule=ohm_cand_lb)
 
@@ -707,3 +725,12 @@ def load_line_parameters(model, tab_file_path, data, lopf_kwargs, logger):
         logger.warning("No electrical line parameter (.tab) found for DC-OPF (reactance/susceptance). "
                     "If using Kirchhoff, set lopf_kwargs.reactance_from_susceptance=True and provide susceptance, "
                     "or provide Transmission_lineReactance.tab.")
+    
+    # Load nominal voltage for converting per-unit to actual values
+    # The voltage is loaded in kV and squared internally to get V² in kV²
+    nominal_voltage_tab = tab_file_path / 'General_NominalVoltage.tab'
+    if nominal_voltage_tab.exists():
+        data.load(filename=str(nominal_voltage_tab), param=model.NominalVoltage, format="table")
+        logger.info("Loaded General_NominalVoltage.tab for DC-OPF actual unit conversion.")
+    else:
+        logger.info("General_NominalVoltage.tab not found; using default value (400 kV, V²=160,000 kV²).")
