@@ -12,8 +12,6 @@ class BaseClient:
     DEFAULT_SKIPROWS = None
     DEFAULT_USECOLS = None
     DEFAULT_STARTROW = None
-    
-    empire_config = get_empire_config()
 
     def _read_from_sheet(self, file_path: Path, sheet_name: str, **kwargs) -> pd.DataFrame:
         """
@@ -53,8 +51,17 @@ class BaseClient:
         found_sheets = set(wb.sheetnames)
 
         # --- Conditional LOPF sheet check ---
+        # Get current config dynamically (not cached at class level)
+        try:
+            empire_config = get_empire_config()
+        except:
+            # If config cannot be loaded, assume lopf_flag is False
+            empire_config = None
+        
         # If LOPF is disabled, ignore missing Reactance sheet in Transmission.xlsx
-        if not self.empire_config.lopf_flag and name == "Transmission":
+        lopf_enabled = empire_config.lopf_flag if empire_config else False
+        
+        if not lopf_enabled and name == "Transmission":
             if "lineReactance" in expected_sheets:
                 expected_sheets.remove("lineReactance")
                 logging.debug(f"LOPF disabled: Ignoring 'lineReactance' sheet check in {self.file}")
@@ -70,7 +77,7 @@ class BaseClient:
             )
 
         if extra:
-            print(f"Warning: Extra sheets found in {self.file}: {extra}, lopf_flag={self.empire_config.lopf_flag}")
+            print(f"Warning: Extra sheets found in {self.file}: {extra}, lopf_flag={lopf_enabled}")
 
 
 class SetsClient(BaseClient):

@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 from pathlib import Path
 
-from empire.core.config import EmpireConfiguration, read_config_file
+from empire.core.config import EmpireConfiguration, read_config_file, set_active_empire_config
 from empire.core.model_runner import run_empire_model, setup_run_paths
 from empire.input_client.client import EmpireInputClient
 from empire.logger import get_empire_logger
@@ -27,6 +27,9 @@ else:
     config = read_config_file(Path(args.config_file))
 
 empire_config = EmpireConfiguration.from_dict(config=config)
+
+# Set this as the active global config so all modules can access it
+set_active_empire_config(empire_config)
 
 run_path = Path.cwd() / f"Results/basic_run/dataset_{args.dataset}"
 

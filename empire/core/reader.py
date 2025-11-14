@@ -8,6 +8,60 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+
+def read_bidirectional_to_directional(excelfile: pd.ExcelFile, sheet: str, columns: list,
+                                      tab_file_path: Path, filename: str, skipheaders: int = 0) -> None:
+    """
+    Reads bidirectional data from an Excel file (one row per line pair) and 
+    expands it to directional format (two rows per line pair, one for each direction).
+    This is useful for parameters like lineReactance where the input is bidirectional
+    but the model needs directional parameters.
+    
+    :param excelfile: The Excel file object.
+    :param sheet: The name of the sheet to read from.
+    :param columns: List of columns to be read (should be [0, 1, 2] for FromNode, ToNode, Value).
+    :param tab_file_path: Path to save the .tab file.
+    :param filename: Base name for the .tab file.
+    :param skipheaders: Number of header rows to skip. Defaults to 0.
+    """
+    logger.info("Reading %s sheet (bidirectional) from %s.xlsx", sheet, filename)
+    
+    input_sheet = excelfile[sheet]
+    data_table = input_sheet.iloc[skipheaders:, columns]
+    data_table.columns = pd.Series(data_table.columns).str.replace(' ', '_')
+    data_nonempty = data_table.dropna()
+    
+    if data_nonempty.empty:
+        logger.warning(f"Sheet '{sheet}' is empty after removing NA values")
+        save_csv_frame = pd.DataFrame(data_nonempty)
+    else:
+        # Expected columns: FromNode (col 0), ToNode (col 1), Value (col 2)
+        col_names = list(data_nonempty.columns)
+        if len(col_names) != 3:
+            logger.warning(f"Sheet '{sheet}' expected 3 columns but got {len(col_names)}. Using as-is without bidirectional expansion.")
+            save_csv_frame = pd.DataFrame(data_nonempty)
+        else:
+            from_col, to_col, value_col = col_names
+            
+            # Create the reverse direction rows
+            reversed_data = data_nonempty.copy()
+            reversed_data[from_col] = data_nonempty[to_col]
+            reversed_data[to_col] = data_nonempty[from_col]
+            # Value column stays the same (reactance is symmetric)
+            
+            # Concatenate original and reversed
+            save_csv_frame = pd.concat([data_nonempty, reversed_data], ignore_index=True)
+            
+            logger.info(f"Expanded {len(data_nonempty)} bidirectional rows to {len(save_csv_frame)} directional rows for sheet '{sheet}'")
+    
+    # Clean whitespace in string columns
+    obj_cols = save_csv_frame.select_dtypes(include=["object"]).columns
+    if len(obj_cols) > 0:
+        save_csv_frame[obj_cols] = save_csv_frame[obj_cols].replace(r"\s", "", regex=True)
+    
+    tab_file_path.mkdir(parents=True, exist_ok=True)
+    save_csv_frame.to_csv(tab_file_path / f"{filename}_{sheet.strip()}.tab", header=True, index=None, sep='\t', mode='w')
+
 def read_file(excelfile: pd.ExcelFile, sheet: str, columns: list, 
               tab_file_path: Path, filename: str, skipheaders: int = 0) -> None:
     """
@@ -157,7 +211,8 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
         # check the value of reactance_param_name in config. If it's lineSusceptance, read that sheet, else read lineReactance
         param_name = config.lopf_kwargs.get("reactance_param_name", "lineReactance")
         logger.debug("LOPF is enabled, reading %s from Transmission.xlsx", param_name)
-        read_file(TransmissionExcelData, param_name, [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
+        # Read as bidirectional and expand to directional (one row becomes two rows)
+        read_bidirectional_to_directional(TransmissionExcelData, param_name, [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
 
     #Reading Node
     logger.info("Reading Node.xlsx")

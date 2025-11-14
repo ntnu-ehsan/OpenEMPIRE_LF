@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 from pathlib import Path
 
-from empire.core.config import EmpireConfiguration, read_config_file
+from empire.core.config import EmpireConfiguration, read_config_file, set_active_empire_config
 from empire.input_client.client import EmpireInputClient
 from empire.input_data_manager import (
     AvailabilityManager,
@@ -52,6 +52,9 @@ version = "europe_v51"
 ## Read config and setup folders ##
 config = read_config_file(Path("config/run.yaml"))
 empire_config = EmpireConfiguration.from_dict(config=config)
+
+# Set this as the active global config so all modules can access it
+set_active_empire_config(empire_config)
 
 run_path = Path.cwd() / "Results/run_analysis/ncc{ncc}_na{na}_w{w}_wog{wog}_p{p}".format(
     ncc=capital_cost,

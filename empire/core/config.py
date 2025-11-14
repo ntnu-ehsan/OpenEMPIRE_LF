@@ -258,20 +258,46 @@ class OperationalInputParams:
     lengthPeakSeason: int
 
 
+# Global variable to store the currently active configuration
+_active_empire_config: EmpireConfiguration | None = None
+
+
+def set_active_empire_config(config: EmpireConfiguration) -> None:
+    """
+    Set the active global Empire configuration.
+    
+    :param config: EmpireConfiguration instance to set as active.
+    """
+    global _active_empire_config
+    _active_empire_config = config
+
+
 def get_empire_config(config_path: Path | str | None = None) -> EmpireConfiguration:
     """
     Safely load and return an EmpireConfiguration from a YAML config file.
+    If a config has been set as active via set_active_empire_config(), that will be
+    returned when config_path is None.
 
-    :param config_path: Path to the config file. Defaults to 'config/run.yaml' if None.
+    :param config_path: Path to the config file. Defaults to active config or 'config/run.yaml' if None.
     :return: EmpireConfiguration instance.
     :raises ValueError: If the file is not found or YAML parsing fails.
     """
+    global _active_empire_config
+    
+    # If no path specified and we have an active config, return it
+    if config_path is None and _active_empire_config is not None:
+        return _active_empire_config
+    
+    # Otherwise load from file
     if config_path is None:
         config_path = Path("config/run.yaml")
     
     try:
         config_dict = read_config_file(Path(config_path))
-        return EmpireConfiguration.from_dict(config_dict)
+        config = EmpireConfiguration.from_dict(config_dict)
+        # Auto-register as active config
+        set_active_empire_config(config)
+        return config
     except FileNotFoundError:
         raise ValueError(f"Configuration file not found at {config_path}")
     except yaml.YAMLError as e:
