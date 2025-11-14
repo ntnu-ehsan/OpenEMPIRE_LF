@@ -45,6 +45,7 @@ def define_operational_parameters(
     model.lineEfficiency = Param(model.DirectionalLink, default=0.97, mutable=True)
     model.lineReactance   = Param(model.DirectionalLink, default=0.0, mutable=True)
     model.lineSusceptance = Param(model.DirectionalLink, default=0.0, mutable=True)
+    model.NominalVoltage = Param(default=400.0, mutable=True)  # Nominal voltage in kV for DC-OPF (default: 400 kV EHV)
     model.storageChargeEff = Param(model.Storage, default=1.0, mutable=True)
     model.storageDischargeEff = Param(model.Storage, default=1.0, mutable=True)
     model.storageBleedEff = Param(model.Storage, default=1.0, mutable=True)

@@ -541,11 +541,7 @@ def _add_angle_constraints(
     # In per-unit: P = B * (θ_i - θ_j)
     # In actual units: P_MW = (V²/X) * (θ_i - θ_j) = B * V² * (θ_i - θ_j)
     # where V is the system nominal voltage magnitude in kV
-    # V² is computed from NominalVoltage loaded from General.xlsx
-    # Expected to be loaded from General.xlsx (NominalVoltage sheet in kV)
-    if not hasattr(model, "NominalVoltage"):
-        model.NominalVoltage = Param(default=400.0, mutable=True)  # Default: 400 kV (typical EHV transmission)
-    
+    # NominalVoltage is defined in operational.py and loaded from General.xlsx (NominalVoltage sheet)
     # Compute VoltageSquared from NominalVoltage (V² = V_kV²)
     if not hasattr(model, "VoltageSquared"):
         def _voltage_squared_init(m):

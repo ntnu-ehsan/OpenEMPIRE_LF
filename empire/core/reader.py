@@ -23,11 +23,34 @@ def read_file(excelfile: pd.ExcelFile, sheet: str, columns: list,
     logger.info("Reading %s sheet from %s.xlsx", sheet, filename)
 
     input_sheet = excelfile[sheet]
-    data_table = input_sheet.iloc[skipheaders:, columns]
-    data_table.columns = pd.Series(data_table.columns).str.replace(' ', '_')
-    data_nonempty = data_table.dropna()
+    
+    # For single-column scalar sheets (like NominalVoltage), read ALL rows
+    # and extract the first numeric value, ignoring header rows entirely.
+    # This is more robust than relying on skipheaders count.
+    if len(columns) == 1 and sheet in ['NominalVoltage', 'LineBlockCapacityGlobal']:
+        # Read the entire column without skipping
+        full_column = input_sheet.iloc[:, columns[0]]
+        # Try to find first numeric value
+        numeric_values = pd.to_numeric(full_column, errors='coerce').dropna()
+        
+        if len(numeric_values) > 0:
+            # Use the first numeric value found
+            first_numeric = numeric_values.iloc[0]
+            col_name = input_sheet.columns[columns[0]].replace(' ', '_')
+            save_csv_frame = pd.DataFrame({col_name: [first_numeric]})
+            logger.debug(f"Sheet '{sheet}': extracted first numeric value = {first_numeric}")
+        else:
+            # No numeric values found - create empty frame with column name
+            col_name = input_sheet.columns[columns[0]].replace(' ', '_')
+            save_csv_frame = pd.DataFrame({col_name: []})
+            logger.warning(f"Sheet '{sheet}': no numeric values found in column")
+    else:
+        # Standard multi-column read with skipheaders
+        data_table = input_sheet.iloc[skipheaders:, columns]
+        data_table.columns = pd.Series(data_table.columns).str.replace(' ', '_')
+        data_nonempty = data_table.dropna()
+        save_csv_frame = pd.DataFrame(data_nonempty)
 
-    save_csv_frame = pd.DataFrame(data_nonempty)
     # Only run whitespace replacement on object (string) columns to avoid
     # pandas downcasting FutureWarning when replace touches numeric columns.
     obj_cols = save_csv_frame.select_dtypes(include=["object"]).columns
@@ -153,8 +176,11 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
     # named 'LineBlockCapacityGlobal' with the value in the first column.
     read_file(GeneralExcelData, 'LineBlockCapacityGlobal', [0], tab_file_path, "General", skipheaders=2)
     # Optional: nominal voltage for DC-OPF actual unit conversion
-    # If present, provide a sheet named 'NominalVoltage' with a single scalar value in kV
-    read_file(GeneralExcelData, 'NominalVoltage', [0], tab_file_path, "General", skipheaders=2)
+    # If present, provide a sheet named 'NominalVoltage' with a scalar value in kV (single column)
+    try:
+        read_file(GeneralExcelData, 'NominalVoltage', [0], tab_file_path, "General", skipheaders=2)
+    except KeyError:
+        logger.info("NominalVoltage sheet not found in General.xlsx - using default value (400 kV)")
     
     #Reading Storage
     logger.info("Reading Storage.xlsx")
