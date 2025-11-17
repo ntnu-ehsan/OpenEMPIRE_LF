@@ -102,7 +102,9 @@ def read_file(excelfile: pd.ExcelFile, sheet: str, columns: list,
         # Standard multi-column read with skipheaders
         data_table = input_sheet.iloc[skipheaders:, columns]
         data_table.columns = pd.Series(data_table.columns).str.replace(' ', '_')
-        data_nonempty = data_table.dropna()
+        # Drop rows where ANY value is missing (not just all values)
+        # This prevents malformed .tab files with inconsistent column counts
+        data_nonempty = data_table.dropna(how='any')
         save_csv_frame = pd.DataFrame(data_nonempty)
 
     # Only run whitespace replacement on object (string) columns to avoid

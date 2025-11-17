@@ -519,15 +519,25 @@ def _add_angle_constraints(
     
 
     # --- Existing / Candidate sets ---
-    # Expect these to be defined/loaded elsewhere. If ExistingTransmission is missing, derive it.
+    # CandidateTransmission: corridors that CAN BE EXPANDED (may have existing capacity)
+    # ExistingTransmission: corridors that are FIXED (cannot be expanded)
+    # 
+    # IMPORTANT: Big-M formulation is used for candidate lines because:
+    #   - Ohm's law should only apply when transmissionBuild = 1
+    #   - Without big-M, zero-capacity candidates over-constrain angle differences
+    #   - With big-M, Ohm's law is "deactivated" when transmissionBuild = 0
+    
     if not hasattr(model, "CandidateTransmission"):
         raise RuntimeError("Model is missing set 'CandidateTransmission'.")
     CAND = model.CandidateTransmission
 
+    # ExistingTransmission = lines that are in DirectionalLink but NOT expandable
+    # (i.e., not in CandidateTransmission in either direction)
     if not hasattr(model, "ExistingTransmission"):
-        # derive Existing = A \ CAND using a rule (works with AbstractModel)
         def _existing_init(m):
-            return [arc for arc in m.DirectionalLink if arc not in m.CandidateTransmission]
+            return [arc for arc in m.DirectionalLink 
+                    if arc not in m.CandidateTransmission 
+                    and (arc[1], arc[0]) not in m.CandidateTransmission]
         model.ExistingTransmission = Set(within=A, initialize=_existing_init)
     EXIST = model.ExistingTransmission
 
@@ -566,10 +576,7 @@ def _add_angle_constraints(
     model.CapacityDir = Expression(A, P, rule=lambda m,i,j,p: capacity_expr(m,i,j,p))
 
     # --- Big-M per candidate arc: M_flow[i,j] ≈ |B[i,j]| * V² * (2*AngleMax) ---
-    # Previous implementation used a Param initializer calling _get_B_val early,
-    # which triggered lookups before X was fully initialized, producing spurious
-    # "Missing reactance" warnings. Replace with an Expression that evaluates
-    # after all Params are built.
+    # Big-M must be large enough to relax Ohm's law when transmissionBuild = 0
     # Updated to include V² scaling for actual units.
     eps_local = eps
     if hasattr(model, "BigMFlow"):
@@ -596,13 +603,14 @@ def _add_angle_constraints(
     # P_MW = (V²/X) * (θ_i - θ_j) = B * V² * (θ_i - θ_j)
     # where V² is the voltage magnitude squared in kV²
 
-    # 1) Existing lines: equality always active
+    # 1) Existing lines: equality always active (these have fixed capacity)
     def ohm_exist(m, i, j, h, w, p):
         return m.FlowDC[i,j,h,w,p] == _get_B_val(m, i, j) * m.VoltageSquared * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p])
     model.OhmLawDC_Exist = Constraint(EXIST, H, W, P, rule=ohm_exist)
 
     # 2) Candidate lines: big-M activation using binary build var
-    #    Requires 'model.transmissionBuild[(i,j), p]' (binary) to be defined.
+    #    When transmissionBuild = 0, Ohm's law is relaxed (deactivated)
+    #    When transmissionBuild = 1, Ohm's law is enforced (activated)
     if not hasattr(model, "transmissionBuild"):
         logger.info("Binary variable 'transmissionBuild' not found; assuming all candidate lines are active.")
         def always_built(m, i, j, p): return 1

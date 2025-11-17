@@ -157,7 +157,8 @@ def prep_investment_parameters(
         for (n1,n2) in model.BidirectionalArc:
             for i in model.PeriodActive:
                 for t in model.TransmissionType:
-                    if (n1,n2,t) in model.TransmissionTypeOfDirectionalLink:
+                    # TransmissionTypeOfDirectionalLink is directional, so check both (n1,n2,t) and (n2,n1,t)
+                    if (n1,n2,t) in model.TransmissionTypeOfDirectionalLink or (n2,n1,t) in model.TransmissionTypeOfDirectionalLink:
                         costperyear=(model.WACC/(1-((1+model.WACC)**(-model.transmissionLifetime[n1,n2]))))*model.transmissionLength[n1,n2]*model.transmissionTypeCapitalCost[t,i]+model.transmissionLength[n1,n2]*model.transmissionTypeFixedOMCost[t,i] 
                         costperperiod=costperyear*(1-(1+model.discountrate)**-(min(value((len(model.PeriodActive)-i+1)*model.LeapYearsInvestment), value(model.transmissionLifetime[n1,n2]))))/(1-(1/(1+model.discountrate)))
                         model.transmissionInvCost[n1,n2,i]=costperperiod
