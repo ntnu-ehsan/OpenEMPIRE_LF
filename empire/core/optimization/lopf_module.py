@@ -403,6 +403,18 @@ def _add_angle_constraints(
     W = model.Scenario; 
     P = model.PeriodActive; 
 
+    # CandidateDirectional set (derived from CandidateTransmission)     
+    if not hasattr(model, "CandidateDirectional"):
+        def _cand_dir_init(m):
+            arcs = []
+            for (i, j) in m.DirectionalLink:
+                if (i, j) in m.CandidateTransmission or (j, i) in m.CandidateTransmission:
+                    arcs.append((i, j))
+            return arcs
+        model.CandidateDirectional = Set(within=A, initialize=_cand_dir_init)
+
+    CAND_DIR = model.CandidateDirectional
+
     # --- Reactance input & Susceptance derivation (accept BidirectionalArc or DirectionalLink) ---
     if not hasattr(model, reactance_param_name):
         raise RuntimeError(
@@ -439,7 +451,11 @@ def _add_angle_constraints(
         # helper to fetch numeric value safely
         def _get(ii, jj):
             try:
-                return float(value(RX[ii, jj]))
+                val = float(value(RX[ii, jj]))
+                # Reject zero or negative values
+                if val <= 0:
+                    return None
+                return val
             except Exception as e:
                 if logger.isEnabledFor(logging.DEBUG):
                     try:
@@ -530,14 +546,70 @@ def _add_angle_constraints(
     if not hasattr(model, "CandidateTransmission"):
         raise RuntimeError("Model is missing set 'CandidateTransmission'.")
     CAND = model.CandidateTransmission
+    
+    # Reactance for candidate block (new circuit)
+    if hasattr(model, "LineBlockReactance"):
+        def _rx_cand_dir_init(m, i, j):
+
+            # First check if (i,j) or (j,i) is in LineBlockReactance
+            if (i, j) in m.LineBlockReactance:
+                X_ohm = value(m.LineBlockReactance[i, j])
+            elif (j, i) in m.LineBlockReactance:
+                X_ohm = value(m.LineBlockReactance[j, i])
+            elif hasattr(m, "LineBlockReactanceGlobal"):
+                # No special reactance provided → check global candidate reactance
+                X_ohm = value(m.LineBlockReactanceGlobal)
+            else:
+                # No special reactance provided → fallback to existing reactance
+                return value(m._reactance_dir[i, j])
+
+            # # Convert Ω → pu
+            # V_kv = value(m.NominalVoltage)
+            # V_base = V_kv * 1e3         # convert to volts
+            # S_base = 100e6              # assume 100 MVA system base
+            # X_pu = X_ohm * (V_base**2) / S_base
+
+            return X_ohm
+
+        model._reactance_cand_dir = Param(
+            model.DirectionalLink,
+            initialize=_rx_cand_dir_init,
+            mutable=True
+        )
+    else:
+        model._reactance_cand_dir = model._reactance_dir
+        
+    def _get_B_cand(m, i, j):
+        X = value(m._reactance_cand_dir[i, j])
+        return 1.0 / X
 
     # ExistingTransmission = lines that are in DirectionalLink but NOT expandable
     # (i.e., not in CandidateTransmission in either direction)
     if not hasattr(model, "ExistingTransmission"):
         def _existing_init(m):
-            return [arc for arc in m.DirectionalLink 
-                    if arc not in m.CandidateTransmission 
-                    and (arc[1], arc[0]) not in m.CandidateTransmission]
+            arcs = []
+            for (i, j) in m.DirectionalLink:
+
+                #  Find the corresponding node in BidirectionalArc
+                if (i, j) in m.BidirectionalArc:
+                    bi, bj = i, j
+                elif (j, i) in m.BidirectionalArc:
+                    bi, bj = j, i
+                else:
+                     # If for any reason this direction is not in BidirectionalArc, skip it
+                    continue
+
+                # If in any period the initial capacity > 0, consider this direction as an existing line
+                for p in m.PeriodActive:
+                    try:
+                        if value(m.transmissionInitCap[bi, bj, p]) > 0:
+                            arcs.append((i, j))
+                            break  # It is enough that one period is positive
+                    except Exception:
+                        # If no data, do not add anything
+                        pass
+            return arcs
+
         model.ExistingTransmission = Set(within=A, initialize=_existing_init)
     EXIST = model.ExistingTransmission
 
@@ -565,9 +637,26 @@ def _add_angle_constraints(
 
     model.Theta = Var(N, H, W, P, domain=Reals, bounds=_theta_bounds)
     
+    model.Flow_exist = Var(EXIST, H, W, P, domain=Reals)
+    model.Flow_new   = Var(CAND_DIR, H, W, P, domain=Reals)
 
-    # Directed DC flow variable (shared for both existing & candidate corridors)
-    model.FlowDC = Var(A, H, W, P, domain=Reals)
+
+    def total_flow_expr(m, i, j, h, w, p):
+        base = m.Flow_exist[i,j,h,w,p] \
+            if (i,j) in m.ExistingTransmission else 0.0
+
+        new = m.Flow_new[i,j,h,w,p] \
+            if (i,j) in m.CandidateDirectional else 0.0
+
+        return base + new
+
+    model.FlowDC = Expression(
+        model.DirectionalLink,
+        model.Operationalhour,
+        model.Scenario,
+        model.PeriodActive,
+        rule=total_flow_expr
+    )
 
     # If caller didn’t pass a capacity expression, infer it (this should end up using transmissionInstalledCap)
     if capacity_expr is None:
@@ -587,8 +676,8 @@ def _add_angle_constraints(
             try:
                 xval = float(m._reactance_dir[i, j])
             except Exception:
-                # Fallback: rely on _get_B_val (will log once if truly missing)
-                Bij = _get_B_val(m, i, j)
+                # Fallback: rely on _get_B_cand (will log once if truly missing)
+                Bij = _get_B_cand(m, i, j)
                 return abs(Bij) * value(m.VoltageSquared) * 2.0 * value(m.AngleMax)
             if xval < eps_local:  # guard near-zero reactance
                 xval = eps_local
@@ -604,25 +693,52 @@ def _add_angle_constraints(
     # where V² is the voltage magnitude squared in kV²
 
     # 1) Existing lines: equality always active (these have fixed capacity)
-    def ohm_exist(m, i, j, h, w, p):
-        return m.FlowDC[i,j,h,w,p] == _get_B_val(m, i, j) * m.VoltageSquared * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p])
-    model.OhmLawDC_Exist = Constraint(EXIST, H, W, P, rule=ohm_exist)
+    def ohm_exist_rule(m, i, j, h, w, p):
+        B = _get_B_val(m, i, j)   
+        return m.Flow_exist[i,j,h,w,p] == B * m.VoltageSquared * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p])
+    model.Ohm_exist = Constraint(
+        model.ExistingTransmission,
+        model.Operationalhour,
+        model.Scenario,
+        model.PeriodActive,
+        rule=ohm_exist_rule
+    )
 
     # 2) Candidate lines: big-M activation using binary build var
-    #    When transmissionBuild = 0, Ohm's law is relaxed (deactivated)
-    #    When transmissionBuild = 1, Ohm's law is enforced (activated)
-    if not hasattr(model, "transmissionBuild"):
-        logger.info("Binary variable 'transmissionBuild' not found; assuming all candidate lines are active.")
-        def always_built(m, i, j, p): return 1
-        model.transmissionBuild = Param(CAND, P, initialize=always_built)
+    #    When transmissionOn = 0, Ohm's law is relaxed (deactivated)
+    #    When transmissionOn = 1, Ohm's law is enforced (activated)
+    if not hasattr(model, "transmissionOn"):
+        raise RuntimeError("Angle-based LOPF with variable susceptance requires 'transmissionOn[n1,n2,p]' to be defined in the investment model.")
+
     
     # Upper & lower linearized envelopes:
     def ohm_cand_ub(m, i, j, h, w, p):
-        return m.FlowDC[i,j,h,w,p] <= _get_B_val(m, i, j) * m.VoltageSquared * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]) + m.BigMFlow[i,j] * (1 - m.transmissionBuild[i,j,p])
+        B = _get_B_cand(m, i, j)
+        # Find corridor representative in CandidateTransmission:
+        if (i, j) in m.CandidateTransmission:
+            ci, cj = i, j
+        elif (j, i) in m.CandidateTransmission:
+            ci, cj = j, i
+        else:
+            raise ValueError(f"Directional arc ({i},{j}) not found in CandidateTransmission as ({i},{j}) or ({j},{i})")
+        M = m.BigMFlow[ci, cj]     
+        t_diff = m.Theta[i,h,w,p] - m.Theta[j,h,w,p]
+        return m.Flow_new[i,j,h,w,p] <= B * m.VoltageSquared * t_diff + M * (1 - m.transmissionOn[ci, cj, p])
+
     def ohm_cand_lb(m, i, j, h, w, p):
-        return m.FlowDC[i,j,h,w,p] >= _get_B_val(m, i, j) * m.VoltageSquared * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p]) - m.BigMFlow[i,j] * (1 - m.transmissionBuild[i,j,p])
-    model.OhmLawDC_Cand_UB = Constraint(CAND, H, W, P, rule=ohm_cand_ub)
-    model.OhmLawDC_Cand_LB = Constraint(CAND, H, W, P, rule=ohm_cand_lb)
+        B = _get_B_cand(m, i, j)
+        # Find corridor representative in CandidateTransmission:
+        if (i, j) in m.CandidateTransmission:
+            ci, cj = i, j
+        elif (j, i) in m.CandidateTransmission:
+            ci, cj = j, i
+        else:
+            raise ValueError(f"Directional arc ({i},{j}) not found in CandidateTransmission as ({i},{j}) or ({j},{i})")
+        M = m.BigMFlow[ci, cj]
+        t_diff = m.Theta[i,h,w,p] - m.Theta[j,h,w,p]
+        return m.Flow_new[i,j,h,w,p] >= B * m.VoltageSquared * t_diff - M * (1 - m.transmissionOn[ci, cj, p])
+    model.OhmLawDC_Cand_UB = Constraint(CAND_DIR, H, W, P, rule=ohm_cand_ub)
+    model.OhmLawDC_Cand_LB = Constraint(CAND_DIR, H, W, P, rule=ohm_cand_lb)
 
     # -----------------------
     # Thermal limits (all arcs)
@@ -633,7 +749,47 @@ def _add_angle_constraints(
         return -m.CapacityDir[i,j,p] <= m.FlowDC[i,j,h,w,p]
     model.FlowCapUp = Constraint(A, H, W, P, rule=flow_cap_up)
     model.FlowCapLo = Constraint(A, H, W, P, rule=flow_cap_lo)
+    
+    
+    # Capacity limits for candidate lines (new flow component)
+    def cap_new_up_rule(m, i, j, h, w, p):
+        # Find the correct corridor representative in CandidateTransmission:
+        if (i, j) in m.CandidateTransmission:
+            ci, cj = i, j
+        elif (j, i) in m.CandidateTransmission:
+            ci, cj = j, i
+        else:
+            raise ValueError(f"Directional arc ({i},{j}) not found in CandidateTransmission as ({i},{j}) or ({j},{i})")
 
+        # The capacity expression for candidate lines:
+        if hasattr(m, "transmissionLineBlockCap") and (ci, cj) in m.transmissionLineBlockCap:
+            cap = m.transmissionLineBlockCap[ci, cj]
+        else:
+            cap = m.transmissionLineBlockCapGlobal  # If there is a global block capacity
+
+        on = m.transmissionOn[ci, cj, p]
+        return m.Flow_new[i,j,h,w,p] <= cap * on
+
+    def cap_new_lo_rule(m, i, j, h, w, p):
+        # Find the correct corridor representative in CandidateTransmission:
+        if (i, j) in m.CandidateTransmission:
+            ci, cj = i, j
+        elif (j, i) in m.CandidateTransmission:
+            ci, cj = j, i
+        else:
+            raise ValueError(f"Directional arc ({i},{j}) not found in CandidateTransmission as ({i},{j}) or ({j},{i})")
+
+        # The capacity expression for candidate lines:
+        if hasattr(m, "transmissionLineBlockCap") and (ci, cj) in m.transmissionLineBlockCap:
+            cap = m.transmissionLineBlockCap[ci, cj]
+        else:
+            cap = m.transmissionLineBlockCapGlobal  # If there is a global block capacity
+
+        on = m.transmissionOn[ci, cj, p]
+        return -cap * on <= m.Flow_new[i,j,h,w,p]
+
+    model.CapNewUp = Constraint(CAND_DIR, H, W, P, rule=cap_new_up_rule)
+    model.CapNewLo = Constraint(CAND_DIR, H, W, P, rule=cap_new_lo_rule)
     # -----------------------
     # Angle reference (slack)
     # -----------------------
@@ -716,6 +872,15 @@ def load_line_parameters(model, tab_file_path, data, lopf_kwargs, logger):
     # Try to load reactance (preferred for Kirchhoff formulation)
     reactance_tab = tab_file_path / 'Transmission_lineReactance.tab'
     susceptance_tab = tab_file_path / 'Transmission_lineSusceptance.tab'
+    block_reactance_tab = tab_file_path / 'Transmission_LineBlockReactance.tab'
+    block_reactance_tab_global = tab_file_path / 'General_LineBlockReactanceGlobal.tab'
+    
+    if block_reactance_tab.exists():
+        data.load(filename=str(block_reactance_tab), param=model.LineBlockReactance, format="table", range="LineBlockReactance")
+        logger.info("Loaded Transmission_LineBlockReactance.tab for DC-OPF.")
+    elif block_reactance_tab_global.exists():
+        data.load(filename=str(block_reactance_tab_global), param=model.LineBlockReactanceGlobal, format="value", range="LineBlockReactanceGlobal")
+        logger.info("Loaded General_LineBlockReactanceGlobal.tab for DC-OPF.")
 
     if reactance_tab.exists() and not rx_from_b:
         data.load(filename=str(reactance_tab), param=model.lineReactance, format="table")

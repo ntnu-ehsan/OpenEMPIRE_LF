@@ -116,6 +116,7 @@ def define_investment_variables(model: AbstractModel) -> None:
     # But it has not been deleted in case we want to re-enable it in the future.
     #model.transmissionInvCap = Var(model.BidirectionalArc, model.PeriodActive, domain=NonNegativeReals)
     model.transmissionBuild = Var(model.CandidateTransmission, model.PeriodActive, within=Binary)
+    model.transmissionOn = Var(model.CandidateTransmission, model.PeriodActive, within=Binary)
     model.storPWInvCap = Var(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
     model.storENInvCap = Var(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
     model.genInstalledCap = Var(model.GeneratorsOfNode, model.PeriodActive, domain=NonNegativeReals)
@@ -187,6 +188,54 @@ def prep_investment_parameters(
                     model.transmissionMaxInstalledCap[n1,n2,i] = model.transmissionMaxInstalledCapRaw[n1,n2,i]
 
     model.build_InitialCapacityTransmission = BuildAction(rule=prepInitialCapacityTransmission_rule)
+    
+    # --- NEW: link transmissionOn and transmissionBuild ---
+    # Constraint: transmissionOn tracks cumulative builds
+    # First period: On == Build
+    # Later periods: On[i] = On[i-1] + Build[i]
+    
+    def trans_on_first_rule(model, n1, n2, i):
+        # First period: On == Build
+        if i != model.PeriodActive.first():
+            return Constraint.Skip
+        return model.transmissionOn[n1, n2, i] == model.transmissionBuild[n1, n2, i]
+    model.transmission_on_first = Constraint(model.CandidateTransmission, model.PeriodActive, rule=trans_on_first_rule)
+
+    def trans_on_evol_rule(model, n1, n2, i):
+        # Later periods: On[i] = On[i-1] + Build[i]
+        if i == model.PeriodActive.first():
+            return Constraint.Skip
+        prev = model.PeriodActive.prev(i)
+        return model.transmissionOn[n1, n2, i] == model.transmissionOn[n1, n2, prev] + model.transmissionBuild[n1, n2, i]
+    model.transmission_on_evolution = Constraint(model.CandidateTransmission, model.PeriodActive, rule=trans_on_evol_rule)
+
+
+    # def transmission_on_ge_build_rule(m, n1, n2, i):
+    #     return m.transmissionOn[n1, n2, i] >= m.transmissionBuild[n1, n2, i]
+    # model.transmission_on_ge_build = Constraint(
+    #     model.CandidateTransmission,
+    #     model.PeriodActive,
+    #     rule=transmission_on_ge_build_rule
+    # )
+    
+    # def transmission_on_monotonic_rule(m, n1, n2, i):
+    #     if i == m.PeriodActive.first():
+    #         return Constraint.Skip
+    #     prev_i = m.PeriodActive.prev(i)
+    #     return m.transmissionOn[n1, n2, i] >= m.transmissionOn[n1, n2, prev_i]
+    # model.transmission_on_monotonic = Constraint(
+    #     model.CandidateTransmission,
+    #     model.PeriodActive,
+    #     rule=transmission_on_monotonic_rule
+    # )
+    
+    # def transmission_on_le_one_rule(m, n1, n2, i):
+    #     return m.transmissionOn[n1, n2, i] <= 1
+    # model.transmission_on_le_one = Constraint(
+    #     model.CandidateTransmission,
+    #     model.PeriodActive,
+    #     rule=transmission_on_le_one_rule
+    # )
 
 
     def prepGenMaxInstalledCap_rule(model):
@@ -235,23 +284,26 @@ def define_investment_constraints(
 
     # Transmission installed capacity evolution (purely binary for candidates; fixed for non-candidates)
     def lifetime_rule_trans(model, n1, n2, i):
-        # Non-candidate lines: capacity is fixed at initial level in all periods
+        # Non-candidate lines: fixed capacity
         if (n1, n2) not in model.CandidateTransmission:
             return model.transmissionInstalledCap[n1, n2, i] == model.transmissionInitCap[n1, n2, i]
 
-        # Candidate lines: installed cap = init + block * cumulative builds up to i
-            # Prefer per-line block; fall back to global if per-line is zero/missing
+        # Candidate lines: single new line (block) that, once built, is active for all later periods.
         blk = model.transmissionLineBlockCap[n1, n2] \
             if (n1, n2) in model.transmissionLineBlockCap \
             else model.transmissionLineBlockCapGlobal
 
-        return (
-            model.transmissionInstalledCap[n1, n2, i]
-            == model.transmissionInitCap[n1, n2, i]
-            + sum(blk * model.transmissionBuild[n1, n2, j]
-                for j in model.PeriodActive if j <= i)
-        )
+        return model.transmissionInstalledCap[n1, n2, i] == \
+            model.transmissionInitCap[n1, n2, i] + blk * model.transmissionOn[n1, n2, i]
+
     model.installedCapDefinitionTrans = Constraint(model.BidirectionalArc, model.PeriodActive, rule=lifetime_rule_trans)
+    
+    # at most one new line per corridor over the whole horizon ---
+    def single_line_per_corridor_rule(model, n1, n2):
+        if (n1, n2) not in model.CandidateTransmission:
+            return Constraint.Skip
+        return sum(model.transmissionBuild[n1, n2, i] for i in model.PeriodActive) <= 1
+    model.single_line_per_corridor = Constraint(model.BidirectionalArc, rule=single_line_per_corridor_rule)
 
     def lifetime_rule_storEN(model, n, b, i):
         startPeriod=1
@@ -304,8 +356,7 @@ def define_investment_constraints(
 
     ############################################################
 
-    #TODO: I did not changed the following constraint. But still good to check and make sure that it is correct for
-    # the binary variables used for TEP
+
 
     def installed_trans_cap_rule(model, n1, n2, i):
         return model.transmissionInstalledCap[n1,n2,i] - model.transmissionMaxInstalledCap[n1,n2,i] <= 0

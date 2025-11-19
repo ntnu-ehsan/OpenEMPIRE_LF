@@ -81,19 +81,29 @@ def write_angle_based_results(
     # 2. DC Flows with Line Parameters
     # ========================================
     flows_file = result_file_path / 'results_lopf_dc_flows.csv'
+    
+    # Get voltage squared value
+    try:
+        V_squared = value(instance.VoltageSquared)
+    except:
+        V_squared = 160000.0  # Default: 400 kV nominal voltage
+        logger_inst.warning(f"VoltageSquared not found, using default {V_squared} kV²")
+    
     with open(flows_file, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow([
             "FromNode", "ToNode", "Period", "Scenario", "Season", "Hour",
-            "FlowDC_MW", "Capacity_MW", "Loading_pct",
-            "Reactance_pu", "Susceptance_pu",
+            "FlowDC_MW", "Flow_exist_MW", "Flow_new_MW",
+            "Capacity_MW", "Loading_pct",
+            "Reactance_exist_pu", "Reactance_new_pu", "Susceptance_pu",
+            "LineType", "transmissionOn",
             "AngleDiff_rad", "AngleDiff_deg",
             "TheoreticalFlow_MW", "FlowError_MW", "FlowError_pct"
         ])
         
         for (i_node, j_node) in instance.DirectionalLink:
             for i_per in instance.PeriodActive:
-                # Get capacity (try different possible names)
+                # Get capacity
                 try:
                     cap = value(instance.CapacityDir[i_node, j_node, i_per])
                 except:
@@ -102,51 +112,71 @@ def write_angle_based_results(
                     except:
                         cap = 0.0
                 
-                # Get reactance
+                # Determine line type
+                is_existing = (i_node, j_node) in instance.ExistingTransmission if hasattr(instance, 'ExistingTransmission') else False
+                is_candidate = (i_node, j_node) in instance.CandidateDirectional if hasattr(instance, 'CandidateDirectional') else False
+                
+                # Get reactances
                 try:
-                    reactance = value(instance._reactance_dir[i_node, j_node])
+                    reactance_exist = value(instance._reactance_dir[i_node, j_node])
                 except:
-                    reactance = None
+                    reactance_exist = None
+                
+                try:
+                    reactance_new = value(instance._reactance_cand_dir[i_node, j_node])
+                except:
+                    reactance_new = None
+                
+                # Find corridor for transmissionOn lookup
+                corridor = None
+                if is_candidate and hasattr(instance, 'CandidateTransmission'):
+                    if (i_node, j_node) in instance.CandidateTransmission:
+                        corridor = (i_node, j_node)
+                    elif (j_node, i_node) in instance.CandidateTransmission:
+                        corridor = (j_node, i_node)
                     
                 for w in instance.Scenario:
                     for (s, h) in instance.HoursOfSeason:
                         flow = value(instance.FlowDC[i_node, j_node, h, w, i_per])
+                        flow_exist = value(instance.Flow_exist[i_node, j_node, h, w, i_per]) if is_existing else 0.0
+                        flow_new = value(instance.Flow_new[i_node, j_node, h, w, i_per]) if is_candidate else 0.0
+                        
                         theta_i = value(instance.Theta[i_node, h, w, i_per])
                         theta_j = value(instance.Theta[j_node, h, w, i_per])
                         angle_diff = theta_i - theta_j
                         
-                        # Calculate susceptance and theoretical flow
-                        if reactance is not None and abs(reactance) > 1e-9:
-                            susceptance = 1.0 / reactance
-                            theoretical_flow = susceptance * angle_diff
-                            flow_error = abs(flow - theoretical_flow)
-                            flow_error_pct = (flow_error / (abs(theoretical_flow) + 1e-6)) * 100.0
-                        else:
-                            susceptance = None
-                            theoretical_flow = None
-                            flow_error = None
-                            flow_error_pct = None
+                        # Get transmissionOn status
+                        trans_on = value(instance.transmissionOn[corridor[0], corridor[1], i_per]) if corridor and hasattr(instance, 'transmissionOn') else 'N/A'
                         
-                        # Calculate loading percentage
+                        # Calculate theoretical flow with V² scaling
+                        theoretical_flow = 0.0
+                        susceptance_total = 0.0
+                        
+                        if is_existing and reactance_exist and abs(reactance_exist) > 1e-9:
+                            B_exist = 1.0 / reactance_exist
+                            theoretical_flow += B_exist * V_squared * angle_diff
+                            susceptance_total += B_exist
+                        
+                        if is_candidate and reactance_new and abs(reactance_new) > 1e-9 and trans_on == 1:
+                            B_new = 1.0 / reactance_new
+                            theoretical_flow += B_new * V_squared * angle_diff
+                            susceptance_total += B_new
+                        
+                        flow_error = abs(flow - theoretical_flow) if (abs(flow) > 1e-6 or abs(theoretical_flow) > 1e-6) else 0.0
+                        flow_error_pct = (flow_error / (abs(theoretical_flow) + 1e-6)) * 100.0
                         loading_pct = (abs(flow) / cap * 100.0) if cap > 1e-6 else 0.0
                         
+                        line_type = "Hybrid" if (is_existing and is_candidate) else ("Existing" if is_existing else ("Candidate" if is_candidate else "Unknown"))
+                        
                         writer.writerow([
-                            i_node,
-                            j_node,
-                            inv_per[int(i_per-1)],
-                            w,
-                            s,
-                            h,
-                            flow,
-                            cap,
-                            loading_pct,
-                            reactance if reactance is not None else 'N/A',
-                            susceptance if susceptance is not None else 'N/A',
-                            angle_diff,
-                            angle_diff * 180.0 / 3.14159,
-                            theoretical_flow if theoretical_flow is not None else 'N/A',
-                            flow_error if flow_error is not None else 'N/A',
-                            flow_error_pct if flow_error_pct is not None else 'N/A'
+                            i_node, j_node, inv_per[int(i_per-1)], w, s, h,
+                            flow, flow_exist, flow_new, cap, loading_pct,
+                            reactance_exist if reactance_exist else 'N/A',
+                            reactance_new if reactance_new else 'N/A',
+                            susceptance_total if susceptance_total > 0 else 'N/A',
+                            line_type, trans_on,
+                            angle_diff, angle_diff * 180.0 / 3.14159,
+                            theoretical_flow, flow_error, flow_error_pct
                         ])
     
     logger_inst.info(f"  [OK] DC flows and line parameters written to {flows_file.name}")
@@ -234,32 +264,50 @@ def write_angle_based_results(
     # 4. Line Reactance and Susceptance Table
     # ========================================
     params_file = result_file_path / 'results_lopf_line_parameters.csv'
+    try:
+        V_squared = value(instance.VoltageSquared)
+    except:
+        V_squared = 160000.0
+    
     with open(params_file, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow([
             "FromNode", "ToNode",
-            "Reactance_pu", "Susceptance_pu",
-            "IsCandidate", "IsExisting"
+            "Reactance_exist_pu", "Susceptance_exist_pu",
+            "Reactance_new_pu", "Susceptance_new_pu",
+            "VoltageSquared_kV2",
+            "IsCandidate", "IsExisting", "LineType"
         ])
         
         for (i_node, j_node) in instance.DirectionalLink:
             try:
-                reactance = value(instance._reactance_dir[i_node, j_node])
-                susceptance = 1.0 / reactance if abs(reactance) > 1e-9 else None
+                reactance_exist = value(instance._reactance_dir[i_node, j_node])
+                susceptance_exist = 1.0 / reactance_exist if abs(reactance_exist) > 1e-9 else None
             except:
-                reactance = None
-                susceptance = None
+                reactance_exist = None
+                susceptance_exist = None
             
-            is_candidate = (i_node, j_node) in instance.CandidateTransmission if hasattr(instance, 'CandidateTransmission') else False
+            try:
+                reactance_new = value(instance._reactance_cand_dir[i_node, j_node])
+                susceptance_new = 1.0 / reactance_new if abs(reactance_new) > 1e-9 else None
+            except:
+                reactance_new = None
+                susceptance_new = None
+            
+            is_candidate = (i_node, j_node) in instance.CandidateDirectional if hasattr(instance, 'CandidateDirectional') else False
             is_existing = (i_node, j_node) in instance.ExistingTransmission if hasattr(instance, 'ExistingTransmission') else False
+            line_type = "Hybrid" if (is_existing and is_candidate) else ("Existing" if is_existing else ("Candidate" if is_candidate else "Unknown"))
             
             writer.writerow([
-                i_node,
-                j_node,
-                reactance if reactance is not None else 'N/A',
-                susceptance if susceptance is not None else 'N/A',
+                i_node, j_node,
+                reactance_exist if reactance_exist else 'N/A',
+                susceptance_exist if susceptance_exist else 'N/A',
+                reactance_new if reactance_new else 'N/A',
+                susceptance_new if susceptance_new else 'N/A',
+                V_squared,
                 'Yes' if is_candidate else 'No',
-                'Yes' if is_existing else 'No'
+                'Yes' if is_existing else 'No',
+                line_type
             ])
     
     logger_inst.info(f"  [OK] Line parameters written to {params_file.name}")

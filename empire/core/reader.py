@@ -81,7 +81,7 @@ def read_file(excelfile: pd.ExcelFile, sheet: str, columns: list,
     # For single-column scalar sheets (like NominalVoltage), read ALL rows
     # and extract the first numeric value, ignoring header rows entirely.
     # This is more robust than relying on skipheaders count.
-    if len(columns) == 1 and sheet in ['NominalVoltage', 'LineBlockCapacityGlobal']:
+    if len(columns) == 1 and sheet in ['NominalVoltage', 'LineBlockCapacityGlobal', 'LineBlockReactanceGlobal']:
         # Read the entire column without skipping
         full_column = input_sheet.iloc[:, columns[0]]
         # Try to find first numeric value
@@ -215,6 +215,9 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
         logger.debug("LOPF is enabled, reading %s from Transmission.xlsx", param_name)
         # Read as bidirectional and expand to directional (one row becomes two rows)
         read_bidirectional_to_directional(TransmissionExcelData, param_name, [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
+        read_file(TransmissionExcelData, 'LineBlockReactance', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
+
+        
 
     #Reading Node
     logger.info("Reading Node.xlsx")
@@ -232,6 +235,9 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
     # Optional: global fallback block size (scalar). If present, provide a sheet
     # named 'LineBlockCapacityGlobal' with the value in the first column.
     read_file(GeneralExcelData, 'LineBlockCapacityGlobal', [0], tab_file_path, "General", skipheaders=2)
+    
+    if config.lopf_flag:
+        read_file(GeneralExcelData, 'LineBlockReactanceGlobal', [0], tab_file_path, "General", skipheaders=2)
     # Optional: nominal voltage for DC-OPF actual unit conversion
     # If present, provide a sheet named 'NominalVoltage' with a scalar value in kV (single column)
     try:

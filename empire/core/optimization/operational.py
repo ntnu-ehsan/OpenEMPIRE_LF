@@ -43,8 +43,10 @@ def define_operational_parameters(
     model.lengthPeakSeason = Param(initialize=operational_input_params.lengthPeakSeason, mutable=False)
 
     model.lineEfficiency = Param(model.DirectionalLink, default=0.97, mutable=True)
-    model.lineReactance   = Param(model.DirectionalLink, default=0.0, mutable=True)
-    model.lineSusceptance = Param(model.DirectionalLink, default=0.0, mutable=True)
+    model.LineBlockReactance = Param(model.CandidateTransmission, default=0.0, mutable=True)    # Reactance of candidate transmission lines
+    model.LineBlockReactanceGlobal = Param(default=0.0, mutable=True)   # Global reactance for candidate transmission lines if no specific value is given
+    model.lineReactance   = Param(model.DirectionalLink, default=0.0, mutable=True) # Reactance of existing transmission lines
+    model.lineSusceptance = Param(model.DirectionalLink, default=0.0, mutable=True) # Susceptance of existing transmission lines
     model.NominalVoltage = Param(default=400.0, mutable=True)  # Nominal voltage in kV for DC-OPF (default: 400 kV EHV)
     model.storageChargeEff = Param(model.Storage, default=1.0, mutable=True)
     model.storageDischargeEff = Param(model.Storage, default=1.0, mutable=True)
