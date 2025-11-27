@@ -1,17 +1,22 @@
 from __future__ import annotations
-from pyexpat import model
-from pyomo.environ import (Set, Var, Constraint, PositiveReals, value, Param, Expression, Reals, ConstraintList)
+from pyomo.environ import (Set, Var, Constraint, PositiveReals, value, Param, Expression, Reals)
 from collections import defaultdict, deque
-from typing import  Dict,List, Tuple, Optional, Callable
+from typing import Dict, List, Tuple, Optional, Callable
 import logging
 
 logger = logging.getLogger(__name__)
 
 class LOPFMethod:
-    """Enumeration of available LOPF methods."""
-    KIRCHHOFF = "kirchhoff"     # Cycle-based DC-OPF without angles
-    ANGLE = "angle"             # Classical bus-angle DC-OPF
-    PTDF = "ptdf"               # PTDF-based formulation
+    """Enumeration of available Linear Optimal Power Flow (LOPF) methods.
+    
+    Available methods:
+        - KIRCHHOFF: Cycle-based DC-OPF without voltage angles (uses KCL + KVL)
+        - ANGLE: Classical bus-angle DC-OPF formulation
+        - PTDF: PTDF-based formulation (not yet implemented)
+    """
+    KIRCHHOFF = "kirchhoff"
+    ANGLE = "angle"
+    PTDF = "ptdf"
 
     @classmethod
     def list_methods(cls):
@@ -25,23 +30,36 @@ class LOPFMethod:
 # Public entrypoint (router)
 # ---------------------------
 def add_lopf_constraints(model, method: str = LOPFMethod.KIRCHHOFF, **kwargs):
-    """
-    method:
-      - "kirchhoff": cycle-based DC power flow (KCL + KVL, no angles)
-      - "angle":     classic DC-OPF with bus angles
-
-    Common kwargs (both methods):
-      - capacity_expr: callable (m,i,j,p) -> capacity expression for line (i,j) in period p
-      - couple_to_existing_flows: bool (default True)
-      - existing_flow_candidates: tuple[str,...] (names of directed flow var to bind)
-    Kirchhoff-specific:
-      - reactance_param_name: str (default "lineReactance") on BidirectionalArc
-      - susceptance_param_name: str (default "lineSusceptance")
-      - reactance_from_susceptance: bool (default False)
-    Angle-specific:
-      - susceptance_param_name: str (default "lineSusceptance") on DirectionalLink
-      - fix_angle_reference: bool (default True)
-      - slack_node_set_name: str (default "SlackNode")  # optional Set(model.Node)
+    """Add Linear Optimal Power Flow (LOPF) constraints to the model.
+    
+    This function serves as a router to different LOPF formulations. It dispatches
+    to the appropriate implementation based on the selected method.
+    
+    Args:
+        model: Pyomo AbstractModel to which constraints will be added
+        method (str): LOPF method to use. Options: "kirchhoff", "angle", "ptdf"
+        **kwargs: Method-specific keyword arguments (see individual method docs)
+    
+    Common kwargs (all methods):
+        capacity_expr (callable): Function (m,i,j,p) -> capacity expression for line (i,j) in period p
+        couple_to_existing_flows (bool): If True, couple LOPF flows to existing flow variables (default: True)
+        existing_flow_candidates (tuple): Names of directed flow variables to bind to
+    
+    Kirchhoff-specific kwargs:
+        reactance_param_name (str): Name of reactance parameter (default: "lineReactance")
+        susceptance_param_name (str): Name of susceptance parameter (default: "lineSusceptance")
+        reactance_from_susceptance (bool): Derive reactance from susceptance if True (default: False)
+    
+    Angle-specific kwargs:
+        reactance_param_name (str): Name of reactance parameter (default: "lineReactance")
+        fix_angle_reference (bool): Fix angle at slack node to zero (default: True)
+        slack_node_set_name (str): Name of slack node set (default: "SlackNode")
+    
+    Returns:
+        model: The modified Pyomo model with LOPF constraints added
+    
+    Raises:
+        ValueError: If an unknown method is specified
     """
 
     if method.lower() == LOPFMethod.KIRCHHOFF:
@@ -58,26 +76,28 @@ def add_lopf_constraints(model, method: str = LOPFMethod.KIRCHHOFF, **kwargs):
 # Shared Helpers
 # ---------------------------
 def _infer_capacity_expr(model):
-    """Return (m,i,j,p) -> capacity expression for undirected (i,j).
-
+    """Infer transmission capacity expression from model components.
+    
     This helper inspects the model for common components that represent
-    transmission capacity and returns a single callable with signature
-    (m, i, j, p) -> capacity. The callable abstracts over different
-    representations (installed-capacity Var, initial-capacity Param,
-    incremental build Vars/Params, or legacy component names) so the
-    LOPF code can request a capacity value without duplicating lookup
-    logic.
-
-    Behaviour highlights:
-        - Tries several common component names to support historical
-            naming variants.
-        - If only init + build components exist, constructs capacity by
-            summing initial capacity and cumulative builds up to period p.
-        - Performs safe lookups that try the reversed node ordering
-            (j,i,p) when (i,j,p) is not present to tolerate orientation
-            differences in input data.
-        - Raises a RuntimeError if no plausible capacity source is found
-            (caller may instead pass an explicit capacity_expr argument).
+    transmission capacity and returns a callable with signature (m, i, j, p) -> capacity.
+    
+    The function tries several strategies in order:
+    1. Look for installed capacity variables/parameters (transmissionInstalledCap, etc.)
+    2. Build capacity from initial capacity + cumulative builds
+    3. Fall back to maximum capacity parameters
+    
+    Args:
+        model: Pyomo AbstractModel to inspect
+    
+    Returns:
+        callable: Function (m, i, j, p) -> capacity value for corridor (i,j) in period p
+    
+    Raises:
+        RuntimeError: If no plausible capacity source is found
+    
+    Note:
+        The returned callable performs safe lookups that try reversed node ordering
+        (j,i,p) when (i,j,p) is not present to handle orientation differences in input data.
     """
     # helper: look up component by name on the instance
     def _by_name(name: str):
@@ -86,13 +106,11 @@ def _infer_capacity_expr(model):
         # If neither exists, log a warning and return 0.0 as a safe fallback to allow model
         # construction to continue. This prevents a KeyError during Expression construction
         # when input data uses the opposite orientation for corridor keys.
-        logger.debug('_by_name: looking up capacity component "%s"', name)
         def _safe_lookup(m, i, j, p, _n=name):
             comp = getattr(m, _n)
             try:
                 return comp[i, j, p]
             except Exception:
-                logger.debug('Capacity lookup: component "%s" missing index (%s,%s,%s); trying reversed order', _n, i, j, p)
                 try:
                     return comp[j, i, p]
                 except Exception:
@@ -132,11 +150,22 @@ def _infer_capacity_expr(model):
 
 
 def _bind_to_existing_flows(model, flow_dc_like, existing_flow_candidates=()):
-    """
-    Try to bind to an existing directed flow var FlowDir[i,j,h,w,p] used in KCL:
+    """Bind LOPF flow variables to existing directed flow variables.
+    
+    This function creates constraints that map undirected LOPF flows to the existing
+    directed flow variables used in KCL (Kirchhoff's Current Law) constraints.
+    
+    For each bidirectional arc (i,j):
         FlowDir[i,j,h,w,p] == +FlowUndir[(i,j),h,w,p]
         FlowDir[j,i,h,w,p] == -FlowUndir[(i,j),h,w,p]
-    Returns the bound variable or None.
+    
+    Args:
+        model: Pyomo model instance
+        flow_dc_like: Undirected flow variable to bind
+        existing_flow_candidates (tuple): Tuple of variable names to try
+    
+    Returns:
+        The bound directed flow variable, or None if not found
     """
     if not existing_flow_candidates:
         existing_flow_candidates = ("transmissionOperational", "transFlow", "lineFlow", "flow")
@@ -386,11 +415,9 @@ def _add_angle_constraints(
     Requires reactance X[i,j] to be provided on DirectionalLink.
     Susceptance B = 1/X is derived internally for Ohm's law constraints.
     """
-    # log what kwargs were passed
     logger.info("=" * 70)
     logger.info("SETTING UP ANGLE-BASED DC-OPF")
     logger.info("=" * 70)
-    logger.debug("Angle-based LOPF called with kwargs: %s", kwargs)
     
     # Required sets
     for s in ("DirectionalLink", "Node", "Operationalhour", "Scenario", "PeriodActive"):
@@ -422,32 +449,13 @@ def _add_angle_constraints(
             f"DirectionalLink or BidirectionalArc. Load it via load_line_parameters() before calling add_lopf_constraints()."
         )
 
-    logger.debug("Reactance parameter '%s' found.", reactance_param_name)
     eps = 1e-9  # Guard against division by zero
-
-    # Log index set type on the abstract component (for info)
-    logger.debug("Reactance parameter '%s' indexed by: %s", reactance_param_name, type(getattr(model, reactance_param_name).index_set()))
 
     # Derive a directional reactance Param regardless of the original index set.
     # IMPORTANT: Reference the instance component via 'm', not the abstract one via 'model'.
     # This guarantees we can look up X[i,j] for every directed arc during instance construction.
     def _react_dir_init(m, i, j):
         RX = getattr(m, reactance_param_name)
-        # Extra diagnostics: check set membership to help trace orientation/index issues
-        if logger.isEnabledFor(logging.DEBUG):
-            try:
-                A_dbg = getattr(m, 'DirectionalLink', None)
-                C_dbg = getattr(m, 'CandidateTransmission', None)
-                in_A_ij = (i, j) in A_dbg if A_dbg is not None else None
-                in_A_ji = (j, i) in A_dbg if A_dbg is not None else None
-                in_C_ij = (i, j) in C_dbg if C_dbg is not None else None
-                in_C_ji = (j, i) in C_dbg if C_dbg is not None else None
-                logger.debug(
-                    "RX init: arc (%s,%s): in DirectionalLink=%s (rev=%s); in Candidate=%s (rev=%s)",
-                    i, j, in_A_ij, in_A_ji, in_C_ij, in_C_ji
-                )
-            except Exception:
-                pass
         # helper to fetch numeric value safely
         def _get(ii, jj):
             try:
@@ -456,27 +464,17 @@ def _add_angle_constraints(
                 if val <= 0:
                     return None
                 return val
-            except Exception as e:
-                if logger.isEnabledFor(logging.DEBUG):
-                    try:
-                        logger.debug("_react_dir_init: Reactance lookup failed for (%s,%s) with %s.", ii, jj, type(e).__name__)
-                    except Exception:
-                        pass
+            except Exception:
                 return None
         x = _get(i, j)
         if x is None:
             x = _get(j, i)
         if x is None:
             logger.warning("Missing reactance data for arc (%s,%s); using reciprocal of eps.", i, j)
-            try:
-                logger.debug("%s sample keys: %s", reactance_param_name, list(RX.keys())[:10])
-            except Exception:
-                pass
             return 1.0 / eps
         return x
     model._reactance_dir = Param(A, initialize=_react_dir_init, within=PositiveReals)
     X = model._reactance_dir
-    logger.debug("Directional reactance parameter synthesized for angle-based DC-OPF from '%s'.", reactance_param_name)
 
     # Helper: compute susceptance B = 1/X on-the-fly in a safe way.
     def _get_B_val(m, i, j):
@@ -490,46 +488,16 @@ def _add_angle_constraints(
         """
         # Use the synthesized instance Param instead of the abstract reference
         X_inst = m._reactance_dir
-        # Extra diagnostics: membership and availability
-        if logger.isEnabledFor(logging.DEBUG):
-            try:
-                A_dbg = getattr(m, 'DirectionalLink', None)
-                C_dbg = getattr(m, 'CandidateTransmission', None)
-                in_A_ij = (i, j) in A_dbg if A_dbg is not None else None
-                in_A_ji = (j, i) in A_dbg if A_dbg is not None else None
-                in_C_ij = (i, j) in C_dbg if C_dbg is not None else None
-                in_C_ji = (j, i) in C_dbg if C_dbg is not None else None
-                try:
-                    has_X_ij = (i, j) in X_inst
-                except Exception:
-                    has_X_ij = None
-                try:
-                    has_X_ji = (j, i) in X_inst
-                except Exception:
-                    has_X_ji = None
-                logger.debug(
-                    "Arc (%s,%s): in DirectionalLink=%s (rev=%s); in Candidate=%s (rev=%s); X has ij=%s, ji=%s",
-                    i, j, in_A_ij, in_A_ji, in_C_ij, in_C_ji, has_X_ij, has_X_ji
-                )
-            except Exception:
-                pass
         try:
             xij = float(X_inst[i, j])
-        except Exception as e_ij:
-            logger.debug("_get_B_val: Directional reactance lookup failed for (%s,%s); trying reversed ordering.", i, j)
+        except Exception:
             try:
                 xij = float(X_inst[j, i])
-            except Exception as e_ji:
+            except Exception:
                 logger.warning("Missing reactance for directed arc (%s,%s); using reciprocal of eps.", i, j)
-                if logger.isEnabledFor(logging.DEBUG):
-                    try:
-                        logger.debug("Lookup errors: ij=%s, ji=%s", type(e_ij).__name__, type(e_ji).__name__)
-                    except Exception:
-                        pass
                 xij = 1.0 / eps
         if abs(xij) < eps:
-            logger.debug("_get_B_val: Reactance near zero for line (%s,%s); using minimum value for susceptance.", i, j)
-            logger.warning("_get_B_val: Reactance near zero for line (%s,%s); using minimum value for susceptance.", i, j)
+            logger.warning("Reactance near zero for line (%s,%s); using minimum value for susceptance.", i, j)
             xij = eps
         return 1.0 / xij
     
@@ -668,9 +636,7 @@ def _add_angle_constraints(
     # Big-M must be large enough to relax Ohm's law when transmissionBuild = 0
     # Updated to include V² scaling for actual units.
     eps_local = eps
-    if hasattr(model, "BigMFlow"):
-        logger.debug("BigMFlow already defined; skipping re-definition.")
-    else:
+    if not hasattr(model, "BigMFlow"):
         def _bigm_expr(m, i, j):
             # Use the synthesized directional reactance Param directly.
             try:
@@ -885,8 +851,6 @@ def load_line_parameters(model, tab_file_path, data, lopf_kwargs, logger):
     if reactance_tab.exists() and not rx_from_b:
         data.load(filename=str(reactance_tab), param=model.lineReactance, format="table")
         logger.info("Loaded Transmission_lineReactance.tab for DC-OPF.")
-        logger.debug("lineReactance dimen: %s", model.lineReactance.index_set().dimen)
-        #logger.debug("lineReactance keys: %s", list(model.lineReactance.keys())[:10])
     elif susceptance_tab.exists():
         data.load(filename=str(susceptance_tab), param=model.lineSusceptance, format="table")
         logger.info("Loaded Transmission_lineSusceptance.tab for DC-OPF (will invert to reactance if configured).")

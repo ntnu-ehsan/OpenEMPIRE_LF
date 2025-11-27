@@ -120,14 +120,12 @@ def run_empire(
 
     start = time.time()
 
-    instance: ConcreteModel = model.create_instance(data) #, report_timing=True)
+    instance: ConcreteModel = model.create_instance(data)
     derive_stochastic_parameters(instance)
 
     end = time.time()
     logger.info("Building instance took [sec]: %d", end - start)
 
-    #import pdb; pdb.set_trace()
-    #instance.CO2price.pprint()
     if not out_of_sample_flag:	
         log_problem_statistics(instance, logger)
         write_pre_solve(

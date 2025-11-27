@@ -77,7 +77,7 @@ class BaseClient:
             )
 
         if extra:
-            print(f"Warning: Extra sheets found in {self.file}: {extra}, lopf_flag={lopf_enabled}")
+            logging.warning("Extra sheets found in %s: %s (LOPF enabled: %s)", self.file, extra, lopf_enabled)
 
 
 class SetsClient(BaseClient):
@@ -85,7 +85,7 @@ class SetsClient(BaseClient):
     DEFAULT_STARTROW = 0
     DEFAULT_USECOLS = [0]
 
-    def __init__(self, file, engine: str = "openpyxl"):
+    def __init__(self, file: Path, engine: str = "openpyxl"):
         self.file = file
         self.engine = engine
 

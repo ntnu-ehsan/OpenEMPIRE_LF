@@ -5,6 +5,9 @@ from pathlib import Path
 import pandas as pd
 import tempfile
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def read_tab_file(file_path: Path) -> dict:
@@ -60,13 +63,21 @@ def filter_data(
 
 
 def load_dict_into_dataportal(data: DataPortal, param: Param, data_dict: dict[tuple | str | int | float, float]):
-    """
-    Loads a dictionary of data into a DataPortal for a specific parameter.
+    """Load a dictionary of parameter data into a Pyomo DataPortal.
+    
+    This function converts a dictionary of indexed parameter values into a temporary
+    .tab file and loads it into the DataPortal. This is useful when parameter data
+    is generated programmatically rather than read from files.
 
     Args:
-        data (DataPortal): The DataPortal instance to load data into.
-        param (Param): The parameter to load data for.
-        data_dict (dict[tuple | str | int | float, float]): The data to load, with keys as indices and values as the data.
+        data: Pyomo DataPortal instance to load data into
+        param: Pyomo parameter component to load data for
+        data_dict: Dictionary with parameter indices as keys and values as data.
+                   Keys can be tuples (for multi-indexed params), strings, ints, or floats.
+    
+    Raises:
+        ValueError: If data_dict is empty (no data to load)
+        Exception: Re-raises any exception from DataPortal.load() after logging details
     """
     def _return_list(idx):
         b = []
@@ -104,9 +115,10 @@ def load_dict_into_dataportal(data: DataPortal, param: Param, data_dict: dict[tu
         try:
             data.load(filename=tmpname, param=param, format="table")
         except Exception as e:
-            print(f"Error loading parameter {param.name} from temporary file.")
-            print(f"Dataframe: {df}")
-            print(e)
+            logger.error("Error loading parameter %s from temporary file.", param.name)
+            logger.error("Dataframe head (max 10 rows):\n%s", df.head(10))
+            logger.error("Exception: %s", str(e))
+            raise
 
     os.remove(tmpname)
 
@@ -120,10 +132,25 @@ def load_parameter(
     scenarios_to_load: list[str] | None = None,
     scenario_indnr: int | None = None,
 ):
-    """
-    Loads a parameter for an abstract model.
-    Only loads entries for the specified periods and scenarios.
-    If no periods or scenarios are specified (periods_to_load is None and scenarios_to_load is None), loads all data.
+    """Load and filter a parameter from a .tab file into a DataPortal.
+    
+    This function reads parameter data from a tab-separated file and optionally
+    filters it by period and/or scenario before loading into the DataPortal.
+    
+    Args:
+        data: Pyomo DataPortal instance
+        tab_file_path: Path to the .tab file containing parameter data
+        param_component: Pyomo parameter component to load
+        periods_to_load: List of period indices to include (None = all periods)
+        period_indnr: Position of period index in the parameter tuple (0-based)
+        scenarios_to_load: List of scenario names to include (None = all scenarios)
+        scenario_indnr: Position of scenario index in the parameter tuple (0-based)
+    
+    Raises:
+        ValueError: If the .tab file contains no data
+    
+    Note:
+        If both periods_to_load and scenarios_to_load are None, all data is loaded.
     """
     raw_data = read_tab_file(tab_file_path)
     if not raw_data:

@@ -9,13 +9,18 @@ def define_investment_sets(model):
     return
 
 def define_investment_parameters(model, wacc):
+    """Define investment-related parameters for the model.
     
-    #Cost
-    model.WACC = Param(initialize=wacc) # investment only
+    Args:
+        model: Pyomo AbstractModel
+        wacc: Weighted Average Cost of Capital for investment calculations
+    """
+    # Cost parameters
+    model.WACC = Param(initialize=wacc)
 
     model.genCapitalCost = Param(model.Generator, model.Period, default=0, mutable=True)
     model.transmissionTypeCapitalCost = Param(model.TransmissionType, model.Period, default=0, mutable=True)
-    #TODO: Check the two following lines.
+    # Transmission line block capacity parameters (for binary expansion planning)
     model.transmissionLineBlockCap = Param(model.CandidateTransmission, default=0.0, mutable=True)
     model.transmissionLineBlockCapGlobal = Param(default=0.0, mutable=True)
     model.storPWCapitalCost = Param(model.Storage, model.Period, default=0, mutable=True)
@@ -58,10 +63,17 @@ def define_investment_parameters(model, wacc):
     model.storageLifetime = Param(model.Storage, default=0.0, mutable=True)
     return 
 
-    #TODO: Check the tab file name and path
+
 def load_investment_sets(model, data, tab_file_path) -> None:
-    """
-    Load investment sets (e.g., candidate transmission lines).
+    """Load investment sets from .tab files.
+    
+    Loads the CandidateTransmission set which defines transmission corridors
+    that can be expanded during the optimization.
+    
+    Args:
+        model: Pyomo AbstractModel
+        data: Pyomo DataPortal for loading data
+        tab_file_path: Path to directory containing .tab files
     """
     candidate_file = tab_file_path / "Transmission_CandidateTransmission.tab"
     if candidate_file.exists():
@@ -202,7 +214,7 @@ def prep_investment_parameters(
     model.transmission_on_first = Constraint(model.CandidateTransmission, model.PeriodActive, rule=trans_on_first_rule)
 
     def trans_on_evol_rule(model, n1, n2, i):
-        # Later periods: On[i] = On[i-1] + Build[i]
+        """Track cumulative transmission builds: On[i] = On[i-1] + Build[i]."""
         if i == model.PeriodActive.first():
             return Constraint.Skip
         prev = model.PeriodActive.prev(i)
@@ -275,6 +287,25 @@ def define_investment_constraints(
     model: AbstractModel,
     north_sea_flag: bool
     ):
+    """Define investment-related constraints for generation, transmission, and storage.
+    
+    This function creates constraints for:
+    - Installed capacity evolution (generators, transmission, storage)
+    - Investment capacity limits (max buildable capacity per period)
+    - Total installed capacity limits (resource limits)
+    - Power-energy relationship for dependent storage
+    - North Sea specific constraints (if enabled)
+    
+    For transmission, the model supports binary expansion planning where:
+    - Candidate lines can be built at most once over the horizon
+    - transmissionBuild[i] = 1 if line is built in period i, 0 otherwise
+    - transmissionOn[i] tracks whether the line is active in period i
+    - Installed capacity = initial capacity + block capacity * transmissionOn
+    
+    Args:
+        model: Pyomo AbstractModel
+        north_sea_flag: If True, add North Sea specific transmission-generation coupling constraints
+    """
     def lifetime_rule_gen(model, n, g, i):
         startPeriod=1
         if value(1+i-(model.genLifetime[g]/model.LeapYearsInvestment))>startPeriod:
