@@ -117,12 +117,31 @@ def sample_load(data, regularSeasonHours, scenario, season, seasons, period, sam
 
 def gather_peak_sample(data, seasons, regularSeasonHours, peakSeasonHours, country_sample, overall_sample):
     data = data.reset_index(drop=True)
-    country_peak = data.iloc[
-        int(country_sample - (peakSeasonHours / 2)) : int(country_sample + (peakSeasonHours / 2)), :
-    ]
-    overall_peak = data.iloc[
-        int(overall_sample - (peakSeasonHours / 2)) : int(overall_sample + (peakSeasonHours / 2)), :
-    ]
+    data_len = len(data)
+    half_peak = int(peakSeasonHours / 2)
+    
+    # Ensure country_sample is within valid bounds to extract full peakSeasonHours
+    country_start = int(country_sample - half_peak)
+    country_end = int(country_sample + half_peak)
+    if country_start < 0:
+        country_start = 0
+        country_end = peakSeasonHours
+    elif country_end > data_len:
+        country_end = data_len
+        country_start = max(0, data_len - peakSeasonHours)
+    
+    # Ensure overall_sample is within valid bounds to extract full peakSeasonHours
+    overall_start = int(overall_sample - half_peak)
+    overall_end = int(overall_sample + half_peak)
+    if overall_start < 0:
+        overall_start = 0
+        overall_end = peakSeasonHours
+    elif overall_end > data_len:
+        overall_end = data_len
+        overall_start = max(0, data_len - peakSeasonHours)
+    
+    country_peak = data.iloc[country_start:country_end, :]
+    overall_peak = data.iloc[overall_start:overall_end, :]
 
     # Sort data to start on midnight (INACTIVE)
     # country_peak = country_peak.sort_values(by=['hour'])

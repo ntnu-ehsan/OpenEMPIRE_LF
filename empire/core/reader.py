@@ -107,6 +107,11 @@ def read_file(excelfile: pd.ExcelFile, sheet: str, columns: list,
         data_nonempty = data_table.dropna(how='any')
         save_csv_frame = pd.DataFrame(data_nonempty)
 
+    # Check if DataFrame has any actual data rows
+    if len(save_csv_frame) == 0:
+        logger.info(f"Sheet '{sheet}' has no data rows - skipping file creation (Pyomo will use default values)")
+        return
+
     # Only run whitespace replacement on object (string) columns to avoid
     # pandas downcasting FutureWarning when replace touches numeric columns.
     obj_cols = save_csv_frame.select_dtypes(include=["object"]).columns
