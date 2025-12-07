@@ -1,12 +1,54 @@
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Set
 from empire.core.config import EmpireConfiguration
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+
+def read_file_filtered_by_season(excelfile: pd.ExcelFile, sheet: str, columns: list,
+                                  tab_file_path: Path, filename: str, valid_seasons: Set[str],
+                                  skipheaders: int = 0) -> None:
+    """
+    Reads data from an Excel file and saves it as a .tab file, filtering rows
+    to only include seasons specified in the config.
+    
+    :param excelfile: The Excel file object.
+    :param sheet: The name of the sheet to read from.
+    :param columns: List of columns to be read (first column should be season).
+    :param tab_file_path: Path to save the .tab file.
+    :param filename: Base name for the .tab file.
+    :param valid_seasons: Set of valid season names from config.
+    :param skipheaders: Number of header rows to skip. Defaults to 0.
+    """
+    logger.info("Reading %s sheet from %s.xlsx (filtering by seasons: %s)", sheet, filename, valid_seasons)
+
+    input_sheet = excelfile[sheet]
+    data_table = input_sheet.iloc[skipheaders:, columns]
+    data_table.columns = pd.Series(data_table.columns).str.replace(' ', '_')
+    data_nonempty = data_table.dropna(how='any')
+    
+    # Filter to only include valid seasons (first column is season name)
+    season_col = data_nonempty.columns[0]
+    original_count = len(data_nonempty)
+    data_filtered = data_nonempty[data_nonempty[season_col].isin(valid_seasons)]
+    filtered_count = len(data_filtered)
+    
+    if original_count != filtered_count:
+        logger.info(f"  Filtered seasonScale from {original_count} to {filtered_count} rows (keeping only: {valid_seasons})")
+    
+    save_csv_frame = pd.DataFrame(data_filtered)
+
+    # Only run whitespace replacement on object (string) columns
+    obj_cols = save_csv_frame.select_dtypes(include=["object"]).columns
+    if len(obj_cols) > 0:
+        save_csv_frame[obj_cols] = save_csv_frame[obj_cols].replace(r"\s", "", regex=True)
+
+    tab_file_path.mkdir(parents=True, exist_ok=True)
+    save_csv_frame.to_csv(tab_file_path / f"{filename}_{sheet.strip()}.tab", header=True, index=None, sep='\t', mode='w')
 
 
 def read_bidirectional_to_directional(excelfile: pd.ExcelFile, sheet: str, columns: list,
@@ -234,7 +276,12 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
     #Reading Season
     logger.info("Reading General.xlsx")
     GeneralExcelData = pd.read_excel(file_path / "General.xlsx", sheet_name=None)
-    read_file(GeneralExcelData, 'seasonScale', [0, 1], tab_file_path, "General", skipheaders=2)
+    
+    # Special handling for seasonScale - filter to only include seasons from config
+    valid_seasons = set(config.regular_seasons + ['peak1', 'peak2'])
+    read_file_filtered_by_season(GeneralExcelData, 'seasonScale', [0, 1], tab_file_path, "General", 
+                                  valid_seasons=valid_seasons, skipheaders=2)
+    
     read_file(GeneralExcelData, 'CO2Cap', [0, 1], tab_file_path, "General", skipheaders=2)
     read_file(GeneralExcelData, 'CO2Price', [0, 1], tab_file_path, "General", skipheaders=2)
     # Optional: global fallback block size (scalar). If present, provide a sheet
