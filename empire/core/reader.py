@@ -9,6 +9,47 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+def compute_reactance_from_length(excelfile: pd.ExcelFile, tab_file_path: Path, 
+                                   reactance_per_km: float, skipheaders: int = 2) -> pd.DataFrame:
+    """
+    Computes line reactance from transmission line length and reactance per km.
+    Reads the 'Length' sheet and multiplies by the reactance_per_km parameter.
+    
+    :param excelfile: The Excel file object (Transmission.xlsx).
+    :param tab_file_path: Path where .tab files are saved.
+    :param reactance_per_km: Reactance value per kilometer (Ohms/km).
+    :param skipheaders: Number of header rows to skip. Defaults to 2.
+    :return: DataFrame with columns [FromNode, ToNode, lineReactance]
+    """
+    logger.info("Computing lineReactance from Length using reactance_per_km = %.4f Ohm/km", reactance_per_km)
+    
+    # Read the Length sheet
+    length_sheet = excelfile['Length']
+    length_data = length_sheet.iloc[skipheaders:, [0, 1, 2]]
+    length_data.columns = pd.Series(length_data.columns).str.replace(' ', '_')
+    length_data = length_data.dropna()
+    
+    if length_data.empty:
+        logger.warning("Length sheet is empty - cannot compute reactance")
+        return pd.DataFrame(columns=['FromNode', 'ToNode', 'lineReactance'])
+    
+    # Assuming columns are: FromNode (or similar), ToNode, Length_km
+    col_names = list(length_data.columns)
+    from_col, to_col, length_col = col_names[0], col_names[1], col_names[2]
+    
+    # Compute reactance = length * reactance_per_km
+    reactance_data = length_data.copy()
+    reactance_data['lineReactance'] = length_data[length_col] * reactance_per_km
+    
+    # Keep only FromNode, ToNode, lineReactance
+    reactance_data = reactance_data[[from_col, to_col, 'lineReactance']]
+    reactance_data.columns = ['FromNode', 'ToNode', 'lineReactance']
+    
+    logger.info("Computed reactance for %d transmission lines", len(reactance_data))
+    
+    return reactance_data
+
+
 def read_bidirectional_to_directional(excelfile: pd.ExcelFile, sheet: str, columns: list,
                                       tab_file_path: Path, filename: str, skipheaders: int = 0) -> None:
     """
@@ -61,6 +102,51 @@ def read_bidirectional_to_directional(excelfile: pd.ExcelFile, sheet: str, colum
     
     tab_file_path.mkdir(parents=True, exist_ok=True)
     save_csv_frame.to_csv(tab_file_path / f"{filename}_{sheet.strip()}.tab", header=True, index=None, sep='\t', mode='w')
+
+
+def read_bidirectional_to_directional_from_dataframe(data_nonempty: pd.DataFrame, 
+                                                      tab_file_path: Path, 
+                                                      filename: str, 
+                                                      sheet: str) -> None:
+    """
+    Expands bidirectional data (already in DataFrame format) to directional format.
+    Used when reactance is computed from length rather than read from Excel.
+    
+    :param data_nonempty: DataFrame with columns [FromNode, ToNode, Value].
+    :param tab_file_path: Path to save the .tab file.
+    :param filename: Base name for the .tab file.
+    :param sheet: Sheet name for the output file.
+    """
+    if data_nonempty.empty:
+        logger.warning(f"Data for '{sheet}' is empty - skipping directional expansion")
+        save_csv_frame = pd.DataFrame(data_nonempty)
+    else:
+        col_names = list(data_nonempty.columns)
+        if len(col_names) != 3:
+            logger.warning(f"Expected 3 columns but got {len(col_names)}. Using as-is without bidirectional expansion.")
+            save_csv_frame = pd.DataFrame(data_nonempty)
+        else:
+            from_col, to_col, value_col = col_names
+            
+            # Create the reverse direction rows
+            reversed_data = data_nonempty.copy()
+            reversed_data[from_col] = data_nonempty[to_col]
+            reversed_data[to_col] = data_nonempty[from_col]
+            # Value column stays the same (reactance is symmetric)
+            
+            # Concatenate original and reversed
+            save_csv_frame = pd.concat([data_nonempty, reversed_data], ignore_index=True)
+            
+            logger.info(f"Expanded {len(data_nonempty)} bidirectional rows to {len(save_csv_frame)} directional rows for '{sheet}'")
+    
+    # Clean whitespace in string columns
+    obj_cols = save_csv_frame.select_dtypes(include=["object"]).columns
+    if len(obj_cols) > 0:
+        save_csv_frame[obj_cols] = save_csv_frame[obj_cols].replace(r"\s", "", regex=True)
+    
+    tab_file_path.mkdir(parents=True, exist_ok=True)
+    save_csv_frame.to_csv(tab_file_path / f"{filename}_{sheet.strip()}.tab", header=True, index=None, sep='\t', mode='w')
+
 
 def read_file(excelfile: pd.ExcelFile, sheet: str, columns: list, 
               tab_file_path: Path, filename: str, skipheaders: int = 0) -> None:
@@ -215,11 +301,22 @@ def generate_tab_files(file_path, tab_file_path, config: EmpireConfiguration) ->
     # If present, this sheet should have columns: FromNode, ToNode, LineBlockCap
     read_file(TransmissionExcelData, 'LineBlockCapacity', [0, 1, 2], tab_file_path, "Transmission", skipheaders=2)
     if config.lopf_flag:
-        # check the value of reactance_param_name in config. If it's lineSusceptance, read that sheet, else read lineReactance
-        param_name = config.lopf_kwargs.get("reactance_param_name", "lineReactance")
-        logger.debug("LOPF is enabled, reading %s from Transmission.xlsx", param_name)
-        # Read as bidirectional and expand to directional (one row becomes two rows)
-        read_bidirectional_to_directional(TransmissionExcelData, param_name, [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
+        # Check if reactance should be computed from length
+        reactance_per_km = config.lopf_kwargs.get("reactance_per_km", None)
+        
+        if reactance_per_km is not None:
+            # Compute reactance from Length sheet using reactance_per_km parameter
+            logger.info("Computing line reactance from Length using reactance_per_km = %.4f Ohm/km", reactance_per_km)
+            reactance_data = compute_reactance_from_length(TransmissionExcelData, tab_file_path, reactance_per_km, skipheaders=2)
+            # Expand to directional format and save as lineReactance.tab
+            read_bidirectional_to_directional_from_dataframe(reactance_data, tab_file_path, "Transmission", "lineReactance")
+        else:
+            # Original behavior: read reactance directly from Excel sheet
+            param_name = config.lopf_kwargs.get("reactance_param_name", "lineReactance")
+            logger.debug("LOPF is enabled, reading %s from Transmission.xlsx", param_name)
+            # Read as bidirectional and expand to directional (one row becomes two rows)
+            read_bidirectional_to_directional(TransmissionExcelData, param_name, [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
+        
         read_file(TransmissionExcelData, 'LineBlockReactance', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
 
         

@@ -33,10 +33,13 @@ lopf_method: "kirchhoff"
 lopf_kwargs:
   couple_to_existing_flows: false
   # existing_flow_candidates: ["transmisionOperational"]
-  reactance_param_name: "lineReactance"   # <— matches your .tab
-  reactance_from_susceptance: false       # we’re providing reactance directly
-  # OR if you only have susceptance:
-  # reactance_from_susceptance: true
+  
+  # Option 1: Compute reactance from transmission line length
+  # reactance_per_km: 0.0001  # Reactance per kilometer (Ohms/km)
+  
+  # Option 2: Read reactance directly from Excel sheet
+  reactance_param_name: "lineReactance"   # Sheet name in Transmission.xlsx
+  reactance_from_susceptance: False       # Set true if using susceptance instead
   # susceptance_param_name: "lineSusceptance"
 benders_flag: True                     # Whether to use Benders decompsition 
 max_benders_iterations: 50
