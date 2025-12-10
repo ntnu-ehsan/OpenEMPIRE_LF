@@ -73,5 +73,37 @@ def solve(
     results = opt.solve(instance, tee=True, logfile=run_config.results_path / f"logfile_{run_config.run_name}.log")#, keepfiles=True, symbolic_solver_labels=True)
     if results.solver.termination_condition == TerminationCondition.optimal:
         return results
+    elif results.solver.termination_condition == TerminationCondition.infeasible:
+        # Compute IIS to help diagnose infeasibility
+        logger.error("Model is infeasible. Computing IIS (Irreducible Inconsistent Subsystem)...")
+        iis_path = run_config.results_path / f"infeasible_iis_{run_config.run_name}.ilp"
+        try:
+            # Write LP file for debugging (with symbolic names for readability)
+            lp_path = run_config.results_path / f"infeasible_model_{run_config.run_name}.lp"
+            instance.write(str(lp_path), format='lp', io_options={'symbolic_solver_labels': True})
+            logger.info(f"Model written to: {lp_path}")
+            
+            # Try to compute IIS using gurobipy directly
+            import gurobipy as gp
+            model = gp.read(str(lp_path))
+            model.computeIIS()
+            model.write(str(iis_path))
+            logger.error(f"IIS written to: {iis_path}")
+            
+            # Print the IIS constraints
+            logger.error("=== IIS Constraints (causing infeasibility) ===")
+            for c in model.getConstrs():
+                if c.IISConstr:
+                    logger.error(f"  Constraint: {c.ConstrName}")
+            for v in model.getVars():
+                if v.IISLB:
+                    logger.error(f"  Variable LB: {v.VarName} >= {v.LB}")
+                if v.IISUB:
+                    logger.error(f"  Variable UB: {v.VarName} <= {v.UB}")
+            logger.error("=== End IIS ===")
+        except Exception as e:
+            logger.error(f"Could not compute IIS: {e}")
+        
+        raise ValueError(f"Optimization was not successful. Termination condition: {results.solver.termination_condition}.")
     else:
         raise ValueError(f"Optimization was not successful. Termination condition: {results.solver.termination_condition}.")

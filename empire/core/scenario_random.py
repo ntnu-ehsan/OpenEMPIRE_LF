@@ -489,6 +489,19 @@ def generate_random_scenario(
     hydroseasonal_data = pd.read_csv(scenario_data_path / "hydroseasonal.csv")
     electricload_data = pd.read_csv(scenario_data_path / "electricload.csv")
 
+    # Remove whitespace from column names to match Node names in tab files
+    # (reader.py removes whitespace from Excel data, so we must do the same here)
+    def clean_columns(df):
+        df.columns = df.columns.str.replace(r'\s', '', regex=True)
+        return df
+    
+    solar_data = clean_columns(solar_data)
+    windonshore_data = clean_columns(windonshore_data)
+    windoffshore_data = clean_columns(windoffshore_data)
+    hydroror_data = clean_columns(hydroror_data)
+    hydroseasonal_data = clean_columns(hydroseasonal_data)
+    electricload_data = clean_columns(electricload_data)
+
     # Unique nodes; for copula-based SGR
     unique_nodes = [col for col in solar_data.columns if col != "time"]
 
