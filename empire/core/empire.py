@@ -898,21 +898,34 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         logger.error("Model is infeasible!")
         if solver == "Gurobi":
             logger.info("Computing IIS (Irreducible Infeasible Subsystem)...")
-            opt2 = SolverFactory('gurobi', Verbose=True)
-            opt2.options["Method"] = 2
-            opt2.options["Crossover"] = 0
-            # Write the LP, compute IIS using gurobipy
             lp_path = result_file_path / f"infeasible_{name}.lp"
+            iis_path = result_file_path / f"infeasible_{name}.ilp"
             instance.write(str(lp_path), io_options={'symbolic_solver_labels': True})
             try:
                 import gurobipy as gp
                 m = gp.read(str(lp_path))
                 m.computeIIS()
-                iis_path = result_file_path / f"infeasible_{name}.ilp"
                 m.write(str(iis_path))
                 logger.info("IIS written to %s", iis_path)
+            except ImportError:
+                logger.info("gurobipy not available, trying gurobi_cl...")
+                import subprocess
+                import shutil
+                gurobi_cl = shutil.which("gurobi_cl")
+                if gurobi_cl:
+                    ret = subprocess.run(
+                        [gurobi_cl, f"ResultFile={iis_path}", f"ComputeIIS=1", str(lp_path)],
+                        capture_output=True, text=True
+                    )
+                    if ret.returncode == 0 and iis_path.exists():
+                        logger.info("IIS written to %s", iis_path)
+                    else:
+                        logger.warning("gurobi_cl IIS failed: %s", ret.stderr or ret.stdout)
+                else:
+                    logger.warning("Neither gurobipy nor gurobi_cl found. "
+                                   "LP written to %s — run IIS manually.", lp_path)
             except Exception as e:
-                logger.warning("Could not compute IIS with gurobipy: %s", e)
+                logger.warning("Could not compute IIS: %s", e)
         if OUT_OF_SAMPLE:
             return float('inf')
         raise RuntimeError(
