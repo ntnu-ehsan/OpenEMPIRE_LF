@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 import json
 import logging
 from pathlib import Path
@@ -24,6 +24,8 @@ def run_empire_model(
     OUT_OF_SAMPLE: bool = False, 
     sample_file_path: Path | None = None
     ) -> None | float:
+    obj_value = None
+
     for manager in data_managers:
         manager.apply()
 
@@ -150,7 +152,8 @@ def run_empire_model(
             OUT_OF_SAMPLE=OUT_OF_SAMPLE, 
             sample_file_path=sample_file_path
             )
-
+    else:
+        logger.info("Test run selected: skipping optimization solve.")
     config_path = run_config.dataset_path / "config.txt"
     logger.info("Writing config to: %s", config_path)
     with open(config_path, "w", encoding="utf-8") as file:
@@ -231,3 +234,6 @@ def runner(data_managers):
 
 if __name__ == "__main__":
     pass
+
+
+
