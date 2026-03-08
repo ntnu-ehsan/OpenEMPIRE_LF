@@ -892,7 +892,32 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     if solver == "GLPK":
         opt = SolverFactory("glpk", Verbose=True)
 
-    opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{name}.log")#, keepfiles=True, symbolic_solver_labels=True)
+    results = opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{name}.log")#, keepfiles=True, symbolic_solver_labels=True)
+
+    if results.solver.termination_condition == TerminationCondition.infeasible:
+        logger.error("Model is infeasible!")
+        if solver == "Gurobi":
+            logger.info("Computing IIS (Irreducible Infeasible Subsystem)...")
+            opt2 = SolverFactory('gurobi', Verbose=True)
+            opt2.options["Method"] = 2
+            opt2.options["Crossover"] = 0
+            # Write the LP, compute IIS using gurobipy
+            lp_path = result_file_path / f"infeasible_{name}.lp"
+            instance.write(str(lp_path), io_options={'symbolic_solver_labels': True})
+            try:
+                import gurobipy as gp
+                m = gp.read(str(lp_path))
+                m.computeIIS()
+                iis_path = result_file_path / f"infeasible_{name}.ilp"
+                m.write(str(iis_path))
+                logger.info("IIS written to %s", iis_path)
+            except Exception as e:
+                logger.warning("Could not compute IIS with gurobipy: %s", e)
+        if OUT_OF_SAMPLE:
+            return float('inf')
+        raise RuntimeError(
+            f"Model is infeasible. Check the IIS file in {result_file_path} for details."
+        )
 
     if PICKLE_INSTANCE:
         start = time.time()
