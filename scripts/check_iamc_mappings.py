@@ -57,12 +57,14 @@ dict_countries_reversed.update({
 
 dict_generators = {
     "Bio": "Biomass", "Bioexisting": "Biomass",
+    "BioCCS": "Biomass|w/ CCS",
     "Coalexisting": "Coal|w/o CCS",
     "Coal": "Coal|w/o CCS", "CoalCCS": "Coal|w/ CCS",
     "CoalCCSadv": "Coal|w/ CCS",
     "Lignite": "Lignite|w/o CCS",
     "Liginiteexisting": "Lignite|w/o CCS",
     "LigniteCCSadv": "Lignite|w/ CCS",
+    "LigniteCCS": "Lignite|w/ CCS",
     "Gasexisting": "Gas|CCGT|w/o CCS",
     "GasOCGT": "Gas|OCGT|w/o CCS",
     "GasCCGT": "Gas|CCGT|w/o CCS",

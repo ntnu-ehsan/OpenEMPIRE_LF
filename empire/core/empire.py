@@ -1329,12 +1329,14 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         })
 
         dict_generators = {"Bio": "Biomass", "Bioexisting": "Biomass",
+                           "BioCCS": "Biomass|w/ CCS",
                            "Coalexisting": "Coal|w/o CCS",
                            "Coal": "Coal|w/o CCS", "CoalCCS": "Coal|w/ CCS",
                            "CoalCCSadv": "Coal|w/ CCS", 
                            "Lignite": "Lignite|w/o CCS",
                            "Liginiteexisting": "Lignite|w/o CCS", 
-                           "LigniteCCSadv": "Lignite|w/ CCS", 
+                           "LigniteCCSadv": "Lignite|w/ CCS",
+                           "LigniteCCS": "Lignite|w/ CCS", 
                            "Gasexisting": "Gas|CCGT|w/o CCS", 
                            "GasOCGT": "Gas|OCGT|w/o CCS", 
                            "GasCCGT": "Gas|CCGT|w/o CCS", 
