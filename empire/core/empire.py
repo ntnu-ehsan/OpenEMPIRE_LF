@@ -428,7 +428,10 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
         for (n,b) in model.StoragesOfNode:
             for i in model.PeriodActive:
-                model.storENMaxInstalledCap[n,b,i]=model.storENMaxInstalledCapRaw[n,b]
+                if value(model.storENMaxInstalledCapRaw[n,b]) <= value(model.storENInitCap[n,b,i]):
+                    model.storENMaxInstalledCap[n,b,i] = model.storENInitCap[n,b,i]
+                else:
+                    model.storENMaxInstalledCap[n,b,i] = model.storENMaxInstalledCapRaw[n,b]
 
     model.build_storENMaxInstalledCap = BuildAction(rule=storENMaxInstalledCap_rule)
 
@@ -437,7 +440,10 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
         for (n,b) in model.StoragesOfNode:
             for i in model.PeriodActive:
-                model.storPWMaxInstalledCap[n,b,i]=model.storPWMaxInstalledCapRaw[n,b]
+                if value(model.storPWMaxInstalledCapRaw[n,b]) <= value(model.storPWInitCap[n,b,i]):
+                    model.storPWMaxInstalledCap[n,b,i] = model.storPWInitCap[n,b,i]
+                else:
+                    model.storPWMaxInstalledCap[n,b,i] = model.storPWMaxInstalledCapRaw[n,b]
 
     model.build_storPWMaxInstalledCap = BuildAction(rule=storPWMaxInstalledCap_rule)
 
