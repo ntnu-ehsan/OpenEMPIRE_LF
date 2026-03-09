@@ -1334,7 +1334,8 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                            "GasCCGT": "Gas|CCGT|w/o CCS", 
                            "GasCCS": "Gas|CCGT|w/ CCS", 
                            "GasCCSadv": "Gas|CCGT|w/ CCS", 
-                           "Oilexisting": "Oil", "Nuclear": "Nuclear", 
+                           "Oilexisting": "Oil", "Oil": "Oil",
+                           "Nuclear": "Nuclear", 
                            "Wave": "Ocean", "Geo": "Geothermal", 
                            "Hydroregulated": "Hydro|Reservoir", 
                            "Hydrorun-of-the-river": "Hydro|Run-of-River", 
@@ -1345,7 +1346,19 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                            "Solar": "Solar|PV", "Waste": "Waste", 
                            "Bio10cofiring": "Coal|w/o CCS", 
                            "Bio10cofiringCCS": "Coal|w/ CCS", 
-                           "LigniteCCSsup": "Lignite|w/ CCS"}
+                           "LigniteCCSsup": "Lignite|w/ CCS",
+                           # Spaced-name variants used in north_sea dataset
+                           "Bio CCS": "Biomass|w/ CCS",
+                           "Coal CCS": "Coal|w/ CCS",
+                           "Gas CCGT": "Gas|CCGT|w/o CCS",
+                           "Gas CCS": "Gas|CCGT|w/ CCS",
+                           "Gas OCGT": "Gas|OCGT|w/o CCS",
+                           "Hydro regulated": "Hydro|Reservoir",
+                           "Hydro run-of-the-river": "Hydro|Run-of-River",
+                           "Lignite CCS": "Lignite|w/ CCS",
+                           "Wind offshore floating": "Wind|Offshore",
+                           "Wind offshore grounded": "Wind|Offshore",
+                           "Wind onshore": "Wind|Onshore"}
         
         #Make datetime from HoursOfSeason       
         seasonstart={"winter": '2020-01-01',
@@ -1411,7 +1424,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                     [value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w] for n in instance.Node if (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason)) for i in instance.PeriodActive], Scenario+"|"+str(w)) #Total generation per type and scenario
             for (s,h) in instance.HoursOfSeason:
                 for n in instance.Node:
-                    f = row_write(f, dict_countries_reversed[str(n)], "Price|Secondary Energy|Electricity", "US$2010/GJ", seasonhours[h-1], \
+                    f = row_write(f, dict_countries_reversed.get(str(n), str(n)), "Price|Secondary Energy|Electricity", "US$2010/GJ", seasonhours[h-1], \
                         [value(instance.dual[instance.FlowBalance[n,h,i,w]]/(GJperMWh*instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w])) for i in instance.PeriodActive], Scenario+"|"+str(w)+str(s))
         for g in instance.Generator:
             f = row_write(f, "Europe", "Capacity|Electricity|"+dict_generators[str(g)], "GW", "Year", [value(sum(instance.genInstalledCap[n,g,i]*GWperMW for n in instance.Node if (n,g) in instance.GeneratorsOfNode)) for i in instance.PeriodActive]) #Total European installed generator capacity per type
@@ -1423,7 +1436,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             if value(instance.genCO2TypeFactor[g]) != 0:
                 f = row_write(f, "Europe", "CO2 Emmissions|Electricity|"+dict_generators[str(g)], "tons/MWh", "Year", [value(instance.genCO2TypeFactor[g]*(GJperMWh/instance.genEfficiency[g,i])) for i in instance.PeriodActive]) #CO2 factor per generator type
         for (n,g) in instance.GeneratorsOfNode:
-            f = row_write(f, dict_countries_reversed[str(n)], "Capacity|Electricity|"+dict_generators[str(g)], "GW", "Year", [value(instance.genInstalledCap[n,g,i]*GWperMW) for i in instance.PeriodActive]) #Installed generator capacity per country and type
+            f = row_write(f, dict_countries_reversed.get(str(n), str(n)), "Capacity|Electricity|"+dict_generators[str(g)], "GW", "Year", [value(instance.genInstalledCap[n,g,i]*GWperMW) for i in instance.PeriodActive]) #Installed generator capacity per country and type
         
         f = f.groupby(['model','scenario','region','variable','unit','subannual']).sum().reset_index() #NB! DOES NOT WORK FOR UNIT COSTS; SHOULD BE FIXED
         
