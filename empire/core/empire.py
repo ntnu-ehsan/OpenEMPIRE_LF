@@ -20,6 +20,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                lengthPeakSeason, Period, Operationalhour, Scenario, Season, HoursOfSeason,
                discountrate, WACC, LeapYearsInvestment, IAMC_PRINT, WRITE_LP,
                PICKLE_INSTANCE, EMISSION_CAP, USE_TEMP_DIR, LOADCHANGEMODULE, OPERATIONAL_DUALS, north_sea, 
+               AGGREGATE_OFFSHORE_IAMC=False, workbook_path: Path | None = None,
                OUT_OF_SAMPLE: bool = False, sample_file_path: Path | None = None) -> None | float:
 
     if USE_TEMP_DIR:
@@ -1328,6 +1329,56 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             "Great Brit.": "United Kingdom",
         })
 
+        # Build offshore-to-onshore region mapping for IAMC aggregation
+        offshore_to_onshore_region = {}
+        if AGGREGATE_OFFSHORE_IAMC and north_sea and workbook_path is not None:
+            import re as _re
+            try:
+                coords_file = workbook_path / 'Sets.xlsx'
+                if coords_file.exists():
+                    coords_df = pd.read_excel(coords_file, sheet_name="Coords", skiprows=2, usecols=[0, 1, 2])
+                    coords_df.columns = ["Location", "Latitude", "Longitude"]
+                    coords_df = coords_df.dropna(subset=["Location", "Latitude", "Longitude"])
+
+                    def _normalize(s):
+                        return _re.sub(r"[^a-z0-9]+", "", str(s).strip().lower())
+
+                    coords_df["norm"] = coords_df["Location"].map(_normalize)
+
+                    offshore_names = set(str(n) for n in instance.OffshoreNode)
+                    offshore_norms = {_normalize(n): n for n in offshore_names}
+
+                    all_node_names = set(str(n) for n in instance.Node)
+                    onshore_names = all_node_names - offshore_names
+                    onshore_norms = {_normalize(n): n for n in onshore_names}
+
+                    offshore_coords = coords_df[coords_df["norm"].isin(offshore_norms.keys())].copy()
+                    onshore_coords = coords_df[coords_df["norm"].isin(onshore_norms.keys())].copy()
+
+                    for _, off_row in offshore_coords.iterrows():
+                        off_norm = off_row["norm"]
+                        off_instance_name = offshore_norms[off_norm]
+
+                        d2 = (onshore_coords["Latitude"] - off_row["Latitude"])**2 + \
+                             (onshore_coords["Longitude"] - off_row["Longitude"])**2
+                        nearest_idx = d2.idxmin()
+                        nearest_norm = onshore_coords.loc[nearest_idx, "norm"]
+                        nearest_instance_name = onshore_norms[nearest_norm]
+
+                        offshore_to_onshore_region[off_instance_name] = dict_countries_reversed.get(
+                            nearest_instance_name, nearest_instance_name)
+
+                    logger.info("Offshore node IAMC aggregation mapping: %s", offshore_to_onshore_region)
+            except Exception as e:
+                logger.warning("Failed to build offshore-to-onshore mapping for IAMC: %s", e)
+
+        def get_iamc_region(n):
+            """Get IAMC region name for a node, aggregating offshore nodes if enabled."""
+            node_str = str(n)
+            if node_str in offshore_to_onshore_region:
+                return offshore_to_onshore_region[node_str]
+            return dict_countries_reversed.get(node_str, node_str)
+
         dict_generators = {"Bio": "Biomass", "Bioexisting": "Biomass",
                            "BioCCS": "Biomass|w/ CCS",
                            "Coalexisting": "Coal|w/o CCS",
@@ -1432,7 +1483,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                     [value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w] for n in instance.Node if (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason)) for i in instance.PeriodActive], Scenario+"|"+str(w)) #Total generation per type and scenario
             for (s,h) in instance.HoursOfSeason:
                 for n in instance.Node:
-                    f = row_write(f, dict_countries_reversed.get(str(n), str(n)), "Price|Secondary Energy|Electricity", "US$2010/GJ", seasonhours[h-1], \
+                    f = row_write(f, get_iamc_region(n), "Price|Secondary Energy|Electricity", "US$2010/GJ", seasonhours[h-1], \
                         [value(instance.dual[instance.FlowBalance[n,h,i,w]]/(GJperMWh*instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w])) for i in instance.PeriodActive], Scenario+"|"+str(w)+str(s))
         for g in instance.Generator:
             f = row_write(f, "Europe", "Capacity|Electricity|"+dict_generators[str(g).strip()], "GW", "Year", [value(sum(instance.genInstalledCap[n,g,i]*GWperMW for n in instance.Node if (n,g) in instance.GeneratorsOfNode)) for i in instance.PeriodActive]) #Total European installed generator capacity per type
@@ -1444,7 +1495,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             if value(instance.genCO2TypeFactor[g]) != 0:
                 f = row_write(f, "Europe", "CO2 Emmissions|Electricity|"+dict_generators[str(g).strip()], "tons/MWh", "Year", [value(instance.genCO2TypeFactor[g]*(GJperMWh/instance.genEfficiency[g,i])) for i in instance.PeriodActive]) #CO2 factor per generator type
         for (n,g) in instance.GeneratorsOfNode:
-            f = row_write(f, dict_countries_reversed.get(str(n), str(n)), "Capacity|Electricity|"+dict_generators[str(g).strip()], "GW", "Year", [value(instance.genInstalledCap[n,g,i]*GWperMW) for i in instance.PeriodActive]) #Installed generator capacity per country and type
+            f = row_write(f, get_iamc_region(n), "Capacity|Electricity|"+dict_generators[str(g).strip()], "GW", "Year", [value(instance.genInstalledCap[n,g,i]*GWperMW) for i in instance.PeriodActive]) #Installed generator capacity per country and type
         
         f = f.groupby(['model','scenario','region','variable','unit','subannual']).sum().reset_index() #NB! DOES NOT WORK FOR UNIT COSTS; SHOULD BE FIXED
         

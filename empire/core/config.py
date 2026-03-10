@@ -40,6 +40,7 @@ class EmpireConfiguration:
         write_in_lp_format: bool,
         serialize_instance: bool,
         north_sea: bool,
+        aggregate_offshore_nodes_in_IAMC: bool = False,
         voronoi_sgr_make: bool = False,
         voronoi_sgr_use: bool = False,
         voronoi_mu_percentile: int = 80,
@@ -106,6 +107,7 @@ class EmpireConfiguration:
         self.write_in_lp_format = write_in_lp_format
         self.serialize_instance = serialize_instance
         self.north_sea = north_sea
+        self.aggregate_offshore_nodes_in_IAMC = aggregate_offshore_nodes_in_IAMC
         self.voronoi_sgr_make = voronoi_sgr_make
         self.voronoi_sgr_use = voronoi_sgr_use
         self.voronoi_mu_percentile = voronoi_mu_percentile

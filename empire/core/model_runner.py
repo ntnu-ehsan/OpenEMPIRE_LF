@@ -149,6 +149,8 @@ def run_empire_model(
             LOADCHANGEMODULE=empire_config.load_change_module,
             OPERATIONAL_DUALS=empire_config.compute_operational_duals,
             north_sea=empire_config.north_sea,
+            AGGREGATE_OFFSHORE_IAMC=empire_config.aggregate_offshore_nodes_in_IAMC,
+            workbook_path=workbook_path,
             OUT_OF_SAMPLE=OUT_OF_SAMPLE, 
             sample_file_path=sample_file_path
             )
