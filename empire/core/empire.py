@@ -1463,6 +1463,106 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             df = pd.concat([df, df2], ignore_index=True)
             return df
 
+        def _normalize_iamc_output(df):
+            # Keep this transformation close to export to enforce IIASA naming rules.
+            df = df.copy()
+
+            def _normalize_region_key(value):
+                return "".join(ch.lower() for ch in str(value) if ch.isalnum())
+
+            north_sea_region_map = {
+                _normalize_region_key("Borssele"): "EMPIRE v1.0.0/v51|North Sea|Borssele",
+                _normalize_region_key("DoggerBank"): "EMPIRE v1.0.0/v51|North Sea|Dogger Bank",
+                _normalize_region_key("Dogger Bank"): "EMPIRE v1.0.0/v51|North Sea|Dogger Bank",
+                _normalize_region_key("EastAnglia"): "EMPIRE v1.0.0/v51|North Sea|East Anglia",
+                _normalize_region_key("East Anglia"): "EMPIRE v1.0.0/v51|North Sea|East Anglia",
+                _normalize_region_key("FirthofForth"): "EMPIRE v1.0.0/v51|North Sea|Firth of Forth",
+                _normalize_region_key("Firth of Forth"): "EMPIRE v1.0.0/v51|North Sea|Firth of Forth",
+                _normalize_region_key("HelgolanderBucht"): "EMPIRE v1.0.0/v51|North Sea|Helgolander Bucht",
+                _normalize_region_key("Helgolander Bucht"): "EMPIRE v1.0.0/v51|North Sea|Helgolander Bucht",
+                _normalize_region_key("HollandseeKust"): "EMPIRE v1.0.0/v51|North Sea|Hollandsee Kust",
+                _normalize_region_key("Hollandsee Kust"): "EMPIRE v1.0.0/v51|North Sea|Hollandsee Kust",
+                _normalize_region_key("Hornsea"): "EMPIRE v1.0.0/v51|North Sea|Hornsea",
+                _normalize_region_key("MorayFirth"): "EMPIRE v1.0.0/v51|North Sea|Moray Firth",
+                _normalize_region_key("Moray Firth"): "EMPIRE v1.0.0/v51|North Sea|Moray Firth",
+                _normalize_region_key("Nordsoen"): "EMPIRE v1.0.0/v51|North Sea|Nordsoen",
+                _normalize_region_key("Norfolk"): "EMPIRE v1.0.0/v51|North Sea|Norfolk",
+                _normalize_region_key("OuterDowsing"): "EMPIRE v1.0.0/v51|North Sea|Outer Dowsing",
+                _normalize_region_key("Outer Dowsing"): "EMPIRE v1.0.0/v51|North Sea|Outer Dowsing",
+                _normalize_region_key("SorligeNordsjoI"): "EMPIRE v1.0.0/v51|North Sea|Sorlige Nordsjo I",
+                _normalize_region_key("Sorlige Nordsjo I"): "EMPIRE v1.0.0/v51|North Sea|Sorlige Nordsjo I",
+                _normalize_region_key("SorligeNordsjoII"): "EMPIRE v1.0.0/v51|North Sea|Sorlige Nordsjo II",
+                _normalize_region_key("Sorlige Nordsjo II"): "EMPIRE v1.0.0/v51|North Sea|Sorlige Nordsjo II",
+                _normalize_region_key("UtsiraNord"): "EMPIRE v1.0.0/v51|North Sea|Utsira Nord",
+                _normalize_region_key("Utsira Nord"): "EMPIRE v1.0.0/v51|North Sea|Utsira Nord",
+            }
+
+            norway_region_prefix_map = {
+                "Norway|Ostland": "EMPIRE v1.0.0/v51|Norway|Ostland",
+                "Norway|Sorland": "EMPIRE v1.0.0/v51|Norway|Sorland",
+                "Norway|Norgemidt": "EMPIRE v1.0.0/v51|Norway|Norgemidt",
+                "Norway|Troms": "EMPIRE v1.0.0/v51|Norway|Troms",
+                "Norway|Vestmidt": "EMPIRE v1.0.0/v51|Norway|Vestmidt",
+            }
+
+            unit_map = {
+                "US$2010/kW": "USD_2010/kW",
+                "billion US$2010/yr": "billion USD_2010/yr",
+            }
+
+            year_cols = [
+                c for c in df.columns
+                if isinstance(c, (int, float))
+                or (isinstance(c, str) and len(c) == 4 and c.isdigit())
+            ]
+
+            # Active Power -> Secondary Energy and MWh -> EJ/yr.
+            ap_mask = df["variable"].astype(str).str.startswith("Active Power|Electricity|")
+            if ap_mask.any():
+                df.loc[ap_mask, "variable"] = df.loc[ap_mask, "variable"].str.replace(
+                    "Active Power|Electricity|", "Secondary Energy|Electricity|", regex=False
+                )
+                df.loc[ap_mask, "unit"] = "EJ/yr"
+                for col in year_cols:
+                    df.loc[ap_mask, col] = pd.to_numeric(df.loc[ap_mask, col], errors="coerce").fillna(0.0) * EJperMWh
+
+            # Typo + canonical prefix for CO2 variables.
+            df["variable"] = df["variable"].astype(str).str.replace(
+                "CO2 Emmissions|Electricity|", "Emissions|CO2|Energy|Supply|Electricity|", regex=False
+            )
+
+            # Variable naming harmonization.
+            df["variable"] = df["variable"].str.replace("Discount rate|Electricity", "Discount Rate|Electricity", regex=False)
+            df["variable"] = df["variable"].str.replace(
+                "Investment|Energy Supply|Electricity|Electricity storage",
+                "Investment|Energy Supply|Electricity|Electricity Storage",
+                regex=False,
+            )
+            df["variable"] = df["variable"].str.replace("Run-of-River", "Run of River", regex=False)
+            df["variable"] = df["variable"].str.replace("|Electricity|Lignite|", "|Electricity|Coal|Lignite|", regex=False)
+
+            # Remove technology-specific emissions rows; keep only aggregate electricity CO2 emissions.
+            aggregate_emissions_var = "Emissions|CO2|Energy|Supply|Electricity"
+            tech_emissions_mask = df["variable"].str.startswith(aggregate_emissions_var + "|")
+            if tech_emissions_mask.any():
+                df = df.loc[~tech_emissions_mask].copy()
+
+            # Unit canonicalization.
+            df["unit"] = df["unit"].replace(unit_map)
+
+            # Region canonicalization and required prefixes.
+            df["region"] = df["region"].astype(str).str.strip()
+            df.loc[df["region"] == "Europe", "region"] = "EU27"
+            df.loc[df["region"] == "The Netherlands", "region"] = "Netherlands"
+            df.loc[df["region"] == "Czech Republic", "region"] = "Czechia"
+            df["region"] = df["region"].replace(norway_region_prefix_map)
+
+            region_keys = df["region"].map(_normalize_region_key)
+            for key, prefixed_region in north_sea_region_map.items():
+                df.loc[region_keys == key, "region"] = prefixed_region
+
+            return df
+
         f = row_write(f, "Europe", "Discount rate|Electricity", "%", "Year", [value(instance.discountrate*100)]*len(instance.PeriodActive)) #Discount rate
         f = row_write(f, "Europe", "Capacity|Electricity", "GW", "Year", [value(sum(instance.genInstalledCap[n,g,i]*GWperMW for (n,g) in instance.GeneratorsOfNode)) for i in instance.PeriodActive]) #Total European installed generator capacity 
         f = row_write(f, "Europe", "Investment|Energy Supply|Electricity", "billion US$2010/yr", "Year", [value((1/instance.LeapYearsInvestment)*USD10perEUR18* \
@@ -1497,6 +1597,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         for (n,g) in instance.GeneratorsOfNode:
             f = row_write(f, get_iamc_region(n), "Capacity|Electricity|"+dict_generators[str(g).strip()], "GW", "Year", [value(instance.genInstalledCap[n,g,i]*GWperMW) for i in instance.PeriodActive]) #Installed generator capacity per country and type
         
+        f = _normalize_iamc_output(f)
         f = f.groupby(['model','scenario','region','variable','unit','subannual']).sum().reset_index() #NB! DOES NOT WORK FOR UNIT COSTS; SHOULD BE FIXED
         
         if not os.path.exists(result_file_path / 'IAMC'):
