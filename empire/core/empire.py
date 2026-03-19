@@ -894,7 +894,6 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         #instance.display('outputs_xpress.txt')
     if solver == "Gurobi":
         opt = SolverFactory('gurobi', Verbose=True)
-        opt.options["Crossover"]=0
         opt.options["Method"]=2
     if solver == "GLPK":
         opt = SolverFactory("glpk", Verbose=True)
@@ -1411,6 +1410,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                            "Coal CCS": "Coal|w/ CCS",
                            "Gas CCGT": "Gas|CCGT|w/o CCS",
                            "Gas CCS": "Gas|CCGT|w/ CCS",
+                           "Gas": "Gas",
                            "Gas OCGT": "Gas|OCGT|w/o CCS",
                            "Hydro regulated": "Hydro|Reservoir",
                            "Hydro run-of-the-river": "Hydro|Run-of-River",
@@ -1623,6 +1623,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
         logger.info("Resolving")
 
+        opt.options["Crossover"] = 0
         opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{name}_resolved.log")
 
         logger.info("Writing new operational results to .csv..")
