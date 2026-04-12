@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 import cloudpickle
+import pandas as pd
 from empire.utils import get_name_of_last_folder_in_path
 from pyomo.common.tempfiles import TempfileManager
 from pyomo.environ import *
@@ -117,7 +118,9 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     data.load(filename=str(tab_file_path / 'Sets_Technology.tab'),format="set", set=model.Technology)
     data.load(filename=str(tab_file_path / 'Sets_Node.tab'),format="set", set=model.Node)
     if north_sea:
-        data.load(filename=str(tab_file_path / 'Sets_OffshoreNode.tab'),format="set", set=model.OffshoreNode)
+        offshore_tab = tab_file_path / 'Sets_OffshoreNode.tab'
+        if offshore_tab.exists() and not pd.read_csv(offshore_tab, sep='\t').empty:
+            data.load(filename=str(offshore_tab), format="set", set=model.OffshoreNode)
     data.load(filename=str(tab_file_path / 'Sets_Horizon.tab'),format="set", set=model.Period)
     data.load(filename=str(tab_file_path / 'Sets_DirectionalLines.tab'),format="set", set=model.DirectionalLink)
     data.load(filename=str(tab_file_path / 'Sets_LineType.tab'),format="set", set=model.TransmissionType)
