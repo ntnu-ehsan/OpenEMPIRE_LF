@@ -1297,8 +1297,6 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         ###STANDARD PRINT###
         ####################
         
-        import pandas as pd
-        
         Modelname = "EMPIRE"
         Scenario = "1.5degree"
 
