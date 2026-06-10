@@ -22,7 +22,12 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                discountrate, WACC, LeapYearsInvestment, IAMC_PRINT, WRITE_LP,
                PICKLE_INSTANCE, EMISSION_CAP, USE_TEMP_DIR, LOADCHANGEMODULE, OPERATIONAL_DUALS, north_sea, 
                AGGREGATE_OFFSHORE_IAMC=False, workbook_path: Path | None = None,
-               OUT_OF_SAMPLE: bool = False, sample_file_path: Path | None = None) -> None | float:
+               OUT_OF_SAMPLE: bool = False, sample_file_path: Path | None = None,
+               RAMPING: bool = True,
+               solver_method: int = 2, solver_crossover: int | None = None,
+               solver_presolve: int | None = None, solver_threads: int | None = None,
+               solver_scaleflag: int | None = None, solver_numericfocus: int | None = None,
+               solver_barhomogeneous: int | None = None) -> None | float:
 
     if USE_TEMP_DIR:
         TempfileManager.tempdir = temp_dir
@@ -610,15 +615,18 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
     #################################################################
 
-    def ramping_rule(model, n, g, h, i, w):
-        if h in model.FirstHoursOfRegSeason or h in model.FirstHoursOfPeakSeason:
-            return Constraint.Skip
-        else:
-            if g in model.ThermalGenerators:
-                return model.genOperational[n,g,h,i,w]-model.genOperational[n,g,(h-1),i,w] - model.genRampUpCap[g]*model.genInstalledCap[n,g,i] <= 0   #
-            else:
+    if RAMPING:
+        def ramping_rule(model, n, g, h, i, w):
+            if h in model.FirstHoursOfRegSeason or h in model.FirstHoursOfPeakSeason:
                 return Constraint.Skip
-    model.ramping = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=ramping_rule)
+            else:
+                if g in model.ThermalGenerators:
+                    return model.genOperational[n,g,h,i,w]-model.genOperational[n,g,(h-1),i,w] - model.genRampUpCap[g]*model.genInstalledCap[n,g,i] <= 0   #
+                else:
+                    return Constraint.Skip
+        model.ramping = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=ramping_rule)
+    else:
+        logger.info("Ramping constraints disabled (use_ramping=False)...")
 
     #################################################################
 
@@ -897,7 +905,20 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         #instance.display('outputs_xpress.txt')
     if solver == "Gurobi":
         opt = SolverFactory('gurobi', Verbose=True)
-        opt.options["Method"]=2
+        opt.options["Method"] = solver_method          # 2 = barrier (interior point), best for large LPs
+        if solver_crossover is not None:
+            opt.options["Crossover"] = solver_crossover  # 0 = skip crossover tail (interior solution only)
+        if solver_presolve is not None:
+            opt.options["Presolve"] = solver_presolve    # 2 = aggressive presolve to shrink the matrix
+        if solver_threads is not None:
+            opt.options["Threads"] = solver_threads      # cap at physical cores to avoid hyperthread/NUMA contention
+        if solver_scaleflag is not None:
+            opt.options["ScaleFlag"] = solver_scaleflag      # matrix scaling (internal; results returned in original units)
+        if solver_numericfocus is not None:
+            opt.options["NumericFocus"] = solver_numericfocus  # 1-3: more effort on numerical accuracy (helps interior duals)
+        if solver_barhomogeneous is not None:
+            opt.options["BarHomogeneous"] = solver_barhomogeneous  # 1: robust barrier variant for ill-conditioned models
+        logger.info("Gurobi options: %s", dict(opt.options))
     if solver == "GLPK":
         opt = SolverFactory("glpk", Verbose=True)
 

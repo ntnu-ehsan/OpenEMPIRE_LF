@@ -151,8 +151,16 @@ def run_empire_model(
             north_sea=empire_config.north_sea,
             AGGREGATE_OFFSHORE_IAMC=empire_config.aggregate_offshore_nodes_in_IAMC,
             workbook_path=workbook_path,
-            OUT_OF_SAMPLE=OUT_OF_SAMPLE, 
-            sample_file_path=sample_file_path
+            OUT_OF_SAMPLE=OUT_OF_SAMPLE,
+            sample_file_path=sample_file_path,
+            RAMPING=empire_config.use_ramping,
+            solver_method=empire_config.solver_method,
+            solver_crossover=empire_config.solver_crossover,
+            solver_presolve=empire_config.solver_presolve,
+            solver_threads=empire_config.solver_threads,
+            solver_scaleflag=empire_config.solver_scaleflag,
+            solver_numericfocus=empire_config.solver_numericfocus,
+            solver_barhomogeneous=empire_config.solver_barhomogeneous,
             )
     else:
         logger.info("Test run selected: skipping optimization solve.")
