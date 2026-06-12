@@ -3,9 +3,9 @@
 
 use_temporary_directory: True                          # Specifies whether to use a temporary directory for operations
 temporary_directory: './'                              # Path to the temporary directory used for certain operations
-forecast_horizon_year: 2030                            # Target or end year for the run
-number_of_scenarios: 1                                 # Number of scenarios in every investment period
-length_of_regular_season: 24                        # Number of hours in a regular season
+forecast_horizon_year: 2045                            # Target or end year for the run
+number_of_scenarios: 3                                 # Number of scenarios in every investment period
+length_of_regular_season: 168                        # Number of hours in a regular season
 discount_rate: 0.05                                    # Rate used to discount future cash flows to present value
 wacc: 0.05                                             # Weighted average cost of capital
 optimization_solver: "Gurobi"                          # Mathematical solver used for optimization tasks
@@ -31,13 +31,14 @@ leap_years_investment: 5                               # Number of years per per
 time_format: "%d/%m/%Y %H:%M"                          # Time format for scenario data files
 use_ramping: False                                     # Include thermal ramp-rate constraints. Set False to drop inter-hour coupling for thermal units (faster, but only if ramping is non-binding)
 
-# # Solver (Gurobi) performance options. Leave a value commented/absent to use the Gurobi default.
-# solver_method: 2                                       # 2 = barrier (interior point), best for large LPs
-# solver_crossover: 0                                    # 0 = skip crossover for faster solves (duals/prices become approximate; set to -1 or remove for exact prices)
-# solver_presolve: 2                                     # 2 = aggressive presolve to shrink the matrix
-# solver_threads: 16                                     # Physical core count (2x 8-core Xeon Gold 6244); avoids hyperthread/NUMA contention
-# # Numerical scaling / robustness (internal to Gurobi; results returned in original units, so no risk of wrong values).
-# # Model ranges are wide (Matrix [5e-8, 4], RHS [2e-8, 8e7]), so these help barrier converge and stabilise interior duals.
-# solver_scaleflag: 2                                    # 2 = aggressive matrix scaling (-1=auto, 0=off)
-# solver_numericfocus: 1                                 # 1-3 = more numerical care; recommended with crossover off for trustworthy prices
-# solver_barhomogeneous: 1                               # 1 = robust homogeneous barrier variant for ill-conditioned models
+# Solver (Gurobi) performance options. Leave a value commented/absent to use the Gurobi default.
+# Speed: these are the accelerators — use them for large runs.
+solver_method: 2                                       # 2 = barrier (interior point), best for large LPs
+solver_crossover: 0                                    # 0 = skip crossover (it cost 9-10x the barrier time in past runs); duals/prices become interior approximations — set -1 or remove for exact basic prices
+solver_presolve: 2                                     # 2 = aggressive presolve to shrink the matrix
+# solver_threads: 16                                     # Set to the PHYSICAL core count of the machine the run executes on; avoids hyperthread/NUMA contention
+# Robustness (brakes, not accelerators): each of these makes Gurobi SLOWER. Only enable
+# one at a time if a run fails with numerical-trouble messages — never preemptively.
+# solver_scaleflag: 2                                    # 2 = aggressive matrix scaling (-1=auto, 0=off); scales the matrix only, not the objective
+# solver_numericfocus: 1                                 # 1-3 = progressively more numerical care (progressively slower)
+# solver_barhomogeneous: 1                               # 1 = homogeneous barrier variant for ill-conditioned/infeasible models (slower)
