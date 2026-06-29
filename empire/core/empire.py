@@ -24,6 +24,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                AGGREGATE_OFFSHORE_IAMC=False, workbook_path: Path | None = None,
                OUT_OF_SAMPLE: bool = False, sample_file_path: Path | None = None,
                RAMPING: bool = True,
+               TRANSMISSION_AVAILABILITY: float = 1.0,
                solver_method: int = 2, solver_crossover: int | None = None,
                solver_presolve: int | None = None, solver_threads: int | None = None,
                solver_scaleflag: int | None = None, solver_numericfocus: int | None = None,
@@ -684,11 +685,16 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
     #################################################################
 
+    # Fraction of installed line capacity that may be utilised at any operational hour.
+    # Values below 1.0 leave a reliability/operational margin on every line (e.g. 0.8 = 80% usable).
+    model.transmissionAvailability = Param(initialize=TRANSMISSION_AVAILABILITY, mutable=True)
+    logger.info("Transmission availability (usable share of installed line capacity): %s", TRANSMISSION_AVAILABILITY)
+
     def transmission_cap_rule(model, n1, n2, h, i, w):
         if (n1,n2) in model.BidirectionalArc:
-            return model.transmisionOperational[(n1,n2),h,i,w]  - model.transmissionInstalledCap[(n1,n2),i] <= 0
+            return model.transmisionOperational[(n1,n2),h,i,w]  - model.transmissionAvailability*model.transmissionInstalledCap[(n1,n2),i] <= 0
         elif (n2,n1) in model.BidirectionalArc:
-            return model.transmisionOperational[(n1,n2),h,i,w]  - model.transmissionInstalledCap[(n2,n1),i] <= 0
+            return model.transmisionOperational[(n1,n2),h,i,w]  - model.transmissionAvailability*model.transmissionInstalledCap[(n2,n1),i] <= 0
     model.transmission_cap = Constraint(model.DirectionalLink, model.Operationalhour, model.PeriodActive, model.Scenario, rule=transmission_cap_rule)
 
     #################################################################

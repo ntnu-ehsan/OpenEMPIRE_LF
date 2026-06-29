@@ -50,6 +50,7 @@ class EmpireConfiguration:
         leap_years_investment: int = 5,
         time_format: str = "%d/%m/%Y %H:%M",
         use_ramping: bool = True,
+        transmission_availability: float = 1.0,
         solver_method: int = 2,
         solver_crossover: int | None = None,
         solver_presolve: int | None = None,
@@ -91,6 +92,9 @@ class EmpireConfiguration:
         :param use_ramping: If true (default), thermal generator ramp-rate constraints are included. Setting it to
             false removes the inter-hour ramping constraints (fewer rows, less temporal coupling for thermal units);
             only do this if ramping is non-binding at your time resolution, as it is a physical modelling assumption.
+        :param transmission_availability: Fraction (0-1) of each line's installed capacity that may be used in any
+            operational hour. Values below 1.0 reserve a reliability/operational margin on every line (e.g. 0.8 = 80%
+            usable). Default 1.0 leaves the full installed capacity available.
         :param solver_method: Gurobi 'Method' parameter (algorithm). 2 = barrier, best for large LPs.
         :param solver_crossover: Gurobi 'Crossover' parameter. 0 skips the crossover tail for faster
             barrier solves (interior-point solution only; duals/prices become approximate). None leaves the solver default.
@@ -142,6 +146,7 @@ class EmpireConfiguration:
         self.leap_years_investment = leap_years_investment
         self.time_format = time_format
         self.use_ramping = use_ramping
+        self.transmission_availability = transmission_availability
 
         # Solver (Gurobi) performance options
         self.solver_method = solver_method
@@ -164,7 +169,10 @@ class EmpireConfiguration:
         """
         Validates the configuration. Raises an error if the configuration is invalid.
         """
-        pass
+        if not 0 < self.transmission_availability <= 1:
+            raise ValueError(
+                f"transmission_availability must be in (0, 1], got {self.transmission_availability}."
+            )
 
     @classmethod
     def from_dict(cls, config: Dict) -> "EmpireConfiguration":

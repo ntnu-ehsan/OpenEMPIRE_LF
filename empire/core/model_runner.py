@@ -154,6 +154,7 @@ def run_empire_model(
             OUT_OF_SAMPLE=OUT_OF_SAMPLE,
             sample_file_path=sample_file_path,
             RAMPING=empire_config.use_ramping,
+            TRANSMISSION_AVAILABILITY=empire_config.transmission_availability,
             solver_method=empire_config.solver_method,
             solver_crossover=empire_config.solver_crossover,
             solver_presolve=empire_config.solver_presolve,
