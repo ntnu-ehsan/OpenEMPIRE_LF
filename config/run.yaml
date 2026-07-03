@@ -3,8 +3,8 @@
 
 use_temporary_directory: True                          # Specifies whether to use a temporary directory for operations
 temporary_directory: './'                              # Path to the temporary directory used for certain operations
-forecast_horizon_year: 2045                            # Target or end year for the run
-number_of_scenarios: 3                                 # Number of scenarios in every investment period
+forecast_horizon_year: 2025                            # Target or end year for the run
+number_of_scenarios: 1                                 # Number of scenarios in every investment period
 length_of_regular_season: 168                        # Number of hours in a regular season
 discount_rate: 0.05                                    # Rate used to discount future cash flows to present value
 wacc: 0.05                                             # Weighted average cost of capital
@@ -44,7 +44,7 @@ lopf_kwargs:                                           # Options for the LOPF / 
 # Speed: these are the accelerators — use them for large runs.
 solver_method: 2                                       # 2 = barrier (interior point), best for large LPs
 solver_crossover: 0                                    # 0 = skip crossover (it cost 9-10x the barrier time in past runs); duals/prices become interior approximations — set -1 or remove for exact basic prices
-solver_presolve: 2                                     # 2 = aggressive presolve to shrink the matrix
+solver_presolve: -1                                     # 2 = aggressive presolve to shrink the matrix
 # solver_threads: 16                                     # Set to the PHYSICAL core count of the machine the run executes on; avoids hyperthread/NUMA contention
 # Robustness (brakes, not accelerators): each of these makes Gurobi SLOWER. Only enable
 # one at a time if a run fails with numerical-trouble messages — never preemptively.

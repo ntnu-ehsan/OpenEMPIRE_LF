@@ -16,6 +16,46 @@
 > EUR/tonne magnitudes, zero when non-binding. Flag reverted to False afterwards.
 > Still open: cluster-log tail, node RAM vs Gurobi peak memory (action 2),
 > and a re-timed full NESP run with the new formulation.
+>
+> **UPDATE (2026-06-13): the code fix was never actually exercised on the cluster.**
+> Cluster runs kept showing the OLD signature (`Matrix [5e-08, ...]`, and a
+> `Non-default parameters` block listing only `Method 2` / `QCPDual 1` — no
+> `Crossover 0` / `Presolve 2`). Root cause is an **import-path / worktree mismatch**,
+> NOT the model code:
+> - The conda env `empire_env` has `empire` installed **editable, pointed at the
+>   OLD clone** `/mnt/beegfs/users/ehsanno/openempire` (`pip show empire` →
+>   `Editable project location: .../openempire`).
+> - `python scripts/run.py` imports `empire` from that editable target regardless of
+>   which directory the job runs in. So worktrees `openempire_accel` and
+>   `openempire_v2` supplied only their **config + data + Results paths** (resolved
+>   from cwd); the **Python code always came from `openempire`**.
+> - This is why interactive `cd openempire_v2; python -c "import empire..."` looked
+>   correct (cwd is on sys.path first) but jobs ran stale code. The reliable test is
+>   from a neutral dir: `cd /tmp && python -c "import empire.core.empire as m; print(m.__file__)"`.
+> - LOCAL machine (Windows) has it installed editable to the repo, which is why local
+>   `test`/`NS_GoRES` runs DID show the new formulation (`Matrix [1e-3, ...]`). The fix
+>   itself is verified correct; only the cluster was running old bytes.
+>
+> **Constraint:** ongoing runs from `openempire` AND `openempire_accel` must not be
+> interrupted. Already-running processes hold their modules in memory and are safe,
+> but a global `pip install -e` re-point would affect any QUEUED job that starts after.
+>
+> **Chosen workaround (no global change):** per-job `PYTHONPATH` override in the v2
+> submission script (PYTHONPATH wins over site-packages):
+> ```bash
+> export PYTHONPATH=/mnt/beegfs/users/ehsanno/openempire_v2:$PYTHONPATH
+> cd /mnt/beegfs/users/ehsanno/openempire_v2
+> python scripts/run.py -d <dataset> -f
+> ```
+> Verify (no submit needed):
+> `cd /tmp && PYTHONPATH=/mnt/.../openempire_v2 python -c "import empire.core.empire as m; print(m.__file__)"`
+> Runtime confirmation in the fresh log header: `Crossover 0` + `Presolve 2` in the
+> non-default parameters, and NO `5e-08` in the matrix range.
+> Also check the sbatch script `cd`s into `openempire_v2` (so config/data/Results match).
+>
+> **Permanent cleanup once old runs finish:** pick ONE canonical checkout,
+> `pip install -e` it, delete/quarantine the others. One shared conda env = exactly
+> one import target, no matter how many worktrees exist.
 
 ## Goal
 Some countries (NO, DK, SE, FI) were upgraded from NUTS0 (1 node each) to NUTS2
