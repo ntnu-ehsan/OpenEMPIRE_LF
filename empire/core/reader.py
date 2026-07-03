@@ -31,7 +31,26 @@ def read_file(excelfile: pd.ExcelFile, sheet: str, columns: list,
     tab_file_path.mkdir(parents=True, exist_ok=True)
     save_csv_frame.to_csv(tab_file_path / f"{filename}_{sheet}.tab", header=True, index=None, sep='\t', mode='w')
 
-def read_sets(excelfile: pd.ExcelFile, sheet: str, tab_file_path: Path, 
+def write_scalar_tab(sheet: pd.DataFrame, tab_file_path: Path, filename: str, param_name: str) -> None:
+    """
+    Write a single scalar value from a General.xlsx-style sheet to a one-column .tab file
+    that Pyomo can load into an unindexed Param via ``format="table"``.
+
+    The sheet is expected to have the value in its first column (with descriptive header/text
+    rows above it, as in the NominalVoltage / Sbase sheets). The last numeric value found is used.
+    """
+    values = pd.to_numeric(sheet.iloc[:, 0], errors='coerce').dropna()
+    if values.empty:
+        logger.warning("Sheet for '%s' contains no numeric value; skipping %s.tab", param_name, filename)
+        return
+    scalar = float(values.iloc[-1])
+    tab_file_path.mkdir(parents=True, exist_ok=True)
+    with open(tab_file_path / f"{filename}.tab", "w", newline="") as f:
+        f.write(f"{param_name}\n{scalar}\n")
+    logger.info("Wrote %s.tab (%s = %s).", filename, param_name, scalar)
+
+
+def read_sets(excelfile: pd.ExcelFile, sheet: str, tab_file_path: Path,
               filename: str) -> None:
     """
     Reads sets data from an Excel file and saves each column as a separate .tab file.
@@ -200,6 +219,9 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     read_file(GeneralExcelData, 'seasonScale', [0, 1], tab_file_path, "General", skipheaders=2)
     read_file(GeneralExcelData, 'CO2Cap', [0, 1], tab_file_path, "General", skipheaders=2)
     read_file(GeneralExcelData, 'CO2Price', [0, 1], tab_file_path, "General", skipheaders=2)
+    # Per-unit system base (MW) for LOPF. Optional: only present in per-unit datasets.
+    if 'Sbase' in GeneralExcelData:
+        write_scalar_tab(GeneralExcelData['Sbase'], tab_file_path, 'General_Sbase', 'sBase')
     
     #Reading Storage
     logger.info("Reading Storage.xlsx")

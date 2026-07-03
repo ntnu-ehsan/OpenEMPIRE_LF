@@ -234,6 +234,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     # Electrical line parameters for linear (DC) optimal power flow (LOPF). Only populated when LOPF_FLAG is set.
     model.lineReactance = Param(model.DirectionalLink, default=0.0, mutable=True)    # Reactance X of transmission lines
     model.lineSusceptance = Param(model.DirectionalLink, default=0.0, mutable=True)  # Susceptance B of transmission lines
+    model.sBase = Param(default=1.0, mutable=True)  # Per-unit system base (MW); loaded from General.xlsx 'Sbase' sheet when present (per-unit LOPF datasets)
     model.storageChargeEff = Param(model.Storage, default=1.0, mutable=True)
     model.storageDischargeEff = Param(model.Storage, default=1.0, mutable=True)
     model.storageBleedEff = Param(model.Storage, default=1.0, mutable=True)
@@ -333,7 +334,12 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         data.load(filename=str(tab_file_path / 'Stochastic_ElectricLoadRaw.tab'), param=model.sloadRaw, format="table") 
 
     logger.info("Reading parameters for General...")
-    data.load(filename=str(tab_file_path / 'General_seasonScale.tab'), param=model.seasScale, format="table") 
+    data.load(filename=str(tab_file_path / 'General_seasonScale.tab'), param=model.seasScale, format="table")
+
+    # Per-unit system base (MW) for LOPF. Only present in per-unit datasets.
+    if (tab_file_path / 'General_Sbase.tab').exists():
+        data.load(filename=str(tab_file_path / 'General_Sbase.tab'), param=model.sBase, format="table")
+        logger.info("Loaded per-unit system base (sBase) for LOPF.")
 
     if EMISSION_CAP:
         data.load(filename=str(tab_file_path / 'General_CO2Cap.tab'), param=model.CO2cap, format="table")
@@ -854,6 +860,10 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         # Reader-only options (e.g. reactance_per_km) are not constraint kwargs; the
         # formulation absorbs any extras via **_ignored, so passing them is harmless.
         kw = {} if LOPF_KWARGS is None else dict(LOPF_KWARGS)
+        # When a per-unit system base was provided (General.xlsx 'Sbase' sheet), enable the
+        # per-unit KVL so line reactances are interpreted as per-unit on that base.
+        if (tab_file_path / 'General_Sbase.tab').exists():
+            kw.setdefault("use_per_unit", True)
         add_lopf_constraints(model, method=LOPF_METHOD, **kw)
     else:
         logger.info("LOPF constraints not activated.")

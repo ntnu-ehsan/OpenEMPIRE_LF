@@ -244,6 +244,9 @@ def _add_kirchhoff_constraints(
         "flow",
     ),
     dc_line_types: Optional[list] = None,
+    use_per_unit: bool = False,
+    s_base_param_name: str = "sBase",
+    reactance_in_pu: bool = False,
     **_ignored,  # absorb reader-only kwargs (e.g. reactance_per_km)
 ):
     """
@@ -364,8 +367,22 @@ def _add_kirchhoff_constraints(
 
     # ---- KVL on cycles: sum s_c,ij * X_ij * FlowK_ij = 0 -----------------------
     # Resolve the reactance param on the instance `m` at construction time.
+    # Per-unit handling: when reactances are supplied in p.u. (with a system base sBase in MW),
+    # the loop equation is written on per-unit power, F_pu = F_MW / sBase, giving the
+    # dimensionally-correct drop x_pu * F_pu. KVL is homogeneous (== 0), so a single common
+    # 1/sBase factor leaves the AC-flow solution unchanged for a uniform system base; the
+    # scaling matters once reactances span different bases/voltage levels.
+    pu_mode = use_per_unit and hasattr(model, s_base_param_name)
+    if use_per_unit:
+        logger.info("LOPF: Kirchhoff KVL written in per-unit (reactance interpreted as p.u.%s).",
+                    ", flows normalised by sBase" if pu_mode else "; sBase not found, using raw scale")
+
     def _kvl_rule(m, c, h, w, p):
         X = getattr(m, x_name)
+        if pu_mode:
+            sbase = getattr(m, s_base_param_name)
+            return sum(m.CycleEdgeSign[c, i, j] * X[i, j] * m.FlowK[i, j, h, w, p] / sbase
+                       for (i, j) in m.BidirectionalArc) == 0
         return sum(m.CycleEdgeSign[c, i, j] * X[i, j] * m.FlowK[i, j, h, w, p]
                    for (i, j) in m.BidirectionalArc) == 0
     model.KVL = Constraint(model.Cycle, H, W, P, rule=_kvl_rule)
