@@ -51,6 +51,9 @@ class EmpireConfiguration:
         time_format: str = "%d/%m/%Y %H:%M",
         use_ramping: bool = True,
         transmission_availability: float = 1.0,
+        lopf_flag: bool = False,
+        lopf_method: str = "kirchhoff",
+        lopf_kwargs: dict | None = None,
         solver_method: int = 2,
         solver_crossover: int | None = None,
         solver_presolve: int | None = None,
@@ -95,6 +98,14 @@ class EmpireConfiguration:
         :param transmission_availability: Fraction (0-1) of each line's installed capacity that may be used in any
             operational hour. Values below 1.0 reserve a reliability/operational margin on every line (e.g. 0.8 = 80%
             usable). Default 1.0 leaves the full installed capacity available.
+        :param lopf_flag: If true, add linear (DC) optimal power flow constraints to the transmission network.
+            Default false keeps the standard transport (net-transfer) model.
+        :param lopf_method: LOPF formulation to use when lopf_flag is true. Currently supported: "kirchhoff"
+            (cycle-based DC-OPF; requires line reactance/susceptance data).
+        :param lopf_kwargs: Optional dict of LOPF options. Reader option: "reactance_per_km" (Ohm/km) to compute
+            line reactance from line length when no lineReactance sheet/.tab is provided. Constraint options are
+            forwarded to the formulation (e.g. "reactance_param_name", "reactance_from_susceptance",
+            "dc_line_types" = list of transmission types to treat as HVDC/controllable, excluded from KVL).
         :param solver_method: Gurobi 'Method' parameter (algorithm). 2 = barrier, best for large LPs.
         :param solver_crossover: Gurobi 'Crossover' parameter. 0 skips the crossover tail for faster
             barrier solves (interior-point solution only; duals/prices become approximate). None leaves the solver default.
@@ -147,6 +158,11 @@ class EmpireConfiguration:
         self.time_format = time_format
         self.use_ramping = use_ramping
         self.transmission_availability = transmission_availability
+
+        # Linear Optimal Power Flow (DC-OPF) options
+        self.lopf_flag = lopf_flag
+        self.lopf_method = lopf_method
+        self.lopf_kwargs = {} if lopf_kwargs is None else dict(lopf_kwargs)
 
         # Solver (Gurobi) performance options
         self.solver_method = solver_method

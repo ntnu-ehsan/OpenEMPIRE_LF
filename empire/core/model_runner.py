@@ -119,7 +119,11 @@ def run_empire_model(
             )
         check_scenarios_exist_and_copy(run_config)
 
-    generate_tab_files(file_path=workbook_path, tab_file_path=tab_file_path)
+    generate_tab_files(
+        file_path=workbook_path,
+        tab_file_path=tab_file_path,
+        lopf_kwargs=empire_config.lopf_kwargs if empire_config.lopf_flag else None,
+    )
 
     if not test_run:
         obj_value = run_empire(
@@ -155,6 +159,9 @@ def run_empire_model(
             sample_file_path=sample_file_path,
             RAMPING=empire_config.use_ramping,
             TRANSMISSION_AVAILABILITY=empire_config.transmission_availability,
+            LOPF_FLAG=empire_config.lopf_flag,
+            LOPF_METHOD=empire_config.lopf_method,
+            LOPF_KWARGS=empire_config.lopf_kwargs,
             solver_method=empire_config.solver_method,
             solver_crossover=empire_config.solver_crossover,
             solver_presolve=empire_config.solver_presolve,

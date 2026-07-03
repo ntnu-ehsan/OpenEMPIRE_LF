@@ -43,13 +43,18 @@ class BaseClient:
             df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=startrow, **kwargs)
 
     def validate(self):
-        """Validate if the Excel file has the expected sheet names."""
+        """Validate that the Excel file contains (at least) the expected sheet names.
+
+        Extra sheets are allowed so datasets can carry optional inputs (e.g. lineReactance
+        and other LOPF sheets) without failing validation; only missing required sheets error.
+        """
         name = self.__class__.__name__.split("Client", maxsplit=1)[0]
         wb = openpyxl.load_workbook(self.file)
-        if set(wb.sheetnames) != set(sheets[name]):
+        missing = set(sheets[name]) - set(wb.sheetnames)
+        if missing:
             raise ValueError(
-                f"Sheetnames in {self.file} dont match expected sheet names for {name}."
-                f"Expected: {sheets[name]}, Found: {wb.sheetnames}"
+                f"Sheetnames in {self.file} are missing expected sheets for {name}. "
+                f"Missing: {sorted(missing)}, Expected: {sheets[name]}, Found: {wb.sheetnames}"
             )
 
 

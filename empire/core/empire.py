@@ -10,6 +10,8 @@ from pathlib import Path
 import cloudpickle
 import pandas as pd
 from empire.utils import get_name_of_last_folder_in_path
+from empire.core.lopf_module import add_lopf_constraints, load_line_parameters
+from empire.core.lopf_results import log_lopf_diagnostics, write_angle_based_results
 from pyomo.common.tempfiles import TempfileManager
 from pyomo.environ import *
 
@@ -25,6 +27,8 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                OUT_OF_SAMPLE: bool = False, sample_file_path: Path | None = None,
                RAMPING: bool = True,
                TRANSMISSION_AVAILABILITY: float = 1.0,
+               LOPF_FLAG: bool = False, LOPF_METHOD: str = "kirchhoff",
+               LOPF_KWARGS: dict | None = None,
                solver_method: int = 2, solver_crossover: int | None = None,
                solver_presolve: int | None = None, solver_threads: int | None = None,
                solver_scaleflag: int | None = None, solver_numericfocus: int | None = None,
@@ -227,6 +231,9 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     model.storageLifetime = Param(model.Storage, default=0.0, mutable=True)
     model.genEfficiency = Param(model.Generator, model.Period, default=1.0, mutable=True)
     model.lineEfficiency = Param(model.DirectionalLink, default=0.97, mutable=True)
+    # Electrical line parameters for linear (DC) optimal power flow (LOPF). Only populated when LOPF_FLAG is set.
+    model.lineReactance = Param(model.DirectionalLink, default=0.0, mutable=True)    # Reactance X of transmission lines
+    model.lineSusceptance = Param(model.DirectionalLink, default=0.0, mutable=True)  # Susceptance B of transmission lines
     model.storageChargeEff = Param(model.Storage, default=1.0, mutable=True)
     model.storageDischargeEff = Param(model.Storage, default=1.0, mutable=True)
     model.storageBleedEff = Param(model.Storage, default=1.0, mutable=True)
@@ -282,6 +289,10 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     data.load(filename=str(tab_file_path / 'Transmission_TypeFixedOMCost.tab'), param=model.transmissionTypeFixedOMCost, format="table")
     data.load(filename=str(tab_file_path / 'Transmission_lineEfficiency.tab'), param=model.lineEfficiency, format="table")
     data.load(filename=str(tab_file_path / 'Transmission_Lifetime.tab'), param=model.transmissionLifetime, format="table")
+
+    # Electrical line parameters (reactance/susceptance) for linear (DC) optimal power flow
+    if LOPF_FLAG:
+        load_line_parameters(model, tab_file_path, data, LOPF_KWARGS, logger)
 
     logger.info("Reading parameters for Storage...")
     data.load(filename=str(tab_file_path / 'Storage_StorageBleedEfficiency.tab'), param=model.storageBleedEff, format="table")
@@ -834,6 +845,19 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
     #################################################################
 
+    ##############################
+    ##LOAD FLOW (DC-OPF) MODULE##
+    ##############################
+
+    if LOPF_FLAG:
+        logger.info("LOPF constraints activated using method: %s", LOPF_METHOD)
+        # Reader-only options (e.g. reactance_per_km) are not constraint kwargs; the
+        # formulation absorbs any extras via **_ignored, so passing them is harmless.
+        kw = {} if LOPF_KWARGS is None else dict(LOPF_KWARGS)
+        add_lopf_constraints(model, method=LOPF_METHOD, **kw)
+    else:
+        logger.info("LOPF constraints not activated.")
+
     #######
     ##RUN##
     #######
@@ -978,6 +1002,14 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         raise RuntimeError(
             f"Model is infeasible. Check the IIS file in {result_file_path} for details."
         )
+
+    # Load flow (DC-OPF) diagnostics and detailed results
+    if LOPF_FLAG:
+        try:
+            write_angle_based_results(instance, result_file_path, logger)
+            log_lopf_diagnostics(instance, logger)
+        except Exception as e:
+            logger.warning("Could not write LOPF results: %s", e)
 
     if PICKLE_INSTANCE:
         start = time.time()

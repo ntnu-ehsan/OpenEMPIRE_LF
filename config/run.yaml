@@ -32,6 +32,14 @@ time_format: "%d/%m/%Y %H:%M"                          # Time format for scenari
 use_ramping: False                                     # Include thermal ramp-rate constraints. Set False to drop inter-hour coupling for thermal units (faster, but only if ramping is non-binding)
 transmission_availability: 1.0                          # Usable share (0-1) of each line's installed capacity per hour, for reliability margins (e.g. 0.8 = 80% usable). 1.0 = full capacity
 
+# Linear (DC) Optimal Power Flow -- adds Kirchhoff cycle-based DC-OPF constraints to the network
+lopf_flag: False                                       # Set True to enable DC optimal power flow constraints
+lopf_method: "kirchhoff"                               # LOPF formulation (currently supported: "kirchhoff")
+lopf_kwargs:                                           # Options for the LOPF / reactance generation
+  reactance_per_km: 0.0004                             # Ohm/km; used to derive lineReactance from line length when no lineReactance sheet is provided
+  reactance_from_susceptance: False                    # If True, derive reactance X = 1/B from a lineSusceptance input instead
+  dc_line_types: ["HVDC_Cable"]                        # Transmission types treated as HVDC (controllable, excluded from KVL); omit to auto-detect names containing "DC"
+
 # Solver (Gurobi) performance options. Leave a value commented/absent to use the Gurobi default.
 # Speed: these are the accelerators — use them for large runs.
 solver_method: 2                                       # 2 = barrier (interior point), best for large LPs
