@@ -157,7 +157,7 @@ def write_angle_based_results(
                             theoretical_flow += B_exist * V_squared * angle_diff
                             susceptance_total += B_exist
                         
-                        if is_candidate and reactance_new and abs(reactance_new) > 1e-9 and trans_on == 1:
+                        if is_candidate and reactance_new and abs(reactance_new) > 1e-9 and trans_on != 'N/A' and trans_on > 0.5:
                             B_new = 1.0 / reactance_new
                             theoretical_flow += B_new * V_squared * angle_diff
                             susceptance_total += B_new
@@ -240,7 +240,7 @@ def write_angle_based_results(
                             theta_j = value(instance.Theta[j_node, h, w, i_per])
                             angle_diff = theta_i - theta_j
                             susceptance = 1.0 / reactance
-                            theoretical_flow = susceptance * angle_diff
+                            theoretical_flow = susceptance * V_squared * angle_diff
                             flow_error = abs(flow - theoretical_flow)
                             all_errors.append(flow_error)
                 
@@ -426,7 +426,7 @@ def log_lopf_diagnostics(instance, logger_inst: Optional[logging.Logger] = None)
             logger_inst.info(f"  Average Flow: {avg_flow:.2f} MW")
         
         # Check for constraint violations (if dual variables available)
-        if hasattr(instance, 'OhmLawDC_Exist'):
+        if hasattr(instance, 'Ohm_exist'):
             logger_inst.info("\nOhm's Law Constraints: Active for existing lines")
         if hasattr(instance, 'OhmLawDC_Cand_UB') and hasattr(instance, 'OhmLawDC_Cand_LB'):
             logger_inst.info("Candidate Line Constraints: Big-M formulation active")

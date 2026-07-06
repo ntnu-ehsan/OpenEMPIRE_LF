@@ -503,6 +503,18 @@ def _add_angle_constraints(
         if not hasattr(model, s):
             raise RuntimeError(f"Model is missing required set '{s}'")
 
+    # The angle formulation computes P_MW = (V_kV² / X_Ω) * Δθ, which is only correct for
+    # reactances in ohms. use_per_unit is auto-set by empire.py when the dataset provides a
+    # per-unit system base (General.xlsx 'Sbase' sheet); running the angle method on such a
+    # dataset would inflate every susceptance by orders of magnitude, so fail loudly instead.
+    if kwargs.get("use_per_unit"):
+        raise NotImplementedError(
+            "Angle-based LOPF does not support per-unit reactances (this dataset provides a "
+            "General.xlsx 'Sbase' sheet). Provide lineReactance in ohms, or use lopf_method "
+            "'kirchhoff' which supports per-unit, or set lopf_kwargs.use_per_unit to False if "
+            "the reactances really are in ohms."
+        )
+
     A = model.DirectionalLink; 
     N = model.Node; 
     H = model.Operationalhour; 
@@ -597,23 +609,25 @@ def _add_angle_constraints(
     # Reactance for candidate block (new circuit)
     if hasattr(model, "LineBlockReactance"):
         def _rx_cand_dir_init(m, i, j):
-
-            # First check if (i,j) or (j,i) is in LineBlockReactance
+            # NB: '(i,j) in Param' tests INDEX-SET membership, not whether data was loaded,
+            # so unset per-corridor entries read as the 0.0 default. Fall back by VALUE:
+            # per-corridor > 0 → global > 0 → the corridor's existing line reactance.
+            X_ohm = 0.0
             if (i, j) in m.LineBlockReactance:
                 X_ohm = value(m.LineBlockReactance[i, j])
             elif (j, i) in m.LineBlockReactance:
                 X_ohm = value(m.LineBlockReactance[j, i])
-            elif hasattr(m, "LineBlockReactanceGlobal"):
-                # No special reactance provided → check global candidate reactance
+            if X_ohm <= 0 and hasattr(m, "LineBlockReactanceGlobal"):
                 X_ohm = value(m.LineBlockReactanceGlobal)
-            else:
-                # No special reactance provided → fallback to existing reactance
-                return value(m._reactance_dir[i, j])
-
             if X_ohm <= 0:
-                # Params default to 0.0 when no data was given; a zero reactance would
-                # blow up the susceptance, so fall back to the corridor's line reactance.
-                return value(m._reactance_dir[i, j])
+                # No block reactance anywhere; fall back to the corridor's line reactance.
+                x_fallback = value(m._reactance_dir[i, j])
+                if x_fallback >= 1e8 and ((i, j) in m.CandidateTransmission or (j, i) in m.CandidateTransmission):
+                    logger.warning(
+                        "Candidate corridor (%s,%s) has no usable block or line reactance; "
+                        "a built line here will carry (almost) no flow. Provide a "
+                        "LineBlockReactance row or a positive LineBlockReactanceGlobal.", i, j)
+                return x_fallback
             return X_ohm
 
         model._reactance_cand_dir = Param(
@@ -754,6 +768,22 @@ def _add_angle_constraints(
     def ohm_exist_rule(m, i, j, h, w, p):
         if (i, j) in _dc_corridors(m):
             return Constraint.Skip
+        # Enforce Ohm's law only in periods where the corridor actually has installed
+        # capacity. _existing_init adds an arc if its initial capacity is positive in ANY
+        # period; a corridor that retires or is commissioned later has zero capacity in
+        # some periods, where Flow_exist = B*V^2*Delta_theta combined with |FlowDC| <= 0
+        # would pin the bus angles together and distort the rest of the network.
+        if (i, j) in m.BidirectionalArc:
+            bi, bj = i, j
+        elif (j, i) in m.BidirectionalArc:
+            bi, bj = j, i
+        else:
+            bi, bj = i, j
+        try:
+            if value(m.transmissionInitCap[bi, bj, p]) <= 0:
+                return Constraint.Skip
+        except Exception:
+            pass
         B = _get_B_val(m, i, j)
         return m.Flow_exist[i,j,h,w,p] == B * m.VoltageSquared * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p])
     model.Ohm_exist = Constraint(
@@ -827,8 +857,12 @@ def _add_angle_constraints(
         else:
             raise ValueError(f"Directional arc ({i},{j}) not found in CandidateTransmission as ({i},{j}) or ({j},{i})")
 
-        # The capacity expression for candidate lines:
-        if hasattr(m, "transmissionLineBlockCap") and (ci, cj) in m.transmissionLineBlockCap:
+        # The capacity expression for candidate lines.
+        # NB: '(ci,cj) in Param' tests INDEX-SET membership, not whether data was loaded,
+        # so an unset per-corridor entry reads as the 0.0 default and would force
+        # Flow_new to 0. Gate by VALUE so the global fallback actually applies, matching
+        # empire.py's _candidate_block_cap.
+        if hasattr(m, "transmissionLineBlockCap") and value(m.transmissionLineBlockCap[ci, cj]) > 0:
             cap = m.transmissionLineBlockCap[ci, cj]
         else:
             cap = m.transmissionLineBlockCapGlobal  # If there is a global block capacity
@@ -845,8 +879,12 @@ def _add_angle_constraints(
         else:
             raise ValueError(f"Directional arc ({i},{j}) not found in CandidateTransmission as ({i},{j}) or ({j},{i})")
 
-        # The capacity expression for candidate lines:
-        if hasattr(m, "transmissionLineBlockCap") and (ci, cj) in m.transmissionLineBlockCap:
+        # The capacity expression for candidate lines.
+        # NB: '(ci,cj) in Param' tests INDEX-SET membership, not whether data was loaded,
+        # so an unset per-corridor entry reads as the 0.0 default and would force
+        # Flow_new to 0. Gate by VALUE so the global fallback actually applies, matching
+        # empire.py's _candidate_block_cap.
+        if hasattr(m, "transmissionLineBlockCap") and value(m.transmissionLineBlockCap[ci, cj]) > 0:
             cap = m.transmissionLineBlockCap[ci, cj]
         else:
             cap = m.transmissionLineBlockCapGlobal  # If there is a global block capacity
