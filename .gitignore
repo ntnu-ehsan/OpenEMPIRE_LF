@@ -144,3 +144,9 @@ report.html
 dag.png
 config/cluster.json
 config/app.yaml
+
+# Solver temp dumps (Pyomo writes these when writing the model to disk)
+*.pyomo.lp
+tmp*.lp
+# Excel lock/temp files
+~$*.xlsx
