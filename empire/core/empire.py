@@ -71,7 +71,21 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         logger.info("Absolute emission cap in each scenario...")
     else:
         logger.info("No absolute emission cap...")
-    
+
+    # The angle-based LOPF needs a binary on/off decision per expandable corridor for its
+    # big-M Ohm's-law activation, so it switches transmission investment to load_flow
+    # semantics: candidate corridors build one capacity block at most once over the horizon
+    # (binary), all other corridors stay fixed at initial capacity. With the Kirchhoff
+    # method (or LOPF off) the model keeps the continuous transmission expansion unchanged.
+    BINARY_LINE_EXPANSION = bool(LOPF_FLAG) and str(LOPF_METHOD).lower() == "angle"
+    if BINARY_LINE_EXPANSION:
+        if OUT_OF_SAMPLE:
+            raise NotImplementedError(
+                "Angle-based LOPF (binary line expansion) does not support out-of-sample runs: "
+                "the binary build/on decisions are not yet re-loadable as fixed parameters.")
+        logger.info("Angle-based LOPF: binary transmission expansion enabled "
+                    "(candidate corridors build in blocks; non-candidates fixed at initial capacity)...")
+
     ########
     ##SETS##
     ########
@@ -159,6 +173,11 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         return retval
     model.BidirectionalArc = Set(dimen=2, initialize=BidirectionalArc_init, ordered=True) #l
 
+    if BINARY_LINE_EXPANSION:
+        # Corridors eligible for binary block expansion. Rows must use the same node
+        # orientation as BidirectionalArc (first direction encountered in DirectionalLink).
+        model.CandidateTransmission = Set(within=model.BidirectionalArc)
+
     ##############
     ##PARAMETERS##
     ##############
@@ -235,6 +254,16 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     model.lineReactance = Param(model.DirectionalLink, default=0.0, mutable=True)    # Reactance X of transmission lines
     model.lineSusceptance = Param(model.DirectionalLink, default=0.0, mutable=True)  # Susceptance B of transmission lines
     model.sBase = Param(default=1.0, mutable=True)  # Per-unit system base (MW); loaded from General.xlsx 'Sbase' sheet when present (per-unit LOPF datasets)
+    if BINARY_LINE_EXPANSION:
+        # Block size (MW) of the single new circuit a candidate corridor may build.
+        # Per-corridor value; corridors with 0 (or absent) fall back to the global value.
+        model.transmissionLineBlockCap = Param(model.CandidateTransmission, default=0.0, mutable=True)
+        model.transmissionLineBlockCapGlobal = Param(default=0.0, mutable=True)
+        # Reactance of the candidate block circuit; falls back to the global value, then to
+        # the corridor's existing lineReactance (handled inside the angle-LOPF module).
+        model.LineBlockReactance = Param(model.CandidateTransmission, default=0.0, mutable=True)
+        model.LineBlockReactanceGlobal = Param(default=0.0, mutable=True)
+        model.NominalVoltage = Param(default=400.0, mutable=True)  # kV; V2 converts angle differences to MW in the angle-LOPF
     model.storageChargeEff = Param(model.Storage, default=1.0, mutable=True)
     model.storageDischargeEff = Param(model.Storage, default=1.0, mutable=True)
     model.storageBleedEff = Param(model.Storage, default=1.0, mutable=True)
@@ -290,6 +319,20 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     data.load(filename=str(tab_file_path / 'Transmission_TypeFixedOMCost.tab'), param=model.transmissionTypeFixedOMCost, format="table")
     data.load(filename=str(tab_file_path / 'Transmission_lineEfficiency.tab'), param=model.lineEfficiency, format="table")
     data.load(filename=str(tab_file_path / 'Transmission_Lifetime.tab'), param=model.transmissionLifetime, format="table")
+
+    if BINARY_LINE_EXPANSION:
+        candidate_tab = tab_file_path / 'Transmission_CandidateTransmission.tab'
+        if candidate_tab.exists():
+            data.load(filename=str(candidate_tab), format="set", set=model.CandidateTransmission)
+        else:
+            logger.warning("Angle-based LOPF: Transmission_CandidateTransmission.tab not found; "
+                           "no corridor can be expanded (all transmission fixed at initial capacity).")
+        block_cap_tab = tab_file_path / 'Transmission_LineBlockCapacity.tab'
+        if block_cap_tab.exists():
+            data.load(filename=str(block_cap_tab), param=model.transmissionLineBlockCap, format="table")
+        global_block_cap_tab = tab_file_path / 'General_LineBlockCapacityGlobal.tab'
+        if global_block_cap_tab.exists():
+            data.load(filename=str(global_block_cap_tab), param=model.transmissionLineBlockCapGlobal, format="table")
 
     # Electrical line parameters (reactance/susceptance) for linear (DC) optimal power flow
     if LOPF_FLAG:
@@ -567,6 +610,14 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     else:
         model.genInvCap = Var(model.GeneratorsOfNode, model.PeriodActive, domain=NonNegativeReals)
         model.transmisionInvCap = Var(model.BidirectionalArc, model.PeriodActive, domain=NonNegativeReals)
+        if BINARY_LINE_EXPANSION:
+            # transmissionBuild = 1 in the period the block is built; transmissionOn tracks
+            # cumulative builds, i.e. whether the block is active in a period. With these
+            # active, installedCapDefinitionTrans below no longer links transmisionInvCap,
+            # whose (positive) objective cost then drives it to 0 — results columns based
+            # on it simply report zeros.
+            model.transmissionBuild = Var(model.CandidateTransmission, model.PeriodActive, within=Binary)
+            model.transmissionOn = Var(model.CandidateTransmission, model.PeriodActive, within=Binary)
         model.storPWInvCap = Var(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
         model.storENInvCap = Var(model.StoragesOfNode, model.PeriodActive, domain=NonNegativeReals)
         model.genInstalledCap = Var(model.GeneratorsOfNode, model.PeriodActive, domain=NonNegativeReals)
@@ -604,10 +655,17 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     ##OBJECTIVE##
     #############
 
+    def _candidate_block_cap(model, n1, n2):
+        # Per-corridor block size when given and positive, else the global fallback.
+        if value(model.transmissionLineBlockCap[n1, n2]) > 0:
+            return model.transmissionLineBlockCap[n1, n2]
+        return model.transmissionLineBlockCapGlobal
+
     def Obj_rule(model):
         return sum(model.discount_multiplier[i]*(
             sum(model.genInvCost[g,i]* model.genInvCap[n,g,i] for (n,g) in model.GeneratorsOfNode ) + \
             sum(model.transmissionInvCost[n1,n2,i]*model.transmisionInvCap[n1,n2,i] for (n1,n2) in model.BidirectionalArc ) + \
+            (sum(model.transmissionInvCost[n1,n2,i]*_candidate_block_cap(model,n1,n2)*model.transmissionBuild[n1,n2,i] for (n1,n2) in model.CandidateTransmission) if BINARY_LINE_EXPANSION else 0) + \
             sum((model.storPWInvCost[b,i]*model.storPWInvCap[n,b,i]+model.storENInvCost[b,i]*model.storENInvCap[n,b,i]) for (n,b) in model.StoragesOfNode ) + \
             model.shedcomponent[i] + model.operationalcost[i]
         ) for i in model.PeriodActive)
@@ -785,12 +843,45 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
         ############################################################
 
-        def lifetime_rule_trans(model, n1, n2, i):
-            startPeriod=1
-            if value(1+i-model.transmissionLifetime[n1,n2]*(1/model.LeapYearsInvestment))>startPeriod:
-                startPeriod=value(1+i-model.transmissionLifetime[n1,n2]/model.LeapYearsInvestment)
-            return sum(model.transmisionInvCap[n1,n2,j]  for j in model.PeriodActive if j>=startPeriod and j<=i )- model.transmissionInstalledCap[n1,n2,i] + model.transmissionInitCap[n1,n2,i] == 0   #
-        model.installedCapDefinitionTrans = Constraint(model.BidirectionalArc, model.PeriodActive, rule=lifetime_rule_trans)
+        if BINARY_LINE_EXPANSION:
+            # load_flow semantics: candidate corridors carry initial capacity plus one block
+            # once built (no retirement over the horizon); every other corridor is frozen at
+            # its initial capacity. transmisionInvCap is intentionally absent here.
+            def lifetime_rule_trans(model, n1, n2, i):
+                if (n1, n2) not in model.CandidateTransmission:
+                    return model.transmissionInstalledCap[n1,n2,i] == model.transmissionInitCap[n1,n2,i]
+                return model.transmissionInstalledCap[n1,n2,i] == \
+                    model.transmissionInitCap[n1,n2,i] + _candidate_block_cap(model,n1,n2)*model.transmissionOn[n1,n2,i]
+            model.installedCapDefinitionTrans = Constraint(model.BidirectionalArc, model.PeriodActive, rule=lifetime_rule_trans)
+
+            # transmissionOn tracks cumulative builds: On[first] == Build[first], On[i] == On[i-1] + Build[i]
+            def trans_on_first_rule(model, n1, n2, i):
+                if i != model.PeriodActive.first():
+                    return Constraint.Skip
+                return model.transmissionOn[n1,n2,i] == model.transmissionBuild[n1,n2,i]
+            model.transmission_on_first = Constraint(model.CandidateTransmission, model.PeriodActive, rule=trans_on_first_rule)
+
+            def trans_on_evol_rule(model, n1, n2, i):
+                if i == model.PeriodActive.first():
+                    return Constraint.Skip
+                prev = model.PeriodActive.prev(i)
+                return model.transmissionOn[n1,n2,i] == model.transmissionOn[n1,n2,prev] + model.transmissionBuild[n1,n2,i]
+            model.transmission_on_evolution = Constraint(model.CandidateTransmission, model.PeriodActive, rule=trans_on_evol_rule)
+
+            def single_line_per_corridor_rule(model, n1, n2):
+                return sum(model.transmissionBuild[n1,n2,i] for i in model.PeriodActive) <= 1
+            model.single_line_per_corridor = Constraint(model.CandidateTransmission, rule=single_line_per_corridor_rule)
+
+            def candidate_build_cap_rule(model, n1, n2, i):
+                return _candidate_block_cap(model,n1,n2)*model.transmissionBuild[n1,n2,i] <= model.transmissionMaxBuiltCap[n1,n2,i]
+            model.candidate_build_cap = Constraint(model.CandidateTransmission, model.PeriodActive, rule=candidate_build_cap_rule)
+        else:
+            def lifetime_rule_trans(model, n1, n2, i):
+                startPeriod=1
+                if value(1+i-model.transmissionLifetime[n1,n2]*(1/model.LeapYearsInvestment))>startPeriod:
+                    startPeriod=value(1+i-model.transmissionLifetime[n1,n2]/model.LeapYearsInvestment)
+                return sum(model.transmisionInvCap[n1,n2,j]  for j in model.PeriodActive if j>=startPeriod and j<=i )- model.transmissionInstalledCap[n1,n2,i] + model.transmissionInitCap[n1,n2,i] == 0   #
+            model.installedCapDefinitionTrans = Constraint(model.BidirectionalArc, model.PeriodActive, rule=lifetime_rule_trans)
 
         ############################################################
 
@@ -1041,6 +1132,15 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
     logger.info("Writing results to .csv...")
 
+    def _dual_or_nan(constraint):
+        # A MIP (binary line expansion) provides no dual information on the main solve,
+        # so price columns become NaN. Use compute_operational_duals to obtain prices
+        # from the LP re-solve with fixed investment and build decisions.
+        try:
+            return value(instance.dual[constraint])
+        except KeyError:
+            return float('nan')
+
     f = open(result_file_path / 'results_objective.csv', 'w', newline='')
     writer = csv.writer(f)
     writer.writerow(["Objective function value:" + str(value(instance.Obj))])
@@ -1103,6 +1203,26 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             ])
     f.close()
 
+    if BINARY_LINE_EXPANSION:
+        f = open(result_file_path / 'results_output_candidate_lines.csv', 'w', newline='')
+        writer = csv.writer(f)
+        writer.writerow(["BetweenNode","AndNode","Period","transmissionBuild","transmissionOn","BlockCapacity_MW","DiscountedInvestmentCost_Euro"])
+        for (n1,n2) in instance.CandidateTransmission:
+            blk = value(instance.transmissionLineBlockCap[n1,n2])
+            if blk <= 0:
+                blk = value(instance.transmissionLineBlockCapGlobal)
+            for i in instance.PeriodActive:
+                writer.writerow([
+                    n1,
+                    n2,
+                    inv_per[int(i-1)],
+                    value(instance.transmissionBuild[n1,n2,i]),
+                    value(instance.transmissionOn[n1,n2,i]),
+                    blk,
+                    value(instance.discount_multiplier[i]*instance.transmissionInvCost[n1,n2,i])*blk*value(instance.transmissionBuild[n1,n2,i])
+                ])
+        f.close()
+
     if not OUT_OF_SAMPLE:
         # Not interested in operational-files
         
@@ -1161,7 +1281,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                             value(sum(instance.transmisionOperational[link,n,h,i,w] for link in instance.NodesLinked[n])), 
                             value(sum(-(1 - instance.lineEfficiency[link,n])*instance.transmisionOperational[link,n,h,i,w] for link in instance.NodesLinked[n])), 
                             value(instance.loadShed[n,h,i,w]), 
-                            value(instance.dual[instance.FlowBalance[n,h,i,w]]/(instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w])),
+                            _dual_or_nan(instance.FlowBalance[n,h,i,w])/value(instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w]),
                             value(sum(instance.genOperational[n,g,h,i,w]*instance.genCO2TypeFactor[g]*(3.6/instance.genEfficiency[g,i]) for g in instance.Generator if (n,g) in instance.GeneratorsOfNode)/sum(instance.genOperational[n,g,h,i,w] for g in instance.Generator if (n,g) in instance.GeneratorsOfNode) if value(sum(instance.genOperational[n,g,h,i,w] for g in instance.Generator if (n,g) in instance.GeneratorsOfNode)) != 0 else 0)])
                         writer.writerow(my_string)
         f.close()
@@ -1273,12 +1393,12 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             my_string=[inv_per[int(i-1)],w, 
             value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w]*instance.genCO2TypeFactor[g]*(3.6/instance.genEfficiency[g,i]) for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason))]
             if EMISSION_CAP:
-                my_string.extend([value(instance.dual[instance.emission_cap[i,w]]/(instance.operationalDiscountrate*instance.sceProbab[w])),value(instance.CO2cap[i]*1e6)])
+                my_string.extend([_dual_or_nan(instance.emission_cap[i,w])/value(instance.operationalDiscountrate*instance.sceProbab[w]),value(instance.CO2cap[i]*1e6)])
             else:
                 my_string.extend([value(instance.CO2price[i]),0])
-            my_string.extend([value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w]/1000 for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason)), 
-            value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w]*instance.genCO2TypeFactor[g]*(3.6/instance.genEfficiency[g,i]) for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason)/sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w] for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason)), 
-            value(sum(instance.dual[instance.FlowBalance[n,h,i,w]]/(instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w]) for n in instance.Node for (s,h) in instance.HoursOfSeason)/value(len(instance.HoursOfSeason)*len(instance.Node))),
+            my_string.extend([value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w]/1000 for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason)),
+            value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w]*instance.genCO2TypeFactor[g]*(3.6/instance.genEfficiency[g,i]) for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason)/sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w] for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason)),
+            sum(_dual_or_nan(instance.FlowBalance[n,h,i,w])/value(instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w]) for n in instance.Node for (s,h) in instance.HoursOfSeason)/value(len(instance.HoursOfSeason)*len(instance.Node)),
             value(sum(instance.seasScale[s]*(instance.genCapAvail[n,g,h,w,i]*instance.genInstalledCap[n,g,i] - instance.genOperational[n,g,h,i,w])/1000 for (n,g) in instance.GeneratorsOfNode if g == 'Hydrorun-of-the-river' or g == 'Windonshore' or g == 'Windoffshore' or g == 'Solar' for (s,h) in instance.HoursOfSeason)), 
             value(sum(instance.seasScale[s]*((1 - instance.storageDischargeEff[b])*instance.storDischarge[n,b,h,i,w] + (1 - instance.storageChargeEff[b])*instance.storCharge[n,b,h,i,w])/1000 for (n,b) in instance.StoragesOfNode for (s,h) in instance.HoursOfSeason)), 
             value(sum(instance.seasScale[s]*((1 - instance.lineEfficiency[n1,n2])*instance.transmisionOperational[n1,n2,h,i,w] + (1 - instance.lineEfficiency[n2,n1])*instance.transmisionOperational[n2,n1,h,i,w])/1000 for (n1,n2) in instance.BidirectionalArc for (s,h) in instance.HoursOfSeason))])
@@ -1665,7 +1785,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             for (s,h) in instance.HoursOfSeason:
                 for n in instance.Node:
                     f = row_write(f, get_iamc_region(n), "Price|Secondary Energy|Electricity", "US$2010/GJ", seasonhours[h-1], \
-                        [value(instance.dual[instance.FlowBalance[n,h,i,w]]/(GJperMWh*instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w])) for i in instance.PeriodActive], Scenario+"|"+str(w)+str(s))
+                        [_dual_or_nan(instance.FlowBalance[n,h,i,w])/value(GJperMWh*instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w]) for i in instance.PeriodActive], Scenario+"|"+str(w)+str(s))
         for g in instance.Generator:
             f = row_write(f, "Europe", "Capacity|Electricity|"+dict_generators[str(g).strip()], "GW", "Year", [value(sum(instance.genInstalledCap[n,g,i]*GWperMW for n in instance.Node if (n,g) in instance.GeneratorsOfNode)) for i in instance.PeriodActive]) #Total European installed generator capacity per type
             f = row_write(f, "Europe", "Capital Cost|Electricity|"+dict_generators[str(g).strip()], "US$2010/kW", "Year", [value(instance.genCapitalCost[g,i]*USD10perEUR18) for i in instance.PeriodActive]) #Capital generator cost
@@ -1701,6 +1821,13 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             for i in instance.PeriodActive:
                 instance.storPWInvCap[n,b,i].fix()
                 instance.storENInvCap[n,b,i].fix()
+
+        if BINARY_LINE_EXPANSION:
+            # Fix the binary build decisions too, so the re-solve is a pure LP with valid duals.
+            for (n1,n2) in instance.CandidateTransmission:
+                for i in instance.PeriodActive:
+                    instance.transmissionBuild[n1,n2,i].fix()
+                    instance.transmissionOn[n1,n2,i].fix()
 
         logger.info("Resolving")
 
@@ -1739,7 +1866,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                             value(sum(instance.transmisionOperational[link,n,h,i,w] for link in instance.NodesLinked[n])), 
                             value(sum(-(1 - instance.lineEfficiency[link,n])*instance.transmisionOperational[link,n,h,i,w] for link in instance.NodesLinked[n])), 
                             value(instance.loadShed[n,h,i,w]), 
-                            value(instance.dual[instance.FlowBalance[n,h,i,w]]/(instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w])),
+                            _dual_or_nan(instance.FlowBalance[n,h,i,w])/value(instance.operationalDiscountrate*instance.seasScale[s]*instance.sceProbab[w]),
                             value(sum(instance.genOperational[n,g,h,i,w]*instance.genCO2TypeFactor[g]*(3.6/instance.genEfficiency[g,i]) for g in instance.Generator if (n,g) in instance.GeneratorsOfNode)/sum(instance.genOperational[n,g,h,i,w] for g in instance.Generator if (n,g) in instance.GeneratorsOfNode) if value(sum(instance.genOperational[n,g,h,i,w] for g in instance.Generator if (n,g) in instance.GeneratorsOfNode)) != 0 else 0)])
                         writer.writerow(my_string)
         f.close()
@@ -1752,7 +1879,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                 my_string=[inv_per[int(i-1)],w,
                 value(sum(instance.seasScale[s]*instance.genOperational[n,g,h,i,w]*instance.genCO2TypeFactor[g]*(3.6/instance.genEfficiency[g,i]) for (n,g) in instance.GeneratorsOfNode for (s,h) in instance.HoursOfSeason))]
                 if EMISSION_CAP:
-                    my_string.extend([value(instance.dual[instance.emission_cap[i,w]]/(instance.operationalDiscountrate*instance.sceProbab[w])),value(instance.CO2cap[i]*1e6)])
+                    my_string.extend([_dual_or_nan(instance.emission_cap[i,w])/value(instance.operationalDiscountrate*instance.sceProbab[w]),value(instance.CO2cap[i]*1e6)])
                 else:
                     my_string.extend([value(instance.CO2price[i]),0])
                 writer.writerow(my_string)

@@ -100,8 +100,12 @@ class EmpireConfiguration:
             usable). Default 1.0 leaves the full installed capacity available.
         :param lopf_flag: If true, add linear (DC) optimal power flow constraints to the transmission network.
             Default false keeps the standard transport (net-transfer) model.
-        :param lopf_method: LOPF formulation to use when lopf_flag is true. Currently supported: "kirchhoff"
-            (cycle-based DC-OPF; requires line reactance/susceptance data).
+        :param lopf_method: LOPF formulation to use when lopf_flag is true. Supported: "kirchhoff"
+            (cycle-based DC-OPF; requires line reactance/susceptance data; continuous transmission
+            expansion unchanged) and "angle" (bus-angle DC-OPF; switches transmission investment to
+            binary block expansion — candidate corridors listed in a 'CandidateTransmission' sheet of
+            Transmission.xlsx build one block at most once, all other corridors stay at initial
+            capacity; makes the problem a MIP).
         :param lopf_kwargs: Optional dict of LOPF options. Reader option: "reactance_per_km" (Ohm/km) to compute
             line reactance from line length when no lineReactance sheet/.tab is provided. Constraint options are
             forwarded to the formulation (e.g. "reactance_param_name", "reactance_from_susceptance",

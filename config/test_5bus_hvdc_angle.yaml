@@ -1,0 +1,48 @@
+# Config for testing the angle-based DC-OPF + binary expansion with HVDC lines on the
+# test_5bus_hvdc dataset (France<->Germany typed HVDC_Cable, with existing capacity and
+# also listed as an expandable candidate corridor).
+use_temporary_directory: True
+temporary_directory: './'
+forecast_horizon_year: 2030
+number_of_scenarios: 2
+length_of_regular_season: 24
+regular_seasons: ['winter', 'spring']
+discount_rate: 0.05
+wacc: 0.05
+optimization_solver: "Gurobi"
+use_scenario_generation: True
+use_fixed_sample: True
+load_change_module: False
+filter_make : False
+filter_use : False
+copula_clusters_make: False
+copula_clusters_use: False
+copulas_to_use: ["electricload"]
+n_cluster : 8
+moment_matching : False
+n_tree_compare : 20
+use_emission_cap: True
+compute_operational_duals: False
+print_in_iamc_format: False
+write_in_lp_format: False
+serialize_instance: False
+north_sea: False
+aggregate_offshore_nodes_in_IAMC: False
+leap_years_investment: 5
+time_format: "%d/%m/%Y %H:%M"
+use_ramping: False
+transmission_availability: 1.0
+
+# Linear (DC) Optimal Power Flow -- angle-based DC-OPF with binary line expansion.
+# HVDC corridors are converter-controlled: excluded from Ohm's law (existing lines and
+# built candidate blocks alike), but still capacity-limited and buildable.
+lopf_flag: True
+lopf_method: "angle"
+lopf_kwargs:
+  reactance_per_km: 0.0004
+  reactance_from_susceptance: False
+  dc_line_types: ["HVDC_Cable"]
+
+# MIP (binary line builds): keep Gurobi's default crossover for the root relaxation.
+solver_method: 2
+solver_presolve: -1

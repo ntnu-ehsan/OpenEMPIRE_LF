@@ -189,6 +189,15 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     read_file(TransmissionExcelData, 'InitialCapacity', [0, 1, 2, 3], tab_file_path,  "Transmission", skipheaders=2)
     read_file(TransmissionExcelData, 'Lifetime', [0, 1, 2], tab_file_path,  "Transmission", skipheaders=2)
 
+    # Candidate corridors for binary block expansion (angle-based LOPF). Optional sheets:
+    # generated whenever present so the dataset drives availability.
+    if 'CandidateTransmission' in TransmissionExcelData:
+        read_file(TransmissionExcelData, 'CandidateTransmission', [0, 1], tab_file_path, "Transmission", skipheaders=2)
+    if 'LineBlockCapacity' in TransmissionExcelData:
+        read_file(TransmissionExcelData, 'LineBlockCapacity', [0, 1, 2], tab_file_path, "Transmission", skipheaders=2)
+    if 'LineBlockReactance' in TransmissionExcelData:
+        read_file(TransmissionExcelData, 'LineBlockReactance', [0, 1, 2], tab_file_path, "Transmission", skipheaders=2)
+
     # Line reactance for linear (DC) optimal power flow. Only generated when LOPF is enabled.
     if lopf_kwargs is not None:
         if 'lineReactance' in TransmissionExcelData:
@@ -222,6 +231,13 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     # Per-unit system base (MW) for LOPF. Optional: only present in per-unit datasets.
     if 'Sbase' in GeneralExcelData:
         write_scalar_tab(GeneralExcelData['Sbase'], tab_file_path, 'General_Sbase', 'sBase')
+    # Optional scalars for the angle-based LOPF / binary block expansion.
+    if 'LineBlockCapacityGlobal' in GeneralExcelData:
+        write_scalar_tab(GeneralExcelData['LineBlockCapacityGlobal'], tab_file_path, 'General_LineBlockCapacityGlobal', 'transmissionLineBlockCapGlobal')
+    if 'LineBlockReactanceGlobal' in GeneralExcelData:
+        write_scalar_tab(GeneralExcelData['LineBlockReactanceGlobal'], tab_file_path, 'General_LineBlockReactanceGlobal', 'LineBlockReactanceGlobal')
+    if 'NominalVoltage' in GeneralExcelData:
+        write_scalar_tab(GeneralExcelData['NominalVoltage'], tab_file_path, 'General_NominalVoltage', 'NominalVoltage')
     
     #Reading Storage
     logger.info("Reading Storage.xlsx")

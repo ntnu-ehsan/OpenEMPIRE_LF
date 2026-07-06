@@ -481,9 +481,11 @@ def _add_angle_constraints(
     # Angle-specific args
     capacity_expr: Optional[Callable] = None,   # If None, infer from model components
     couple_to_existing_flows: bool = True,  # If True (recommended), couple FlowDC to the existing flow variables
-    existing_flow_candidates = ("transmissionOperational", "TransFlow", "lineFlow", "flow"),    # Existing flow variable candidates. In Existing version of EMPIRE it is "transmissionOperational".
+    # NB: EMPIRE's directed flow variable is spelled 'transmisionOperational' (single 's').
+    existing_flow_candidates = ("transmisionOperational", "transmissionOperational", "TransFlow", "lineFlow", "flow"),
     fix_angle_reference: bool = True,   # If True, fix angle at slack node(s) to zero
     slack_node_set_name: str = "SlackNode", # Name of SlackNode Set(model.Node)
+    dc_line_types: Optional[list] = None,   # HVDC types excluded from Ohm's law (controllable links); auto-detected if None
     **kwargs  # Accept any other kwargs without error (e.g., susceptance_param_name, reactance_from_susceptance)
 ):
     """
@@ -608,12 +610,10 @@ def _add_angle_constraints(
                 # No special reactance provided → fallback to existing reactance
                 return value(m._reactance_dir[i, j])
 
-            # # Convert Ω → pu
-            # V_kv = value(m.NominalVoltage)
-            # V_base = V_kv * 1e3         # convert to volts
-            # S_base = 100e6              # assume 100 MVA system base
-            # X_pu = X_ohm * (V_base**2) / S_base
-
+            if X_ohm <= 0:
+                # Params default to 0.0 when no data was given; a zero reactance would
+                # blow up the susceptance, so fall back to the corridor's line reactance.
+                return value(m._reactance_dir[i, j])
             return X_ohm
 
         model._reactance_cand_dir = Param(
@@ -715,11 +715,13 @@ def _add_angle_constraints(
     eps_local = eps
     if not hasattr(model, "BigMFlow"):
         def _bigm_expr(m, i, j):
-            # Use the synthesized directional reactance Param directly.
+            # M must upper-bound |B_cand * V² * Δθ|, so use the CANDIDATE block reactance.
+            # (Using the existing-line reactance here breaks pure candidates: with no
+            # existing circuit the fallback reactance is 1/eps, giving M≈0, which would
+            # enforce Ohm's law even on unbuilt lines.)
             try:
-                xval = float(m._reactance_dir[i, j])
+                xval = float(value(m._reactance_cand_dir[i, j]))
             except Exception:
-                # Fallback: rely on _get_B_cand (will log once if truly missing)
                 Bij = _get_B_cand(m, i, j)
                 return abs(Bij) * value(m.VoltageSquared) * 2.0 * value(m.AngleMax)
             if xval < eps_local:  # guard near-zero reactance
@@ -735,9 +737,24 @@ def _add_angle_constraints(
     # P_MW = (V²/X) * (θ_i - θ_j) = B * V² * (θ_i - θ_j)
     # where V² is the voltage magnitude squared in kV²
 
-    # 1) Existing lines: equality always active (these have fixed capacity)
+    # 1) Existing lines: equality always active (these have fixed capacity).
+    #    HVDC corridors are converter-controlled and do NOT obey Ohm's law: they keep
+    #    their Flow_exist variable (bounded by thermal limits and the net-flow binding)
+    #    but are skipped here, mirroring the Kirchhoff method's HVDC handling.
+    _dc_corridors_cache = {}
+    def _dc_corridors(m):
+        key = id(m)
+        if key not in _dc_corridors_cache:
+            _dc_corridors_cache[key] = _dc_corridor_set(m, dc_line_types)
+            if _dc_corridors_cache[key]:
+                logger.info("Angle-LOPF: %d directed HVDC arcs excluded from Ohm's law.",
+                            len(_dc_corridors_cache[key]))
+        return _dc_corridors_cache[key]
+
     def ohm_exist_rule(m, i, j, h, w, p):
-        B = _get_B_val(m, i, j)   
+        if (i, j) in _dc_corridors(m):
+            return Constraint.Skip
+        B = _get_B_val(m, i, j)
         return m.Flow_exist[i,j,h,w,p] == B * m.VoltageSquared * (m.Theta[i,h,w,p] - m.Theta[j,h,w,p])
     model.Ohm_exist = Constraint(
         model.ExistingTransmission,
@@ -754,8 +771,12 @@ def _add_angle_constraints(
         raise RuntimeError("Angle-based LOPF with variable susceptance requires 'transmissionOn[n1,n2,p]' to be defined in the investment model.")
 
     
-    # Upper & lower linearized envelopes:
+    # Upper & lower linearized envelopes. HVDC candidates are skipped like existing HVDC
+    # lines: a built DC block is converter-controlled, so only its capacity gating
+    # (CapNewUp/Lo below, which stays active) applies — never Ohm's law.
     def ohm_cand_ub(m, i, j, h, w, p):
+        if (i, j) in _dc_corridors(m):
+            return Constraint.Skip
         B = _get_B_cand(m, i, j)
         # Find corridor representative in CandidateTransmission:
         if (i, j) in m.CandidateTransmission:
@@ -764,11 +785,13 @@ def _add_angle_constraints(
             ci, cj = j, i
         else:
             raise ValueError(f"Directional arc ({i},{j}) not found in CandidateTransmission as ({i},{j}) or ({j},{i})")
-        M = m.BigMFlow[ci, cj]     
+        M = m.BigMFlow[ci, cj]
         t_diff = m.Theta[i,h,w,p] - m.Theta[j,h,w,p]
         return m.Flow_new[i,j,h,w,p] <= B * m.VoltageSquared * t_diff + M * (1 - m.transmissionOn[ci, cj, p])
 
     def ohm_cand_lb(m, i, j, h, w, p):
+        if (i, j) in _dc_corridors(m):
+            return Constraint.Skip
         B = _get_B_cand(m, i, j)
         # Find corridor representative in CandidateTransmission:
         if (i, j) in m.CandidateTransmission:
@@ -859,15 +882,29 @@ def _add_angle_constraints(
     # Bind to existing directed flow var (keep KCL intact)
     # -----------------------
     if couple_to_existing_flows:
-        FlowDir = None
+        flow_name = None
         for nm in existing_flow_candidates:
             if hasattr(model, nm):
-                FlowDir = getattr(model, nm)
-                logger.info(f"Coupling DC-OPF flows to existing variable '{nm}'")
+                flow_name = nm
+                logger.info(f"Coupling DC-OPF flows to existing variable '{nm}' (net flow)")
                 break
-        if FlowDir is not None:
-            model.DC_Bind = Constraint(A, H, W, P, rule=lambda m,i,j,h,w,p: FlowDir[i,j,h,w,p] == m.FlowDC[i,j,h,w,p])
-            logger.info("DC-OPF flow binding constraint (DC_Bind) added successfully")
+        if flow_name is not None:
+            # Three deliberate differences from a naive FlowDir == FlowDC binding:
+            # 1. Resolve the flow variable by NAME inside the rule so it binds to the
+            #    constructed instance component, not the abstract model's (which would
+            #    fail with "component has not been constructed" at create_instance).
+            # 2. EMPIRE's directed flow is indexed (i,j,h,period,scenario) and is
+            #    non-negative; the signed DC flow must equal the NET directed flow,
+            #    otherwise the non-negativity of both directions forces all flows to 0.
+            # 3. FlowDC is antisymmetric by construction, so binding only the
+            #    representative BidirectionalArc orientation is sufficient.
+            def _dc_bind_rule(m, i, j, h, w, p, _fn=flow_name):
+                if (i, j) not in m.BidirectionalArc:
+                    return Constraint.Skip
+                FlowDir = getattr(m, _fn)
+                return FlowDir[i,j,h,p,w] - FlowDir[j,i,h,p,w] == m.FlowDC[i,j,h,w,p]
+            model.DC_Bind = Constraint(A, H, W, P, rule=_dc_bind_rule)
+            logger.info("DC-OPF net-flow binding constraint (DC_Bind) added successfully")
         else:
             logger.warning(f"Could not find existing flow variable to bind. Tried: {existing_flow_candidates}")
     
@@ -911,6 +948,25 @@ def load_line_parameters(model, tab_file_path, data, lopf_kwargs, logger):
         logger (_type_): _description_
     """
     rx_from_b = bool(lopf_kwargs and lopf_kwargs.get("reactance_from_susceptance", False))
+
+    # Candidate-block reactance and nominal voltage are only declared on the model when
+    # binary line expansion is active (angle method); skip them otherwise.
+    if hasattr(model, "LineBlockReactance"):
+        block_reactance_tab = tab_file_path / 'Transmission_LineBlockReactance.tab'
+        if block_reactance_tab.exists():
+            data.load(filename=str(block_reactance_tab), param=model.LineBlockReactance, format="table")
+            logger.info("Loaded Transmission_LineBlockReactance.tab for DC-OPF.")
+        global_block_reactance_tab = tab_file_path / 'General_LineBlockReactanceGlobal.tab'
+        if global_block_reactance_tab.exists():
+            data.load(filename=str(global_block_reactance_tab), param=model.LineBlockReactanceGlobal, format="table")
+            logger.info("Loaded General_LineBlockReactanceGlobal.tab for DC-OPF.")
+    if hasattr(model, "NominalVoltage"):
+        nominal_voltage_tab = tab_file_path / 'General_NominalVoltage.tab'
+        if nominal_voltage_tab.exists():
+            data.load(filename=str(nominal_voltage_tab), param=model.NominalVoltage, format="table")
+            logger.info("Loaded General_NominalVoltage.tab for the angle-based DC-OPF unit conversion.")
+        else:
+            logger.info("General_NominalVoltage.tab not found; using default (400 kV).")
 
     # Try to load reactance (preferred for Kirchhoff formulation)
     reactance_tab = tab_file_path / 'Transmission_lineReactance.tab'
