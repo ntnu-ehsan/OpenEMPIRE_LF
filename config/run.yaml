@@ -3,14 +3,14 @@
 
 use_temporary_directory: True                          # Specifies whether to use a temporary directory for operations
 temporary_directory: './'                              # Path to the temporary directory used for certain operations
-forecast_horizon_year: 2025                            # Target or end year for the run
-number_of_scenarios: 1                                 # Number of scenarios in every investment period
-length_of_regular_season: 168                        # Number of hours in a regular season
+forecast_horizon_year: 2030                            # Target or end year for the cluster run
+number_of_scenarios: 1                                 # Number of scenarios in every investment period (limited by sampling_key.csv)
+length_of_regular_season: 168                        # Number of hours in a regular season (weekly; matches seasonScale ~12.96 x 4 seasons)
 discount_rate: 0.05                                    # Rate used to discount future cash flows to present value
 wacc: 0.05                                             # Weighted average cost of capital
 optimization_solver: "Gurobi"                          # Mathematical solver used for optimization tasks
 use_scenario_generation: True                          # Indicates if scenarios should be generated dynamically
-use_fixed_sample: True                                 # Specifies if fixed scenario samples should be used
+use_fixed_sample: True                                 # Reproduce the cluster tree from sampling_key.csv in LF_ES_GoRES/ScenarioData (must be present; set False to generate a fresh sample + key)
 load_change_module: False                              #
 filter_make : False                                    #
 filter_use : False                                     #
@@ -25,25 +25,35 @@ compute_operational_duals: False                        # Resolve empire with fi
 print_in_iamc_format: False                             # Output should be printed in a IAMC-compatible format
 write_in_lp_format: False                              # Problem should be written in Linear Programming format
 serialize_instance: False                              # Serialize the data structure or model for later use
-north_sea: True                                        # Whether the north sea is modelled or not
+north_sea: True                                       # Dataset has separate 'Wind offshore grounded' + 'Wind offshore floating' generators; True makes the scenario generator emit Windoffshoregrounded/Windoffshorefloating availability (False would emit a single 'Windoffshore' that doesn't exist here)
 aggregate_offshore_nodes_in_IAMC: False                 # Aggregate offshore nodes into closest onshore node in IAMC output (requires north_sea: True)
 leap_years_investment: 5                               # Number of years per period (default: 5)
 time_format: "%d/%m/%Y %H:%M"                          # Time format for scenario data files
 use_ramping: False                                     # Include thermal ramp-rate constraints. Set False to drop inter-hour coupling for thermal units (faster, but only if ramping is non-binding)
 transmission_availability: 1.0                          # Usable share (0-1) of each line's installed capacity per hour, for reliability margins (e.g. 0.8 = 80% usable). 1.0 = full capacity
 
-# Linear (DC) Optimal Power Flow -- adds Kirchhoff cycle-based DC-OPF constraints to the network
-lopf_flag: False                                       # Set True to enable DC optimal power flow constraints
-lopf_method: "kirchhoff"                               # LOPF formulation (currently supported: "kirchhoff")
+# Linear (DC) Optimal Power Flow -- angle-based DC-OPF with binary block line expansion.
+# LF_ES_GoRES provides lineReactance (ohms) for AC corridors + per-candidate LineBlockCapacity/
+# LineBlockReactance, NominalVoltage=400 kV, and no Sbase sheet (reactances stay in ohms).
+lopf_flag: False                                        # Enable DC optimal power flow constraints
+lopf_method: "angle"                                   # Angle-based DC-OPF (requires reactance in ohms + NominalVoltage)
 lopf_kwargs:                                           # Options for the LOPF / reactance generation
-  reactance_per_km: 0.0004                             # Ohm/km; used to derive lineReactance from line length when no lineReactance sheet is provided
+  reactance_per_km: 0.0004                             # Ohm/km fallback; ignored here since a lineReactance sheet is present
   reactance_from_susceptance: False                    # If True, derive reactance X = 1/B from a lineSusceptance input instead
-  dc_line_types: ["HVDC_Cable"]                        # Transmission types treated as HVDC (controllable, excluded from KVL); omit to auto-detect names containing "DC"
+  dc_line_types: ["HVDC_Cable"]                        # HVDC corridors (ES523-ES532, EU-France) excluded from Ohm's law; still capacity-limited
+
+# Spanish case boundary conditions: constrain France/Portugal/EU node capacities and the
+# Spanish national totals (sum over NUTS3) to an original aggregated EMPIRE run, and fix
+# cross-border corridor capacities (ES-France, ES-Portugal, EU-France) to the original results.
+# Requires a 'BoundaryConditions' folder in the dataset, generated by:
+#   python scripts/extract_boundary_conditions.py --results "Results/basic_run/dataset_Agg_<X>" --dataset "Data handler/LF_ES_<X>"
+use_boundary_conditions: True                          # Enable Spanish-case boundary conditions
+boundary_bound_type: "fixed"                           # "fixed" (=) or "upper" (<=) for generation/storage; transmission is always fixed
 
 # Solver (Gurobi) performance options. Leave a value commented/absent to use the Gurobi default.
 # Speed: these are the accelerators — use them for large runs.
 solver_method: 2                                       # 2 = barrier (interior point), best for large LPs
-solver_crossover: 0                                    # 0 = skip crossover (it cost 9-10x the barrier time in past runs); duals/prices become interior approximations — set -1 or remove for exact basic prices
+solver_crossover: 0                                  # DO NOT set 0 with lopf_method "angle": angle expansion is a MIP and the root basis matters for warm starts. Leave commented (Gurobi default) for angle; only use 0 with the kirchhoff (pure-LP) method.
 solver_presolve: -1                                     # 2 = aggressive presolve to shrink the matrix
 # solver_threads: 16                                     # Set to the PHYSICAL core count of the machine the run executes on; avoids hyperthread/NUMA contention
 # Robustness (brakes, not accelerators): each of these makes Gurobi SLOWER. Only enable

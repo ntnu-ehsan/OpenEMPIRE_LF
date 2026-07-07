@@ -54,6 +54,8 @@ class EmpireConfiguration:
         lopf_flag: bool = False,
         lopf_method: str = "kirchhoff",
         lopf_kwargs: dict | None = None,
+        use_boundary_conditions: bool = False,
+        boundary_bound_type: str = "fixed",
         solver_method: int = 2,
         solver_crossover: int | None = None,
         solver_presolve: int | None = None,
@@ -167,6 +169,11 @@ class EmpireConfiguration:
         self.lopf_flag = lopf_flag
         self.lopf_method = lopf_method
         self.lopf_kwargs = {} if lopf_kwargs is None else dict(lopf_kwargs)
+
+        # Spanish-case boundary conditions (capacities constrained to an original EMPIRE run;
+        # data in the dataset's 'BoundaryConditions' folder, see scripts/extract_boundary_conditions.py)
+        self.use_boundary_conditions = use_boundary_conditions
+        self.boundary_bound_type = boundary_bound_type
 
         # Solver (Gurobi) performance options
         self.solver_method = solver_method

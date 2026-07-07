@@ -162,6 +162,8 @@ def run_empire_model(
             LOPF_FLAG=empire_config.lopf_flag,
             LOPF_METHOD=empire_config.lopf_method,
             LOPF_KWARGS=empire_config.lopf_kwargs,
+            BOUNDARY_CONDITIONS=empire_config.use_boundary_conditions,
+            BOUNDARY_BOUND_TYPE=empire_config.boundary_bound_type,
             solver_method=empire_config.solver_method,
             solver_crossover=empire_config.solver_crossover,
             solver_presolve=empire_config.solver_presolve,

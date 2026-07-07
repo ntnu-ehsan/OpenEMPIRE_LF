@@ -10,6 +10,8 @@ from pathlib import Path
 import cloudpickle
 import pandas as pd
 from empire.utils import get_name_of_last_folder_in_path
+from empire.core.boundary_conditions import DIRECT_NODES as BOUNDARY_FIXED_NODES
+from empire.core.boundary_conditions import add_boundary_conditions
 from empire.core.lopf_module import add_lopf_constraints, load_line_parameters
 from empire.core.lopf_results import log_lopf_diagnostics, write_angle_based_results
 from pyomo.common.tempfiles import TempfileManager
@@ -29,6 +31,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                TRANSMISSION_AVAILABILITY: float = 1.0,
                LOPF_FLAG: bool = False, LOPF_METHOD: str = "kirchhoff",
                LOPF_KWARGS: dict | None = None,
+               BOUNDARY_CONDITIONS: bool = False, BOUNDARY_BOUND_TYPE: str = "fixed",
                solver_method: int = 2, solver_crossover: int | None = None,
                solver_presolve: int | None = None, solver_threads: int | None = None,
                solver_scaleflag: int | None = None, solver_numericfocus: int | None = None,
@@ -174,9 +177,24 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     model.BidirectionalArc = Set(dimen=2, initialize=BidirectionalArc_init, ordered=True) #l
 
     if BINARY_LINE_EXPANSION:
-        # Corridors eligible for binary block expansion. Rows must use the same node
-        # orientation as BidirectionalArc (first direction encountered in DirectionalLink).
-        model.CandidateTransmission = Set(within=model.BidirectionalArc)
+        # Corridors eligible for binary block expansion. Rows may be entered in either node
+        # orientation; they are normalised on construction to the BidirectionalArc orientation
+        # (first direction encountered in DirectionalLink) so downstream indexing stays valid.
+        model.CandidateTransmissionRaw = Set(dimen=2)
+
+        def CandidateTransmission_init(model):
+            for (i, j) in model.CandidateTransmissionRaw:
+                if (i, j) in model.BidirectionalArc:
+                    yield (i, j)
+                elif (j, i) in model.BidirectionalArc:
+                    yield (j, i)
+                else:
+                    logger.warning(
+                        "Candidate corridor (%s, %s) is not a transmission arc; skipping.", i, j
+                    )
+        model.CandidateTransmission = Set(
+            within=model.BidirectionalArc, initialize=CandidateTransmission_init, ordered=True
+        )
 
     ##############
     ##PARAMETERS##
@@ -257,11 +275,29 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     if BINARY_LINE_EXPANSION:
         # Block size (MW) of the single new circuit a candidate corridor may build.
         # Per-corridor value; corridors with 0 (or absent) fall back to the global value.
-        model.transmissionLineBlockCap = Param(model.CandidateTransmission, default=0.0, mutable=True)
+        # Raw values are keyed on the as-entered candidate orientation and re-mapped onto the
+        # normalised CandidateTransmission orientation below.
+        model.transmissionLineBlockCapRaw = Param(model.CandidateTransmissionRaw, default=0.0, mutable=True)
+        model.LineBlockReactanceRaw = Param(model.CandidateTransmissionRaw, default=0.0, mutable=True)
+
+        def _blockcap_init(model, i, j):
+            if (i, j) in model.CandidateTransmissionRaw:
+                return model.transmissionLineBlockCapRaw[i, j]
+            return model.transmissionLineBlockCapRaw[j, i]
+        model.transmissionLineBlockCap = Param(
+            model.CandidateTransmission, default=0.0, mutable=True, initialize=_blockcap_init
+        )
         model.transmissionLineBlockCapGlobal = Param(default=0.0, mutable=True)
+
+        def _blockreactance_init(model, i, j):
+            if (i, j) in model.CandidateTransmissionRaw:
+                return model.LineBlockReactanceRaw[i, j]
+            return model.LineBlockReactanceRaw[j, i]
         # Reactance of the candidate block circuit; falls back to the global value, then to
         # the corridor's existing lineReactance (handled inside the angle-LOPF module).
-        model.LineBlockReactance = Param(model.CandidateTransmission, default=0.0, mutable=True)
+        model.LineBlockReactance = Param(
+            model.CandidateTransmission, default=0.0, mutable=True, initialize=_blockreactance_init
+        )
         model.LineBlockReactanceGlobal = Param(default=0.0, mutable=True)
         model.NominalVoltage = Param(default=400.0, mutable=True)  # kV; V2 converts angle differences to MW in the angle-LOPF
     model.storageChargeEff = Param(model.Storage, default=1.0, mutable=True)
@@ -323,13 +359,13 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     if BINARY_LINE_EXPANSION:
         candidate_tab = tab_file_path / 'Transmission_CandidateTransmission.tab'
         if candidate_tab.exists():
-            data.load(filename=str(candidate_tab), format="set", set=model.CandidateTransmission)
+            data.load(filename=str(candidate_tab), format="set", set=model.CandidateTransmissionRaw)
         else:
             logger.warning("Angle-based LOPF: Transmission_CandidateTransmission.tab not found; "
                            "no corridor can be expanded (all transmission fixed at initial capacity).")
         block_cap_tab = tab_file_path / 'Transmission_LineBlockCapacity.tab'
         if block_cap_tab.exists():
-            data.load(filename=str(block_cap_tab), param=model.transmissionLineBlockCap, format="table")
+            data.load(filename=str(block_cap_tab), param=model.transmissionLineBlockCapRaw, format="table")
         global_block_cap_tab = tab_file_path / 'General_LineBlockCapacityGlobal.tab'
         if global_block_cap_tab.exists():
             data.load(filename=str(global_block_cap_tab), param=model.transmissionLineBlockCapGlobal, format="table")
@@ -886,48 +922,64 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         ############################################################
 
         def investment_gen_cap_rule(model, t, n, i):
+            if BOUNDARY_CONDITIONS and n in BOUNDARY_FIXED_NODES:
+                return Constraint.Skip  # capacity pinned to original EMPIRE results instead
             return sum(model.genInvCap[n,g,i] for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology) - model.genMaxBuiltCap[n,t,i] <= 0
         model.investment_gen_cap = Constraint(model.Technology, model.Node, model.PeriodActive, rule=investment_gen_cap_rule)
 
         ############################################################
 
         def investment_trans_cap_rule(model, n1, n2, i):
+            if BOUNDARY_CONDITIONS and (n1 in BOUNDARY_FIXED_NODES or n2 in BOUNDARY_FIXED_NODES):
+                return Constraint.Skip  # corridor sums pinned to original EMPIRE results instead
             return model.transmisionInvCap[n1,n2,i] - model.transmissionMaxBuiltCap[n1,n2,i] <= 0
         model.investment_trans_cap = Constraint(model.BidirectionalArc, model.PeriodActive, rule=investment_trans_cap_rule)
 
         ############################################################
 
         def investment_storage_power_cap_rule(model, n, b, i):
+            if BOUNDARY_CONDITIONS and n in BOUNDARY_FIXED_NODES:
+                return Constraint.Skip
             return model.storPWInvCap[n,b,i] - model.storPWMaxBuiltCap[n,b,i] <= 0
         model.investment_storage_power_cap = Constraint(model.StoragesOfNode, model.PeriodActive, rule=investment_storage_power_cap_rule)
 
         ############################################################
 
         def investment_storage_energy_cap_rule(model, n, b, i):
+            if BOUNDARY_CONDITIONS and n in BOUNDARY_FIXED_NODES:
+                return Constraint.Skip
             return model.storENInvCap[n,b,i] - model.storENMaxBuiltCap[n,b,i] <= 0
         model.investment_storage_energy_cap = Constraint(model.StoragesOfNode, model.PeriodActive, rule=investment_storage_energy_cap_rule)
 
         ############################################################
 
         def installed_gen_cap_rule(model, t, n, i):
+            if BOUNDARY_CONDITIONS and n in BOUNDARY_FIXED_NODES:
+                return Constraint.Skip  # capacity pinned to original EMPIRE results instead
             return sum(model.genInstalledCap[n,g,i] for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology) - model.genMaxInstalledCap[n,t,i] <= 0
         model.installed_gen_cap = Constraint(model.Technology, model.Node, model.PeriodActive, rule=installed_gen_cap_rule)
 
         ############################################################
 
         def installed_trans_cap_rule(model, n1, n2, i):
+            if BOUNDARY_CONDITIONS and (n1 in BOUNDARY_FIXED_NODES or n2 in BOUNDARY_FIXED_NODES):
+                return Constraint.Skip  # corridor sums pinned to original EMPIRE results instead
             return model.transmissionInstalledCap[n1,n2,i] - model.transmissionMaxInstalledCap[n1,n2,i] <= 0
         model.installed_trans_cap = Constraint(model.BidirectionalArc, model.PeriodActive, rule=installed_trans_cap_rule)
 
         ############################################################
 
         def installed_storage_power_cap_rule(model, n, b, i):
+            if BOUNDARY_CONDITIONS and n in BOUNDARY_FIXED_NODES:
+                return Constraint.Skip
             return model.storPWInstalledCap[n,b,i] - model.storPWMaxInstalledCap[n,b,i] <= 0
         model.installed_storage_power_cap = Constraint(model.StoragesOfNode, model.PeriodActive, rule=installed_storage_power_cap_rule)
 
         ############################################################
 
         def installed_storage_energy_cap_rule(model, n, b, i):
+            if BOUNDARY_CONDITIONS and n in BOUNDARY_FIXED_NODES:
+                return Constraint.Skip
             return model.storENInstalledCap[n,b,i] - model.storENMaxInstalledCap[n,b,i] <= 0
         model.installed_storage_energy_cap = Constraint(model.StoragesOfNode, model.PeriodActive, rule=installed_storage_energy_cap_rule)
 
@@ -939,6 +991,21 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             else:
                 return Constraint.Skip
         model.power_energy_relate = Constraint(model.StoragesOfNode, model.PeriodActive, rule=power_energy_relate_rule)
+
+    #################################################################
+
+    ######################################
+    ##SPANISH-CASE BOUNDARY CONDITIONS##
+    ######################################
+
+    if BOUNDARY_CONDITIONS and not OUT_OF_SAMPLE:
+        if workbook_path is None:
+            raise ValueError("Boundary conditions require 'workbook_path' to locate the BoundaryConditions folder.")
+        add_boundary_conditions(
+            model,
+            boundary_path=Path(workbook_path) / "BoundaryConditions",
+            bound_type=BOUNDARY_BOUND_TYPE,
+        )
 
     #################################################################
 

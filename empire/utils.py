@@ -19,6 +19,10 @@ def copy_dataset(src_path: Path, dest_path: Path):
     for file in ["General", "Generator", "Node", "Sets", "Storage", "Transmission"]:
         shutil.copyfile(src_path / f"{file}.xlsx", dest_path / f"{file}.xlsx")
 
+    # Optional boundary-condition data (Spanish case)
+    if (src_path / "BoundaryConditions").is_dir():
+        shutil.copytree(src_path / "BoundaryConditions", dest_path / "BoundaryConditions", dirs_exist_ok=True)
+
 
 def copy_scenario_data(base_dataset, scenario_data_path, use_scenario_generation, use_fixed_sample):
     """

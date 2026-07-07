@@ -989,10 +989,10 @@ def load_line_parameters(model, tab_file_path, data, lopf_kwargs, logger):
 
     # Candidate-block reactance and nominal voltage are only declared on the model when
     # binary line expansion is active (angle method); skip them otherwise.
-    if hasattr(model, "LineBlockReactance"):
+    if hasattr(model, "LineBlockReactanceRaw"):
         block_reactance_tab = tab_file_path / 'Transmission_LineBlockReactance.tab'
         if block_reactance_tab.exists():
-            data.load(filename=str(block_reactance_tab), param=model.LineBlockReactance, format="table")
+            data.load(filename=str(block_reactance_tab), param=model.LineBlockReactanceRaw, format="table")
             logger.info("Loaded Transmission_LineBlockReactance.tab for DC-OPF.")
         global_block_reactance_tab = tab_file_path / 'General_LineBlockReactanceGlobal.tab'
         if global_block_reactance_tab.exists():
