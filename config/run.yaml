@@ -55,7 +55,7 @@ boundary_bound_type: "fixed"                           # "fixed" (=) or "upper" 
 solver_method: 2                                       # 2 = barrier (interior point), best for large LPs
 solver_crossover: 0                                  # DO NOT set 0 with lopf_method "angle": angle expansion is a MIP and the root basis matters for warm starts. Leave commented (Gurobi default) for angle; only use 0 with the kirchhoff (pure-LP) method.
 solver_presolve: -1                                     # 2 = aggressive presolve to shrink the matrix
-# solver_threads: 16                                     # Set to the PHYSICAL core count of the machine the run executes on; avoids hyperthread/NUMA contention
+solver_threads: 4                                      # Set to the PHYSICAL core count of the machine the run executes on; avoids hyperthread/NUMA contention (also lowers barrier memory use)
 # Robustness (brakes, not accelerators): each of these makes Gurobi SLOWER. Only enable
 # one at a time if a run fails with numerical-trouble messages — never preemptively.
 # solver_scaleflag: 2                                    # 2 = aggressive matrix scaling (-1=auto, 0=off); scales the matrix only, not the objective
