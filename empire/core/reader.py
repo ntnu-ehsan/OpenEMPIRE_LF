@@ -158,6 +158,13 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     read_file(SetsExcelData, 'DirectionalLines', [0, 1], tab_file_path, "Sets", skipheaders=2)
     read_file(SetsExcelData, 'LineTypeOfDirectionalLines', [0, 1, 2], tab_file_path, "Sets", skipheaders=2)
 
+    # Country level for national limits on NUTS-disaggregated datasets. Optional sheets:
+    # absent sheets produce no tab files, which disables the feature in the model.
+    if 'Countries' in SetsExcelData:
+        read_sets(SetsExcelData, 'Countries', tab_file_path, "Sets")
+    if 'NodesOfCountry' in SetsExcelData:
+        read_file(SetsExcelData, 'NodesOfCountry', [0, 1], tab_file_path, "Sets", skipheaders=2)
+
     # Reading GeneratorPeriod
     logger.info("Reading Generator.xlsx")
     GeneratorExcelData = pd.read_excel(file_path / "Generator.xlsx", sheet_name=None)
@@ -176,6 +183,16 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     read_file(GeneratorExcelData, 'GeneratorTypeAvailability', [0, 1], tab_file_path, "Generator", skipheaders=2)
     read_file(GeneratorExcelData, 'CO2Content', [0, 1], tab_file_path, "Generator", skipheaders=2)
     read_file(GeneratorExcelData, 'Lifetime', [0, 1], tab_file_path, "Generator", skipheaders=2)
+
+    # Optional limit sheets: nodal mandated build-out and country-level (national) limits.
+    if 'MinBuiltCapacity' in GeneratorExcelData:
+        read_file(GeneratorExcelData, 'MinBuiltCapacity', [0, 1, 2, 3], tab_file_path, "Generator", skipheaders=2)
+    if 'MaxInstalledCapacityCountry' in GeneratorExcelData:
+        read_file(GeneratorExcelData, 'MaxInstalledCapacityCountry', [0, 1, 2], tab_file_path, "Generator", skipheaders=2)
+    if 'MaxBuiltCapacityCountry' in GeneratorExcelData:
+        read_file(GeneratorExcelData, 'MaxBuiltCapacityCountry', [0, 1, 2, 3], tab_file_path, "Generator", skipheaders=2)
+    if 'MinBuiltCapacityCountry' in GeneratorExcelData:
+        read_file(GeneratorExcelData, 'MinBuiltCapacityCountry', [0, 1, 2, 3], tab_file_path, "Generator", skipheaders=2)
 
     #Reading InterConnector
     logger.info("Reading Transmission.xlsx")

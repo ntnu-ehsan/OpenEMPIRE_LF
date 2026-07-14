@@ -3,7 +3,7 @@ from pathlib import Path
 import openpyxl
 import pandas as pd
 
-from empire.input_client.sheets_structure import sheets
+from empire.input_client.sheets_structure import optional_sheets, sheets
 
 
 class BaseClient:
@@ -47,10 +47,11 @@ class BaseClient:
 
         Extra sheets are allowed so datasets can carry optional inputs (e.g. lineReactance
         and other LOPF sheets) without failing validation; only missing required sheets error.
+        Sheets listed in optional_sheets (e.g. the national-limit sheets) may be absent.
         """
         name = self.__class__.__name__.split("Client", maxsplit=1)[0]
         wb = openpyxl.load_workbook(self.file)
-        missing = set(sheets[name]) - set(wb.sheetnames)
+        missing = set(sheets[name]) - set(wb.sheetnames) - set(optional_sheets.get(name, []))
         if missing:
             raise ValueError(
                 f"Sheetnames in {self.file} are missing expected sheets for {name}. "
@@ -134,6 +135,18 @@ class SetsClient(BaseClient):
 
     def set_generators_of_node(self, df: pd.DataFrame):
         self._write_to_sheet(df, self.file, "GeneratorsOfNode", startrow=2)
+
+    def get_countries(self):
+        return self._read_from_sheet(self.file, "Countries")
+
+    def set_countries(self, df: pd.DataFrame):
+        self._write_to_sheet(df, self.file, "Countries")
+
+    def get_nodes_of_country(self):
+        return self._read_from_sheet(self.file, "NodesOfCountry", skiprows=2, usecols=[0, 1])
+
+    def set_nodes_of_country(self, df: pd.DataFrame):
+        self._write_to_sheet(df, self.file, "NodesOfCountry", startrow=2)
 
     def get_generators_of_technology(self):
         return self._read_from_sheet(self.file, "GeneratorsOfTechnology", skiprows=2, usecols=[0, 1])
@@ -224,6 +237,30 @@ class GeneratorClient(BaseClient):
 
     def set_max_installed_capacity(self, df: pd.DataFrame):
         self._write_to_sheet(df, self.file, "MaxInstalledCapacity")
+
+    def get_min_built_capacity(self):
+        return self._read_from_sheet(self.file, "MinBuiltCapacity", usecols=[0, 1, 2, 3])
+
+    def set_min_built_capacity(self, df: pd.DataFrame):
+        self._write_to_sheet(df, self.file, "MinBuiltCapacity")
+
+    def get_max_built_capacity_country(self):
+        return self._read_from_sheet(self.file, "MaxBuiltCapacityCountry", usecols=[0, 1, 2, 3])
+
+    def set_max_built_capacity_country(self, df: pd.DataFrame):
+        self._write_to_sheet(df, self.file, "MaxBuiltCapacityCountry")
+
+    def get_max_installed_capacity_country(self):
+        return self._read_from_sheet(self.file, "MaxInstalledCapacityCountry", usecols=[0, 1, 2])
+
+    def set_max_installed_capacity_country(self, df: pd.DataFrame):
+        self._write_to_sheet(df, self.file, "MaxInstalledCapacityCountry")
+
+    def get_min_built_capacity_country(self):
+        return self._read_from_sheet(self.file, "MinBuiltCapacityCountry", usecols=[0, 1, 2, 3])
+
+    def set_min_built_capacity_country(self, df: pd.DataFrame):
+        self._write_to_sheet(df, self.file, "MinBuiltCapacityCountry")
 
     def get_ramp_rate(self):
         return self._read_from_sheet(self.file, "RampRate", usecols=[0, 1])

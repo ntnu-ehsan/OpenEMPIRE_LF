@@ -111,6 +111,10 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         model.OffshoreNode = Set(ordered=True, within=model.Node) #n
     model.DirectionalLink = Set(dimen=2, within=model.Node*model.Node, ordered=True) #a
     model.TransmissionType = Set(ordered=True)
+    # Country level for national limits on NUTS-disaggregated datasets. Stays empty
+    # (feature off) unless the dataset provides Countries/NodesOfCountry sheets.
+    model.Country = Set(ordered=True) #c
+    model.NodesOfCountry = Set(dimen=2, within=model.Country*model.Node) #(c,n) for all c in C, n in N_c
 
     #Stochastic sets
     model.Scenario = Set(ordered=True, initialize=Scenario) #w
@@ -152,6 +156,21 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     data.load(filename=str(tab_file_path / 'Sets_GeneratorsOfTechnology.tab'),format="set", set=model.GeneratorsOfTechnology)
     data.load(filename=str(tab_file_path / 'Sets_GeneratorsOfNode.tab'),format="set", set=model.GeneratorsOfNode)
     data.load(filename=str(tab_file_path / 'Sets_StorageOfNodes.tab'),format="set", set=model.StoragesOfNode)
+
+    # Optional country level (national limits). Both tabs must be present and non-empty;
+    # otherwise the Country set stays empty and every national constraint vanishes.
+    country_tab = tab_file_path / 'Sets_Country.tab'
+    nodes_of_country_tab = tab_file_path / 'Sets_NodesOfCountry.tab'
+    country_level = False
+    if country_tab.exists() and not pd.read_csv(country_tab, sep='\t').empty:
+        if nodes_of_country_tab.exists() and not pd.read_csv(nodes_of_country_tab, sep='\t').empty:
+            data.load(filename=str(country_tab), format="set", set=model.Country)
+            data.load(filename=str(nodes_of_country_tab), format="set", set=model.NodesOfCountry)
+            country_level = True
+            logger.info("Country level enabled: national limits will be enforced over NodesOfCountry.")
+        else:
+            logger.warning("Countries sheet found but NodesOfCountry is missing or empty; "
+                           "country level disabled (no national limits enforced).")
 
     logger.info("Constructing sub sets...")
 
@@ -236,6 +255,15 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     model.storENMaxBuiltCap = Param(model.StoragesOfNode, model.Period, default=500000.0, mutable=True)
     model.genMaxInstalledCapRaw = Param(model.Node, model.Technology, default=0.0, mutable=True)
     model.genMaxInstalledCap = Param(model.Node, model.Technology, model.Period, default=0.0, mutable=True)
+    # Mandated build-out floor per node (sparse; 0 = no mandate, unlike the max limits above).
+    model.genMinBuiltCap = Param(model.Node, model.Technology, model.Period, default=0.0, mutable=True)
+    # Country-level (national) limits, enforced on sums over NodesOfCountry. Sparse sheets:
+    # the -1 sentinel marks "no row provided" = unconstrained, so that an explicit 0 remains
+    # a valid (phase-out) limit. Note the opposite default semantics vs the nodal sheets.
+    model.genCountryMaxInstalledCapRaw = Param(model.Country, model.Technology, default=-1.0, mutable=True)
+    model.genCountryMaxInstalledCap = Param(model.Country, model.Technology, model.Period, default=-1.0, mutable=True)
+    model.genCountryMaxBuiltCap = Param(model.Country, model.Technology, model.Period, default=-1.0, mutable=True)
+    model.genCountryMinBuiltCap = Param(model.Country, model.Technology, model.Period, default=0.0, mutable=True)
     model.transmissionMaxInstalledCapRaw = Param(model.BidirectionalArc, model.Period, default=0.0)
     model.transmissionMaxInstalledCap = Param(model.BidirectionalArc, model.Period, default=0.0, mutable=True)
     model.storPWMaxInstalledCap = Param(model.StoragesOfNode, model.Period, default=0.0, mutable=True)
@@ -308,7 +336,20 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     data.load(filename=str(tab_file_path / 'Generator_CO2Content.tab'), param=model.genCO2TypeFactor, format="table")
     data.load(filename=str(tab_file_path / 'Generator_RampRate.tab'), param=model.genRampUpCap, format="table")
     data.load(filename=str(tab_file_path / 'Generator_GeneratorTypeAvailability.tab'), param=model.genCapAvailTypeRaw, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_Lifetime.tab'), param=model.genLifetime, format="table") 
+    data.load(filename=str(tab_file_path / 'Generator_Lifetime.tab'), param=model.genLifetime, format="table")
+
+    # Optional limit tabs (nodal mandated build-out and national limits); sparse sheets,
+    # so an absent or empty tab simply leaves the parameter at its default. The Country-
+    # indexed tabs are only loadable when the country level was enabled above.
+    _optional_limit_tabs = [('Generator_MinBuiltCapacity.tab', model.genMinBuiltCap)]
+    if country_level:
+        _optional_limit_tabs += [('Generator_MaxInstalledCapacityCountry.tab', model.genCountryMaxInstalledCapRaw),
+                                 ('Generator_MaxBuiltCapacityCountry.tab', model.genCountryMaxBuiltCap),
+                                 ('Generator_MinBuiltCapacityCountry.tab', model.genCountryMinBuiltCap)]
+    for _tab_name, _param in _optional_limit_tabs:
+        _tab = tab_file_path / _tab_name
+        if _tab.exists() and not pd.read_csv(_tab, sep='\t').empty:
+            data.load(filename=str(_tab), param=_param, format="table")
 
     logger.info("Reading parameters for Transmission...")
     data.load(filename=str(tab_file_path / 'Transmission_InitialCapacity.tab'), param=model.transmissionInitCap, format="table")
@@ -492,6 +533,26 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                         model.genMaxInstalledCap[n,t,i]=model.genMaxInstalledCapRaw[n,t]
                         
     model.build_genMaxInstalledCap = BuildAction(rule=prepGenMaxInstalledCap_rule)
+
+    def prepGenCountryMaxInstalledCap_rule(model):
+        #Build national resource limits for all periods, mirroring the nodal clamp above:
+        #avoid infeasibility if a national limit is below the country's initially installed
+        #capacity (existing plants live out their lifetime, nothing new is built).
+        #Pairs without a sheet row keep the -1 sentinel = no national limit.
+
+        for c in model.Country:
+            country_nodes = [n for (cc,n) in model.NodesOfCountry if cc == c]
+            for t in model.Technology:
+                if value(model.genCountryMaxInstalledCapRaw[c,t]) < 0:
+                    continue
+                for i in model.PeriodActive:
+                    initCap = sum(value(model.genInitCap[n,g,i]) for n in country_nodes for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology)
+                    if value(model.genCountryMaxInstalledCapRaw[c,t]) <= initCap:
+                        model.genCountryMaxInstalledCap[c,t,i] = initCap
+                    else:
+                        model.genCountryMaxInstalledCap[c,t,i] = model.genCountryMaxInstalledCapRaw[c,t]
+
+    model.build_genCountryMaxInstalledCap = BuildAction(rule=prepGenCountryMaxInstalledCap_rule)
 
     def storENMaxInstalledCap_rule(model):
         #Build installed limit (resource limit) for storEN
@@ -891,6 +952,15 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
         ############################################################
 
+        def investment_gen_min_rule(model, t, n, i):
+            #Mandated build-out floor per node; sparse (0 = no mandate, constraint skipped).
+            if value(model.genMinBuiltCap[n,t,i]) <= 0:
+                return Constraint.Skip
+            return sum(model.genInvCap[n,g,i] for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology) - model.genMinBuiltCap[n,t,i] >= 0
+        model.investment_gen_min = Constraint(model.Technology, model.Node, model.PeriodActive, rule=investment_gen_min_rule)
+
+        ############################################################
+
         def investment_trans_cap_rule(model, n1, n2, i):
             return model.transmisionInvCap[n1,n2,i] - model.transmissionMaxBuiltCap[n1,n2,i] <= 0
         model.investment_trans_cap = Constraint(model.BidirectionalArc, model.PeriodActive, rule=investment_trans_cap_rule)
@@ -912,6 +982,34 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         def installed_gen_cap_rule(model, t, n, i):
             return sum(model.genInstalledCap[n,g,i] for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology) - model.genMaxInstalledCap[n,t,i] <= 0
         model.installed_gen_cap = Constraint(model.Technology, model.Node, model.PeriodActive, rule=installed_gen_cap_rule)
+
+        ############################################################
+
+        #National (country-level) limits: sums of a technology over all nodes of a country
+        #(NodesOfCountry). Only (country, technology[, period]) rows provided in the dataset
+        #are enforced; the sentinel/zero defaults skip everything else. Empty Country set
+        #(no Countries sheet) generates no constraints at all.
+
+        def _countryTechSum(model, c, t, i, nodeVar):
+            return sum(nodeVar[n,g,i] for (cc,n) in model.NodesOfCountry if cc == c for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology)
+
+        def installed_country_gen_cap_rule(model, c, t, i):
+            if value(model.genCountryMaxInstalledCap[c,t,i]) < 0:
+                return Constraint.Skip
+            return _countryTechSum(model, c, t, i, model.genInstalledCap) - model.genCountryMaxInstalledCap[c,t,i] <= 0
+        model.installed_country_gen_cap = Constraint(model.Country, model.Technology, model.PeriodActive, rule=installed_country_gen_cap_rule)
+
+        def investment_country_gen_cap_rule(model, c, t, i):
+            if value(model.genCountryMaxBuiltCap[c,t,i]) < 0:
+                return Constraint.Skip
+            return _countryTechSum(model, c, t, i, model.genInvCap) - model.genCountryMaxBuiltCap[c,t,i] <= 0
+        model.investment_country_gen_cap = Constraint(model.Country, model.Technology, model.PeriodActive, rule=investment_country_gen_cap_rule)
+
+        def investment_country_gen_min_rule(model, c, t, i):
+            if value(model.genCountryMinBuiltCap[c,t,i]) <= 0:
+                return Constraint.Skip
+            return _countryTechSum(model, c, t, i, model.genInvCap) - model.genCountryMinBuiltCap[c,t,i] >= 0
+        model.investment_country_gen_min = Constraint(model.Country, model.Technology, model.PeriodActive, rule=investment_country_gen_min_rule)
 
         ############################################################
 

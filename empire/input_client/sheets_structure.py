@@ -14,6 +14,8 @@ sheets = {
         "GeneratorsOfNode",
         "GeneratorsOfTechnology",
         "Coords",
+        "Countries",
+        "NodesOfCountry",
     ],
     "Generator": [
         "CapitalCosts",
@@ -27,6 +29,10 @@ sheets = {
         "InitialCapacity",
         "MaxBuiltCapacity",
         "MaxInstalledCapacity",
+        "MinBuiltCapacity",
+        "MaxBuiltCapacityCountry",
+        "MaxInstalledCapacityCountry",
+        "MinBuiltCapacityCountry",
         "RampRate",
         "GeneratorTypeAvailability",
         "CO2Content",
@@ -60,5 +66,20 @@ sheets = {
         "StoragePowToEnergy",
         "StorageBleedEfficiency",
         "Lifetime",
+    ],
+}
+
+# Optional sheets: allowed to be absent from a dataset (feature-gated inputs, e.g. the
+# country level for national limits on NUTS-disaggregated datasets).
+optional_sheets = {
+    "Sets": [
+        "Countries",
+        "NodesOfCountry",
+    ],
+    "Generator": [
+        "MinBuiltCapacity",
+        "MaxBuiltCapacityCountry",
+        "MaxInstalledCapacityCountry",
+        "MinBuiltCapacityCountry",
     ],
 }
