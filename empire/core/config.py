@@ -50,6 +50,8 @@ class EmpireConfiguration:
         leap_years_investment: int = 5,
         time_format: str = "%d/%m/%Y %H:%M",
         use_ramping: bool = True,
+        generation_growth_limit_flag: bool = False,
+        generation_growth_limit_rate: float = 0.2,
         transmission_availability: float = 1.0,
         lopf_flag: bool = False,
         lopf_method: str = "kirchhoff",
@@ -95,6 +97,11 @@ class EmpireConfiguration:
         :param use_ramping: If true (default), thermal generator ramp-rate constraints are included. Setting it to
             false removes the inter-hour ramping constraints (fewer rows, less temporal coupling for thermal units);
             only do this if ramping is non-binding at your time resolution, as it is a physical modelling assumption.
+        :param generation_growth_limit_flag: If true, add a node-level generation growth cap: total generation
+            (summed over all technologies) at each node in a period may not exceed (1 + generation_growth_limit_rate)
+            times the previous period's expected total generation. Default false leaves generation growth unconstrained.
+        :param generation_growth_limit_rate: Maximum allowed fractional growth per period when
+            generation_growth_limit_flag is true (e.g. 0.2 = at most 20% above the previous period). Default 0.2.
         :param transmission_availability: Fraction (0-1) of each line's installed capacity that may be used in any
             operational hour. Values below 1.0 reserve a reliability/operational margin on every line (e.g. 0.8 = 80%
             usable). Default 1.0 leaves the full installed capacity available.
@@ -161,6 +168,8 @@ class EmpireConfiguration:
         self.leap_years_investment = leap_years_investment
         self.time_format = time_format
         self.use_ramping = use_ramping
+        self.generation_growth_limit_flag = generation_growth_limit_flag
+        self.generation_growth_limit_rate = generation_growth_limit_rate
         self.transmission_availability = transmission_availability
 
         # Linear Optimal Power Flow (DC-OPF) options
@@ -192,6 +201,10 @@ class EmpireConfiguration:
         if not 0 < self.transmission_availability <= 1:
             raise ValueError(
                 f"transmission_availability must be in (0, 1], got {self.transmission_availability}."
+            )
+        if self.generation_growth_limit_rate < 0:
+            raise ValueError(
+                f"generation_growth_limit_rate must be >= 0, got {self.generation_growth_limit_rate}."
             )
 
     @classmethod

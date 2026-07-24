@@ -10,7 +10,7 @@ discount_rate: 0.05                                    # Rate used to discount f
 wacc: 0.05                                             # Weighted average cost of capital
 optimization_solver: "Gurobi"                          # Mathematical solver used for optimization tasks
 use_scenario_generation: True                          # Indicates if scenarios should be generated dynamically
-use_fixed_sample: True                                 # Specifies if fixed scenario samples should be used
+use_fixed_sample: False                                 # Specifies if fixed scenario samples should be used
 load_change_module: False                              #
 filter_make : False                                    #
 filter_use : False                                     #
@@ -30,6 +30,8 @@ aggregate_offshore_nodes_in_IAMC: False                 # Aggregate offshore nod
 leap_years_investment: 5                               # Number of years per period (default: 5)
 time_format: "%d/%m/%Y %H:%M"                          # Time format for scenario data files
 use_ramping: False                                     # Include thermal ramp-rate constraints. Set False to drop inter-hour coupling for thermal units (faster, but only if ramping is non-binding)
+generation_growth_limit_flag: False                    # Cap total node generation (all technologies summed) at (1+rate)x the previous period's expected generation
+generation_growth_limit_rate: 0.2                      # Max fractional growth per period when the flag is on (0.2 = 20%)
 transmission_availability: 1.0                          # Usable share (0-1) of each line's installed capacity per hour, for reliability margins (e.g. 0.8 = 80% usable). 1.0 = full capacity
 
 # Linear (DC) Optimal Power Flow -- adds Kirchhoff cycle-based DC-OPF constraints to the network

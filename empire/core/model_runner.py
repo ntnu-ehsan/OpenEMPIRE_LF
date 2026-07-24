@@ -158,6 +158,8 @@ def run_empire_model(
             OUT_OF_SAMPLE=OUT_OF_SAMPLE,
             sample_file_path=sample_file_path,
             RAMPING=empire_config.use_ramping,
+            GEN_GROWTH_LIMIT=empire_config.generation_growth_limit_flag,
+            GEN_GROWTH_RATE=empire_config.generation_growth_limit_rate,
             TRANSMISSION_AVAILABILITY=empire_config.transmission_availability,
             LOPF_FLAG=empire_config.lopf_flag,
             LOPF_METHOD=empire_config.lopf_method,

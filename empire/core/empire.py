@@ -26,6 +26,8 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                AGGREGATE_OFFSHORE_IAMC=False, workbook_path: Path | None = None,
                OUT_OF_SAMPLE: bool = False, sample_file_path: Path | None = None,
                RAMPING: bool = True,
+               GEN_GROWTH_LIMIT: bool = False,
+               GEN_GROWTH_RATE: float = 0.2,
                TRANSMISSION_AVAILABILITY: float = 1.0,
                LOPF_FLAG: bool = False, LOPF_METHOD: str = "kirchhoff",
                LOPF_KWARGS: dict | None = None,
@@ -764,6 +766,25 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         model.ramping = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=ramping_rule)
     else:
         logger.info("Ramping constraints disabled (use_ramping=False)...")
+
+    #################################################################
+
+    if GEN_GROWTH_LIMIT:
+        #Node-level generation growth cap: total generation summed over ALL technologies at a
+        #node in period i may not exceed (1+GEN_GROWTH_RATE) times the previous period's
+        #expected (scenario-probability-weighted) total generation. Aggregate limit, not
+        #per-technology. Skipped for the first active period (no prior period to compare to).
+        growth_multiplier = 1.0 + GEN_GROWTH_RATE
+        logger.info("Node generation growth limit enabled (max %.0f%% growth per period)...", GEN_GROWTH_RATE * 100)
+        def node_generation_growth_rule(model, n, i, w):
+            if (i - 1) not in model.PeriodActive:
+                return Constraint.Skip
+            currentGen = sum(model.seasScale[s] * model.genOperational[n,g,h,i,w]
+                for g in model.Generator if (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason)
+            previousAvgGen = sum(model.sceProbab[w2] * model.seasScale[s] * model.genOperational[n,g,h,i-1,w2]
+                for g in model.Generator if (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason for w2 in model.Scenario)
+            return currentGen - growth_multiplier * previousAvgGen <= 0
+        model.node_generation_growth = Constraint(model.Node, model.PeriodActive, model.Scenario, rule=node_generation_growth_rule)
 
     #################################################################
 
