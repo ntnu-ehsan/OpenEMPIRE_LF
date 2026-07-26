@@ -36,6 +36,7 @@ sheets = {
         "RampRate",
         "GeneratorTypeAvailability",
         "CO2Content",
+        "CapturedCO2Content",
         "Lifetime",
     ],
     "Node": ["ElectricAnnualDemand", "NodeLostLoadCost", "HydroGenMaxAnnualProduction"],
@@ -81,5 +82,6 @@ optional_sheets = {
         "MaxBuiltCapacityCountry",
         "MaxInstalledCapacityCountry",
         "MinBuiltCapacityCountry",
+        "CapturedCO2Content",
     ],
 }

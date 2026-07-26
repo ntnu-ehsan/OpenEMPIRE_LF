@@ -182,6 +182,15 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     read_file(GeneratorExcelData, 'RampRate', [0, 1], tab_file_path, "Generator", skipheaders=2)
     read_file(GeneratorExcelData, 'GeneratorTypeAvailability', [0, 1], tab_file_path, "Generator", skipheaders=2)
     read_file(GeneratorExcelData, 'CO2Content', [0, 1], tab_file_path, "Generator", skipheaders=2)
+    if 'CapturedCO2Content' in GeneratorExcelData:
+        read_file(
+            GeneratorExcelData,
+            'CapturedCO2Content',
+            [0, 1],
+            tab_file_path,
+            "Generator",
+            skipheaders=2,
+        )
     read_file(GeneratorExcelData, 'Lifetime', [0, 1], tab_file_path, "Generator", skipheaders=2)
 
     # Optional limit sheets: nodal mandated build-out and country-level (national) limits.

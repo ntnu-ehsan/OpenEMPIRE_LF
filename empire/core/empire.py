@@ -10,6 +10,11 @@ from pathlib import Path
 import cloudpickle
 import pandas as pd
 from empire.utils import get_name_of_last_folder_in_path
+from empire.core.generator_costs import (
+    ccs_fixed_cost_eur_per_mw,
+    generator_marginal_cost_eur_per_mwh,
+    resolve_captured_co2_factor,
+)
 from empire.core.lopf_module import add_lopf_constraints, load_line_parameters
 from empire.core.lopf_results import log_lopf_diagnostics, write_angle_based_results
 from pyomo.common.tempfiles import TempfileManager
@@ -236,7 +241,11 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     model.genVariableOMCost = Param(model.Generator, default=0.0, mutable=True)
     model.genFuelCost = Param(model.Generator, model.Period, default=0.0, mutable=True)
     model.genMargCost = Param(model.Generator, model.Period, default=600, mutable=True)
+    # Signed net emissions/removals used by the emission cap and carbon-price term.
     model.genCO2TypeFactor = Param(model.Generator, default=0.0, mutable=True)
+    # Positive captured CO2 used only for CCS transport/storage costs. A negative
+    # sentinel means that a legacy dataset omitted the optional input.
+    model.genCapturedCO2Factor = Param(model.Generator, default=-1.0, mutable=True)
     model.nodeLostLoadCost = Param(model.Node, model.Period, default=22000.0)
     model.CO2price = Param(model.Period, default=0.0, mutable=True)
     model.CCSCostTSFix = Param(initialize=1149873.72) #NB! Hard-coded
@@ -336,6 +345,18 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     data.load(filename=str(tab_file_path / 'Generator_MaxBuiltCapacity.tab'), param=model.genMaxBuiltCap, format="table")#?
     data.load(filename=str(tab_file_path / 'Generator_MaxInstalledCapacity.tab'), param=model.genMaxInstalledCapRaw, format="table")#maximum_capacity_constraint_040317_high
     data.load(filename=str(tab_file_path / 'Generator_CO2Content.tab'), param=model.genCO2TypeFactor, format="table")
+    _captured_co2_tab = tab_file_path / 'Generator_CapturedCO2Content.tab'
+    if _captured_co2_tab.exists():
+        _captured_co2_data = pd.read_csv(_captured_co2_tab, sep='\t')
+        if not _captured_co2_data.empty:
+            _captured_co2_values = pd.to_numeric(
+                _captured_co2_data.iloc[:, -1], errors='raise'
+            )
+            if (_captured_co2_values < 0).any():
+                raise ValueError(
+                    "Generator_CapturedCO2Content.tab contains a negative captured-CO2 factor."
+                )
+            data.load(filename=str(_captured_co2_tab), param=model.genCapturedCO2Factor, format="table")
     data.load(filename=str(tab_file_path / 'Generator_RampRate.tab'), param=model.genRampUpCap, format="table")
     data.load(filename=str(tab_file_path / 'Generator_GeneratorTypeAvailability.tab'), param=model.genCapAvailTypeRaw, format="table")
     data.load(filename=str(tab_file_path / 'Generator_Lifetime.tab'), param=model.genLifetime, format="table")
@@ -450,11 +471,26 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
         #Generator 
         for g in model.Generator:
+            is_ccs = ('CCS',g) in model.GeneratorsOfTechnology
+            captured_co2_factor = 0.0
+            if is_ccs:
+                explicit_factor = value(model.genCapturedCO2Factor[g])
+                captured_co2_factor = resolve_captured_co2_factor(
+                    net_co2_factor=value(model.genCO2TypeFactor[g]),
+                    capture_rate=value(model.CCSRemFrac),
+                    explicit_captured_co2_factor=(
+                        None if explicit_factor < 0 else explicit_factor
+                    ),
+                )
             for i in model.PeriodActive:
                 costperyear=(model.WACC/(1-((1+model.WACC)**(-model.genLifetime[g]))))*model.genCapitalCost[g,i]+model.genFixedOMCost[g,i]
                 costperperiod=costperyear*1000*(1-(1+model.discountrate)**-(min(value((len(model.PeriodActive)-i+1)*LeapYearsInvestment), value(model.genLifetime[g]))))/(1-(1/(1+model.discountrate)))
-                if ('CCS',g) in model.GeneratorsOfTechnology:
-                    costperperiod+=model.CCSCostTSFix*model.CCSRemFrac*model.genCO2TypeFactor[g]*(3.6/model.genEfficiency[g,i])
+                if is_ccs:
+                    costperperiod += ccs_fixed_cost_eur_per_mw(
+                        fixed_cost_coefficient=value(model.CCSCostTSFix),
+                        captured_co2_factor=captured_co2_factor,
+                        efficiency=value(model.genEfficiency[g,i]),
+                    )
                 model.genInvCost[g,i]=costperperiod
 
         #Storage
@@ -482,14 +518,29 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         #Build generator short term marginal costs
 
         for g in model.Generator:
+            is_ccs = ('CCS',g) in model.GeneratorsOfTechnology
+            captured_co2_factor = 0.0
+            if is_ccs:
+                explicit_factor = value(model.genCapturedCO2Factor[g])
+                captured_co2_factor = resolve_captured_co2_factor(
+                    net_co2_factor=value(model.genCO2TypeFactor[g]),
+                    capture_rate=value(model.CCSRemFrac),
+                    explicit_captured_co2_factor=(
+                        None if explicit_factor < 0 else explicit_factor
+                    ),
+                )
             for i in model.PeriodActive:
-                if ('CCS',g) in model.GeneratorsOfTechnology:
-                    costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+(1-model.CCSRemFrac)*model.genCO2TypeFactor[g]*model.CO2price[i])+ \
-                    (3.6/model.genEfficiency[g,i])*(model.CCSRemFrac*model.genCO2TypeFactor[g]*model.CCSCostTSVariable[i])+ \
-                    model.genVariableOMCost[g]
-                else:
-                    costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+model.genCO2TypeFactor[g]*model.CO2price[i])+ \
-                    model.genVariableOMCost[g]
+                costperenergyunit = generator_marginal_cost_eur_per_mwh(
+                    fuel_cost_eur_per_gj=value(model.genFuelCost[g,i]),
+                    variable_om_eur_per_mwh=value(model.genVariableOMCost[g]),
+                    efficiency=value(model.genEfficiency[g,i]),
+                    net_co2_factor=value(model.genCO2TypeFactor[g]),
+                    co2_price_eur_per_ton=value(model.CO2price[i]),
+                    captured_co2_factor=captured_co2_factor,
+                    ccs_variable_cost_eur_per_ton=(
+                        value(model.CCSCostTSVariable[i]) if is_ccs else 0.0
+                    ),
+                )
                 model.genMargCost[g,i]=costperenergyunit
 
     model.build_OperationalCostGen = BuildAction(rule=prepOperationalCostGen_rule)

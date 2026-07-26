@@ -280,6 +280,12 @@ class GeneratorClient(BaseClient):
     def set_co2_content(self, df: pd.DataFrame):
         self._write_to_sheet(df, self.file, "CO2Content")
 
+    def get_captured_co2_content(self):
+        return self._read_from_sheet(self.file, "CapturedCO2Content", usecols=[0, 1])
+
+    def set_captured_co2_content(self, df: pd.DataFrame):
+        self._write_to_sheet(df, self.file, "CapturedCO2Content")
+
     def get_lifetime(self):
         return self._read_from_sheet(self.file, "Lifetime", usecols=[0, 1])
 
