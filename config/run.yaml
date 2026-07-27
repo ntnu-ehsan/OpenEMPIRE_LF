@@ -30,8 +30,10 @@ aggregate_offshore_nodes_in_IAMC: False                 # Aggregate offshore nod
 leap_years_investment: 5                               # Number of years per period (default: 5)
 time_format: "%d/%m/%Y %H:%M"                          # Time format for scenario data files
 use_ramping: False                                     # Include thermal ramp-rate constraints. Set False to drop inter-hour coupling for thermal units (faster, but only if ramping is non-binding)
-generation_growth_limit_flag: False                    # Cap total node generation (all technologies summed) at (1+rate)x the previous period's expected generation
-generation_growth_limit_rate: 0.2                      # Max fractional growth per period when the flag is on (0.2 = 20%)
+generation_growth_limit_flag: True                     # Cap total node generation (all technologies summed) at (1+rate)x the previous period's expected generation
+generation_growth_limit_rate: 0.3                      # Max fractional growth per period when the flag is on (0.3 = 30%, matches the reference model's hardcoded 1.3)
+biomass_limit_flag: True                               # Cap system-wide annual biomass generation using the optional 'BiomassMaxAnnualActivity' sheet in Node.xlsx. Datasets without that sheet are unaffected
+biomass_limit_factor: 1.2                              # Allowed multiple of the supplied biomass availability when the flag is on (1.2 = up to 20% above the reference)
 transmission_availability: 1.0                          # Usable share (0-1) of each line's installed capacity per hour, for reliability margins (e.g. 0.8 = 80% usable). 1.0 = full capacity
 
 # Linear (DC) Optimal Power Flow -- adds Kirchhoff cycle-based DC-OPF constraints to the network

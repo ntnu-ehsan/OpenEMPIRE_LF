@@ -52,6 +52,8 @@ class EmpireConfiguration:
         use_ramping: bool = True,
         generation_growth_limit_flag: bool = False,
         generation_growth_limit_rate: float = 0.2,
+        biomass_limit_flag: bool = True,
+        biomass_limit_factor: float = 1.2,
         transmission_availability: float = 1.0,
         lopf_flag: bool = False,
         lopf_method: str = "kirchhoff",
@@ -102,6 +104,12 @@ class EmpireConfiguration:
             times the previous period's expected total generation. Default false leaves generation growth unconstrained.
         :param generation_growth_limit_rate: Maximum allowed fractional growth per period when
             generation_growth_limit_flag is true (e.g. 0.2 = at most 20% above the previous period). Default 0.2.
+        :param biomass_limit_flag: If true (default), cap system-wide annual biomass generation in each period at
+            biomass_limit_factor times the biomass availability given in the optional 'BiomassMaxAnnualActivity'
+            sheet of Node.xlsx. The constraint is data-driven: datasets without that sheet are unaffected, so the
+            default only takes effect where the data exists. Set false to disable it even when the sheet is present.
+        :param biomass_limit_factor: Slack multiplier on the supplied biomass availability when biomass_limit_flag
+            is true (e.g. 1.2 = allow at most 20% above the reference value). Default 1.2.
         :param transmission_availability: Fraction (0-1) of each line's installed capacity that may be used in any
             operational hour. Values below 1.0 reserve a reliability/operational margin on every line (e.g. 0.8 = 80%
             usable). Default 1.0 leaves the full installed capacity available.
@@ -170,6 +178,8 @@ class EmpireConfiguration:
         self.use_ramping = use_ramping
         self.generation_growth_limit_flag = generation_growth_limit_flag
         self.generation_growth_limit_rate = generation_growth_limit_rate
+        self.biomass_limit_flag = biomass_limit_flag
+        self.biomass_limit_factor = biomass_limit_factor
         self.transmission_availability = transmission_availability
 
         # Linear Optimal Power Flow (DC-OPF) options
@@ -205,6 +215,10 @@ class EmpireConfiguration:
         if self.generation_growth_limit_rate < 0:
             raise ValueError(
                 f"generation_growth_limit_rate must be >= 0, got {self.generation_growth_limit_rate}."
+            )
+        if self.biomass_limit_factor < 0:
+            raise ValueError(
+                f"biomass_limit_factor must be >= 0, got {self.biomass_limit_factor}."
             )
 
     @classmethod

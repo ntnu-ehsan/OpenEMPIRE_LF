@@ -194,6 +194,11 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     read_file(GeneratorExcelData, 'Lifetime', [0, 1], tab_file_path, "Generator", skipheaders=2)
 
     # Optional limit sheets: nodal mandated build-out and country-level (national) limits.
+    # Per-node yearly availability derating (0 forces a technology off in that node/period).
+    # Optional sheet: when absent no tab file is written and availability stays at 1.0.
+    if 'YearlyAvailability' in GeneratorExcelData:
+        read_file(GeneratorExcelData, 'YearlyAvailability', [0, 1, 2, 3], tab_file_path, "Generator", skipheaders=2)
+
     if 'MinBuiltCapacity' in GeneratorExcelData:
         read_file(GeneratorExcelData, 'MinBuiltCapacity', [0, 1, 2, 3], tab_file_path, "Generator", skipheaders=2)
     if 'MaxInstalledCapacityCountry' in GeneratorExcelData:
@@ -247,6 +252,11 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     read_file(NodeExcelData , 'ElectricAnnualDemand', [0, 1, 2],tab_file_path,  "Node", skipheaders=2)
     read_file(NodeExcelData , 'NodeLostLoadCost', [0, 1, 2],tab_file_path,  "Node", skipheaders=2)
     read_file(NodeExcelData , 'HydroGenMaxAnnualProduction', [0, 1],tab_file_path,  "Node", skipheaders=2)
+
+    # Biomass availability per node and period for the system-wide biomass usage limit.
+    # Optional sheet: when absent no tab file is written, which disables the constraint.
+    if 'BiomassMaxAnnualActivity' in NodeExcelData:
+        read_file(NodeExcelData, 'BiomassMaxAnnualActivity', [0, 1, 2], tab_file_path, "Node", skipheaders=2)
 
     #Reading Season
     logger.info("Reading General.xlsx")

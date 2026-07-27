@@ -33,6 +33,8 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                RAMPING: bool = True,
                GEN_GROWTH_LIMIT: bool = False,
                GEN_GROWTH_RATE: float = 0.2,
+               BIOMASS_LIMIT: bool = True,
+               BIOMASS_LIMIT_FACTOR: float = 1.2,
                TRANSMISSION_AVAILABILITY: float = 1.0,
                LOPF_FLAG: bool = False, LOPF_METHOD: str = "kirchhoff",
                LOPF_KWARGS: dict | None = None,
@@ -316,11 +318,17 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     model.sloadAnnualDemand = Param(model.Node, model.Period, default=0.0, mutable=True)
     model.sload = Param(model.Node, model.Operationalhour, model.Period, model.Scenario, default=0.0, mutable=True)
     model.genCapAvailTypeRaw = Param(model.Generator, default=1.0, mutable=True)
+    # Per-node yearly availability derating from the optional 'YearlyAvailability' sheet of
+    # Generator.xlsx. 0 forces a technology off in that node/period; 1.0 (default) leaves it alone.
+    model.genYearlyAvailability = Param(model.GeneratorsOfNode, model.Period, default=1.0, mutable=True)
     model.genCapAvailStochRaw = Param(model.GeneratorsOfNode, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
     model.genCapAvail = Param(model.GeneratorsOfNode, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
     model.maxRegHydroGenRaw = Param(model.Node, model.Period, model.HoursOfSeason, model.Scenario, default=0.0, mutable=True)
     model.maxRegHydroGen = Param(model.Node, model.Period, model.Season, model.Scenario, default=0.0, mutable=True)
     model.maxHydroNode = Param(model.Node, default=0.0, mutable=True)
+    # Reference annual biomass electricity production (MWh) per node and period, from the optional
+    # 'BiomassMaxAnnualActivity' sheet of Node.xlsx. Only used by the biomass usage limit.
+    model.maxBiomassNode = Param(model.Node, model.Period, default=0.0, mutable=True)
     model.storOperationalInit = Param(model.Storage, default=0.0, mutable=True) #Percentage of installed energy capacity initially
 
     if EMISSION_CAP:
@@ -360,6 +368,15 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     data.load(filename=str(tab_file_path / 'Generator_RampRate.tab'), param=model.genRampUpCap, format="table")
     data.load(filename=str(tab_file_path / 'Generator_GeneratorTypeAvailability.tab'), param=model.genCapAvailTypeRaw, format="table")
     data.load(filename=str(tab_file_path / 'Generator_Lifetime.tab'), param=model.genLifetime, format="table")
+
+    # Optional per-node yearly availability; absent tab leaves every entry at 1.0 (no derating),
+    # in which case the factor is left out of the max-production constraint entirely.
+    _yearly_avail_tab = tab_file_path / 'Generator_YearlyAvailability.tab'
+    yearly_availability_active = False
+    if _yearly_avail_tab.exists() and not pd.read_csv(_yearly_avail_tab, sep='\t').empty:
+        data.load(filename=str(_yearly_avail_tab), param=model.genYearlyAvailability, format="table")
+        yearly_availability_active = True
+        logger.info("Per-node yearly generator availability enabled.")
 
     # Optional limit tabs (nodal mandated build-out and national limits); sparse sheets,
     # so an absent or empty tab simply leaves the parameter at its default. The Country-
@@ -423,8 +440,18 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     logger.info("Reading parameters for Node...")
     data.load(filename=str(tab_file_path / 'Node_NodeLostLoadCost.tab'), param=model.nodeLostLoadCost, format="table")
     data.load(filename=str(tab_file_path / 'Node_ElectricAnnualDemand.tab'), param=model.sloadAnnualDemand, format="table") 
-    data.load(filename=str(tab_file_path / 'Node_HydroGenMaxAnnualProduction.tab'), param=model.maxHydroNode, format="table") 
-    
+    data.load(filename=str(tab_file_path / 'Node_HydroGenMaxAnnualProduction.tab'), param=model.maxHydroNode, format="table")
+
+    # Optional biomass availability; drives the biomass usage limit. An absent or empty tab
+    # leaves the parameter at its default and switches the constraint off entirely.
+    _biomass_tab = tab_file_path / 'Node_BiomassMaxAnnualActivity.tab'
+    biomass_limit_active = False
+    if BIOMASS_LIMIT and _biomass_tab.exists() and not pd.read_csv(_biomass_tab, sep='\t').empty:
+        data.load(filename=str(_biomass_tab), param=model.maxBiomassNode, format="table")
+        biomass_limit_active = True
+    elif BIOMASS_LIMIT:
+        logger.info("No BiomassMaxAnnualActivity data found; biomass usage limit disabled.")
+
     logger.info("Reading parameters for Stochastic...")
 
     if OUT_OF_SAMPLE:
@@ -800,6 +827,8 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     #################################################################
 
     def genMaxProd_rule(model, n, g, h, i, w):
+            if yearly_availability_active:
+                return model.genOperational[n,g,h,i,w] - model.genYearlyAvailability[n,g,i]*model.genCapAvail[n,g,h,w,i]*model.genInstalledCap[n,g,i] <= 0
             return model.genOperational[n,g,h,i,w] - model.genCapAvail[n,g,h,w,i]*model.genInstalledCap[n,g,i] <= 0
     model.maxGenProduction = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=genMaxProd_rule)
 
@@ -890,6 +919,39 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         return sum(model.genOperational[n,g,h,i,w]*model.seasScale[s]*model.sceProbab[w] for g in model.HydroGenerator if (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason for w in model.Scenario) - model.maxHydroNode[n] <= 0   #
     model.hydro_node_limit = Constraint(model.Node, model.PeriodActive, rule=hydro_node_limit_rule)
 
+    #################################################################
+
+    if biomass_limit_active:
+        #System-wide biomass usage limit: expected annual electricity production from all biomass
+        #generators (summed over every node) in a period may not exceed BIOMASS_LIMIT_FACTOR times
+        #the reference biomass availability supplied per node/period in Node.xlsx. Keeps the model
+        #from leaning on cheap biomass beyond what the resource assessment supports. The limit is
+        #pooled across nodes (one row per period) rather than enforced node by node, so biomass
+        #fuel can effectively be traded between nodes.
+        logger.info("Biomass usage limit enabled (max %.0f%% of supplied biomass availability)...",
+                    BIOMASS_LIMIT_FACTOR * 100)
+
+        _logged_biomass_generators = []
+
+        def biomass_usage_rule(model, i):
+            #Biomass generators are identified by name prefix so that Bio, BioCCS and Bioexisting
+            #are all covered; whitespace is already stripped from generator names by the reader.
+            #NB: a co-firing unit named e.g. 'Bio10cofiring' would be counted at its full output.
+            biomass_generators = [g for g in model.Generator if str(g).lower().startswith("bio")]
+            if not biomass_generators:
+                logger.warning("Biomass availability data supplied but no biomass generators found; "
+                               "biomass usage limit has no effect.")
+                return Constraint.Skip
+            if not _logged_biomass_generators:
+                _logged_biomass_generators.extend(biomass_generators)
+                logger.info("Biomass usage limit applies to generators: %s", ", ".join(biomass_generators))
+            empire_biomass_production = sum(
+                model.seasScale[s] * model.sceProbab[w] * model.genOperational[n,g,h,i,w]
+                for (n,g) in model.GeneratorsOfNode if g in biomass_generators
+                for (s,h) in model.HoursOfSeason for w in model.Scenario)
+            reference_biomass_production = sum(model.maxBiomassNode[n,i] for n in model.Node)
+            return empire_biomass_production - BIOMASS_LIMIT_FACTOR * reference_biomass_production <= 0
+        model.biomass_usage_limit = Constraint(model.PeriodActive, rule=biomass_usage_rule)
 
     #################################################################
 
