@@ -12,7 +12,7 @@ constraint/build rules shared by the two `empire.py` files.
 
 | Item | Reference model | This model (after alignment) |
 | --- | --- | --- |
-| Biomass usage limit | `1.2`, hardcoded | `biomass_limit_factor`, default `1.2` |
+| Biomass usage limit | `1.2`, hardcoded, pooled Europe-wide | `biomass_limit_factor`, default `1.2`; scoped per country by default |
 | Node generation growth | `1.3`, hardcoded, always on | `generation_growth_limit_rate: 0.3`, flag on |
 | Per-node yearly availability | in `genMaxProd_rule` | added, data-gated |
 | Emission cap scaling | `1e6 * CO2cap` | identical |
@@ -23,17 +23,39 @@ Everything else is data-driven, and every shared `Param` default matches.
 
 ## 1. Biomass usage limit (new)
 
-Caps system-wide expected annual biomass electricity production in each period:
+Caps expected annual biomass electricity production in each period:
 
 ```
-sum over nodes, biomass generators, hours, scenarios of
+sum over nodes in group, biomass generators, hours, scenarios of
     seasScale * sceProbab * genOperational
-        <= biomass_limit_factor * sum over nodes of maxBiomassNode[n, i]
+        <= biomass_limit_factor * sum over nodes in group of maxBiomassNode[n, i]
 ```
 
-The limit is pooled across nodes (one constraint row per period) rather than enforced
-node by node, matching the reference formulation; biomass fuel can therefore be
-traded between nodes.
+where the group of nodes is set by `biomass_limit_scope` below.
+
+### Spatial scope
+
+The reference model pools every node into a single constraint row per period, i.e. a
+Europe-wide biomass pool. This model instead treats the limit as **national** by
+default, because biomass availability is a national resource assessment and a
+country split into NUTS regions must not receive one full allowance per region.
+
+`biomass_limit_scope` selects between the two:
+
+- `"country"` (default) — one row per country per period. Production and availability
+  are both summed over that country's nodes as given by `Countries` / `NodesOfCountry`
+  in `Sets.xlsx`. Biomass may therefore be traded between a country's NUTS regions but
+  not across borders. A node that no `NodesOfCountry` row covers forms its own group,
+  which is the correct reading for datasets where one node is one country — so
+  aggregated datasets get a genuine per-country limit without needing the country sheets
+  at all.
+- `"system"` — the reference model's single pooled row per period. Use this for
+  like-for-like comparison runs.
+
+Note that the default therefore diverges from the reference model. On the datasets
+that currently supply the sheet (`energy_vis_*`, `Laura_*`, one node per country and no
+country sheets) `"country"` binds per node, which is materially tighter than the
+reference model's Europe-wide pool.
 
 Input is the optional `BiomassMaxAnnualActivity` sheet of `Node.xlsx`, with columns
 `Node`, `Period`, `maxBiomassNode` in MWh per year. The scaling convention matches the
@@ -44,10 +66,10 @@ Biomass generators are selected by name prefix (`bio`, case-insensitive) so that
 log on model build. Note that a co-firing unit named e.g. `Bio10cofiring` would be
 counted at its full output; no dataset that currently supplies the sheet contains one.
 
-Controlled by `biomass_limit_flag` (default true) and `biomass_limit_factor`
-(default 1.2). The sheet is the real gate: datasets without it are unaffected and log
-that the limit is disabled. The flag allows switching the constraint off even where the
-data exists.
+Controlled by `biomass_limit_flag` (default true), `biomass_limit_factor` (default 1.2)
+and `biomass_limit_scope` (default `"country"`). The sheet is the real gate: datasets
+without it are unaffected and log that the limit is disabled. The flag allows switching
+the constraint off even where the data exists.
 
 The sheet's own description text mentions a factor of 1.1, but the reference
 implementation applies 1.2. The default follows the code, not the description.
@@ -121,6 +143,7 @@ generation_growth_limit_flag: True   # was False
 generation_growth_limit_rate: 0.3    # was 0.2
 biomass_limit_flag: True             # new
 biomass_limit_factor: 1.2            # new
+biomass_limit_scope: "country"       # new; "system" reproduces the reference model
 ```
 
 `YearlyAvailability` has no config switch; it is enabled purely by the presence of the
@@ -131,6 +154,11 @@ sheet.
 - Biomass limit binds exactly at the configured multiple: a fixture supplying 5 TWh per
   node across 3 nodes produced 18,000 GWh with the limit on (1.2 x 15 TWh) against
   430,366 GWh with it off.
+- Biomass scope, on a fixture with country `DEDK` = {Germany, Denmark} and France
+  uncovered, supplying 4 / 1 / 3 TWh: `"country"` bound DEDK at 6,000 GWh (Germany
+  drawing on Denmark's share, Denmark at 0) and France separately at 3,600 GWh, while
+  `"system"` bound the three together at 9,600 GWh. With no country sheets present the
+  same data bound each node on its own at 4,800 / 1,200 / 3,600 GWh.
 - Yearly availability: forcing a node's coal to zero produced 0 GWh there while the same
   technology ran unconstrained at another node.
 - All 237 `(node, generator)` pairs in the real `YearlyAvailability` sheets resolve

@@ -35,6 +35,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                GEN_GROWTH_RATE: float = 0.2,
                BIOMASS_LIMIT: bool = True,
                BIOMASS_LIMIT_FACTOR: float = 1.2,
+               BIOMASS_LIMIT_SCOPE: str = "country",
                TRANSMISSION_AVAILABILITY: float = 1.0,
                LOPF_FLAG: bool = False, LOPF_METHOD: str = "kirchhoff",
                LOPF_KWARGS: dict | None = None,
@@ -922,36 +923,65 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     #################################################################
 
     if biomass_limit_active:
-        #System-wide biomass usage limit: expected annual electricity production from all biomass
-        #generators (summed over every node) in a period may not exceed BIOMASS_LIMIT_FACTOR times
-        #the reference biomass availability supplied per node/period in Node.xlsx. Keeps the model
-        #from leaning on cheap biomass beyond what the resource assessment supports. The limit is
-        #pooled across nodes (one row per period) rather than enforced node by node, so biomass
-        #fuel can effectively be traded between nodes.
-        logger.info("Biomass usage limit enabled (max %.0f%% of supplied biomass availability)...",
-                    BIOMASS_LIMIT_FACTOR * 100)
+        #Biomass usage limit: expected annual electricity production from all biomass generators
+        #in a period may not exceed BIOMASS_LIMIT_FACTOR times the reference biomass availability
+        #supplied per node/period in Node.xlsx. Keeps the model from leaning on cheap biomass
+        #beyond what the resource assessment supports.
+        #
+        #Scope "country" (default) enforces the limit nationally: production and availability are
+        #both summed over the nodes of one country, so biomass may be traded between a country's
+        #NUTS regions but not across borders. A node that no Countries/NodesOfCountry entry covers
+        #forms its own group, which is the correct reading for datasets where one node is one
+        #country. Scope "system" pools every node into a single row per period instead, which is
+        #what the reference EMPIRE core does.
+        logger.info("Biomass usage limit enabled (max %.0f%% of supplied biomass availability, scope: %s)...",
+                    BIOMASS_LIMIT_FACTOR * 100, BIOMASS_LIMIT_SCOPE)
 
         _logged_biomass_generators = []
 
-        def biomass_usage_rule(model, i):
+        def _biomass_generators(model):
             #Biomass generators are identified by name prefix so that Bio, BioCCS and Bioexisting
             #are all covered; whitespace is already stripped from generator names by the reader.
             #NB: a co-firing unit named e.g. 'Bio10cofiring' would be counted at its full output.
-            biomass_generators = [g for g in model.Generator if str(g).lower().startswith("bio")]
-            if not biomass_generators:
-                logger.warning("Biomass availability data supplied but no biomass generators found; "
-                               "biomass usage limit has no effect.")
-                return Constraint.Skip
-            if not _logged_biomass_generators:
-                _logged_biomass_generators.extend(biomass_generators)
-                logger.info("Biomass usage limit applies to generators: %s", ", ".join(biomass_generators))
-            empire_biomass_production = sum(
+            generators = [g for g in model.Generator if str(g).lower().startswith("bio")]
+            if generators and not _logged_biomass_generators:
+                _logged_biomass_generators.extend(generators)
+                logger.info("Biomass usage limit applies to generators: %s", ", ".join(generators))
+            return generators
+
+        def _biomass_expression(model, nodes, i, generators):
+            production = sum(
                 model.seasScale[s] * model.sceProbab[w] * model.genOperational[n,g,h,i,w]
-                for (n,g) in model.GeneratorsOfNode if g in biomass_generators
+                for (n,g) in model.GeneratorsOfNode if n in nodes and g in generators
                 for (s,h) in model.HoursOfSeason for w in model.Scenario)
-            reference_biomass_production = sum(model.maxBiomassNode[n,i] for n in model.Node)
-            return empire_biomass_production - BIOMASS_LIMIT_FACTOR * reference_biomass_production <= 0
-        model.biomass_usage_limit = Constraint(model.PeriodActive, rule=biomass_usage_rule)
+            reference = sum(model.maxBiomassNode[n,i] for n in nodes)
+            return production - BIOMASS_LIMIT_FACTOR * reference <= 0
+
+        if BIOMASS_LIMIT_SCOPE == "system":
+            def biomass_usage_rule(model, i):
+                generators = _biomass_generators(model)
+                if not generators:
+                    return Constraint.Skip
+                return _biomass_expression(model, list(model.Node), i, generators)
+            model.biomass_usage_limit = Constraint(model.PeriodActive, rule=biomass_usage_rule)
+        else:
+            def _biomass_group(model, n):
+                #Nodes of n's country, or just n when no country covers it.
+                countries = [c for (c,nn) in model.NodesOfCountry if nn == n]
+                if not countries:
+                    return [n]
+                return [nn for (cc,nn) in model.NodesOfCountry if cc == countries[0]]
+
+            def biomass_usage_rule(model, n, i):
+                generators = _biomass_generators(model)
+                if not generators:
+                    return Constraint.Skip
+                group = _biomass_group(model, n)
+                #One row per country: only the group's first node emits the constraint.
+                if group[0] != n:
+                    return Constraint.Skip
+                return _biomass_expression(model, group, i, generators)
+            model.biomass_usage_limit = Constraint(model.Node, model.PeriodActive, rule=biomass_usage_rule)
 
     #################################################################
 

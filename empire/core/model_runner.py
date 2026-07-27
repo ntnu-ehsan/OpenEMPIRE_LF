@@ -162,6 +162,7 @@ def run_empire_model(
             GEN_GROWTH_RATE=empire_config.generation_growth_limit_rate,
             BIOMASS_LIMIT=empire_config.biomass_limit_flag,
             BIOMASS_LIMIT_FACTOR=empire_config.biomass_limit_factor,
+            BIOMASS_LIMIT_SCOPE=empire_config.biomass_limit_scope,
             TRANSMISSION_AVAILABILITY=empire_config.transmission_availability,
             LOPF_FLAG=empire_config.lopf_flag,
             LOPF_METHOD=empire_config.lopf_method,

@@ -54,6 +54,7 @@ class EmpireConfiguration:
         generation_growth_limit_rate: float = 0.2,
         biomass_limit_flag: bool = True,
         biomass_limit_factor: float = 1.2,
+        biomass_limit_scope: str = "country",
         transmission_availability: float = 1.0,
         lopf_flag: bool = False,
         lopf_method: str = "kirchhoff",
@@ -110,6 +111,11 @@ class EmpireConfiguration:
             default only takes effect where the data exists. Set false to disable it even when the sheet is present.
         :param biomass_limit_factor: Slack multiplier on the supplied biomass availability when biomass_limit_flag
             is true (e.g. 1.2 = allow at most 20% above the reference value). Default 1.2.
+        :param biomass_limit_scope: Spatial scope of the biomass limit. "country" (default) enforces it nationally,
+            summing production and availability over the nodes of each country given by Countries/NodesOfCountry,
+            so a country disaggregated into NUTS regions is still limited as one country; a node no country covers
+            forms its own group. "system" pools every node into one constraint per period, matching the reference
+            EMPIRE core - use it for like-for-like comparison runs against that model.
         :param transmission_availability: Fraction (0-1) of each line's installed capacity that may be used in any
             operational hour. Values below 1.0 reserve a reliability/operational margin on every line (e.g. 0.8 = 80%
             usable). Default 1.0 leaves the full installed capacity available.
@@ -180,6 +186,7 @@ class EmpireConfiguration:
         self.generation_growth_limit_rate = generation_growth_limit_rate
         self.biomass_limit_flag = biomass_limit_flag
         self.biomass_limit_factor = biomass_limit_factor
+        self.biomass_limit_scope = biomass_limit_scope
         self.transmission_availability = transmission_availability
 
         # Linear Optimal Power Flow (DC-OPF) options
@@ -219,6 +226,10 @@ class EmpireConfiguration:
         if self.biomass_limit_factor < 0:
             raise ValueError(
                 f"biomass_limit_factor must be >= 0, got {self.biomass_limit_factor}."
+            )
+        if self.biomass_limit_scope not in ("country", "system"):
+            raise ValueError(
+                f'biomass_limit_scope must be "country" or "system", got {self.biomass_limit_scope!r}.'
             )
 
     @classmethod
