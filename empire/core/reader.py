@@ -143,6 +143,17 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     if not os.path.exists(tab_file_path):
         os.makedirs(tab_file_path)
 
+    # Remove any model tab files left over from a previous run before regenerating.
+    # Optional sheets (e.g. 'YearlyAvailability') that were since removed from the
+    # dataset would otherwise leave an orphaned .tab behind, which the model still
+    # loads -> stale/invalid indices at instance creation. Scenario tabs
+    # (Stochastic_*, sampling_key.csv, LoadchangeModule/) are generated separately
+    # beforehand and must be preserved, so only clear the model-owned prefixes.
+    _model_tab_prefixes = {"Sets", "Generator", "Transmission", "Node", "General"}
+    for existing in Path(tab_file_path).glob("*.tab"):
+        if existing.name.split("_", 1)[0] in _model_tab_prefixes:
+            existing.unlink()
+
     logger.info("Reading Sets.xlsx")
     SetsExcelData = pd.read_excel(file_path / "Sets.xlsx", sheet_name=None)
     read_sets(SetsExcelData, 'Nodes', tab_file_path, "Sets")
