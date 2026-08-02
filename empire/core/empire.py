@@ -12,6 +12,11 @@ import pandas as pd
 from empire.utils import get_name_of_last_folder_in_path
 from empire.core.boundary_conditions import DIRECT_NODES as BOUNDARY_FIXED_NODES
 from empire.core.boundary_conditions import add_boundary_conditions
+from empire.core.generator_costs import (
+    ccs_fixed_cost_eur_per_mw,
+    generator_marginal_cost_eur_per_mwh,
+    resolve_captured_co2_factor,
+)
 from empire.core.lopf_module import add_lopf_constraints, load_line_parameters
 from empire.core.lopf_results import log_lopf_diagnostics, write_angle_based_results
 from pyomo.common.tempfiles import TempfileManager
@@ -28,6 +33,11 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                AGGREGATE_OFFSHORE_IAMC=False, workbook_path: Path | None = None,
                OUT_OF_SAMPLE: bool = False, sample_file_path: Path | None = None,
                RAMPING: bool = True,
+               GEN_GROWTH_LIMIT: bool = False,
+               GEN_GROWTH_RATE: float = 0.2,
+               BIOMASS_LIMIT: bool = True,
+               BIOMASS_LIMIT_FACTOR: float = 1.2,
+               BIOMASS_LIMIT_SCOPE: str = "country",
                TRANSMISSION_AVAILABILITY: float = 1.0,
                LOPF_FLAG: bool = False, LOPF_METHOD: str = "kirchhoff",
                LOPF_KWARGS: dict | None = None,
@@ -114,6 +124,10 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         model.OffshoreNode = Set(ordered=True, within=model.Node) #n
     model.DirectionalLink = Set(dimen=2, within=model.Node*model.Node, ordered=True) #a
     model.TransmissionType = Set(ordered=True)
+    # Country level for national limits on NUTS-disaggregated datasets. Stays empty
+    # (feature off) unless the dataset provides Countries/NodesOfCountry sheets.
+    model.Country = Set(ordered=True) #c
+    model.NodesOfCountry = Set(dimen=2, within=model.Country*model.Node) #(c,n) for all c in C, n in N_c
 
     #Stochastic sets
     model.Scenario = Set(ordered=True, initialize=Scenario) #w
@@ -155,6 +169,21 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     data.load(filename=str(tab_file_path / 'Sets_GeneratorsOfTechnology.tab'),format="set", set=model.GeneratorsOfTechnology)
     data.load(filename=str(tab_file_path / 'Sets_GeneratorsOfNode.tab'),format="set", set=model.GeneratorsOfNode)
     data.load(filename=str(tab_file_path / 'Sets_StorageOfNodes.tab'),format="set", set=model.StoragesOfNode)
+
+    # Optional country level (national limits). Both tabs must be present and non-empty;
+    # otherwise the Country set stays empty and every national constraint vanishes.
+    country_tab = tab_file_path / 'Sets_Country.tab'
+    nodes_of_country_tab = tab_file_path / 'Sets_NodesOfCountry.tab'
+    country_level = False
+    if country_tab.exists() and not pd.read_csv(country_tab, sep='\t').empty:
+        if nodes_of_country_tab.exists() and not pd.read_csv(nodes_of_country_tab, sep='\t').empty:
+            data.load(filename=str(country_tab), format="set", set=model.Country)
+            data.load(filename=str(nodes_of_country_tab), format="set", set=model.NodesOfCountry)
+            country_level = True
+            logger.info("Country level enabled: national limits will be enforced over NodesOfCountry.")
+        else:
+            logger.warning("Countries sheet found but NodesOfCountry is missing or empty; "
+                           "country level disabled (no national limits enforced).")
 
     logger.info("Constructing sub sets...")
 
@@ -233,7 +262,11 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     model.genVariableOMCost = Param(model.Generator, default=0.0, mutable=True)
     model.genFuelCost = Param(model.Generator, model.Period, default=0.0, mutable=True)
     model.genMargCost = Param(model.Generator, model.Period, default=600, mutable=True)
+    # Signed net emissions/removals used by the emission cap and carbon-price term.
     model.genCO2TypeFactor = Param(model.Generator, default=0.0, mutable=True)
+    # Positive captured CO2 used only for CCS transport/storage costs. A negative
+    # sentinel means that a legacy dataset omitted the optional input.
+    model.genCapturedCO2Factor = Param(model.Generator, default=-1.0, mutable=True)
     model.nodeLostLoadCost = Param(model.Node, model.Period, default=22000.0)
     model.CO2price = Param(model.Period, default=0.0, mutable=True)
     model.CCSCostTSFix = Param(initialize=1149873.72) #NB! Hard-coded
@@ -254,6 +287,15 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     model.storENMaxBuiltCap = Param(model.StoragesOfNode, model.Period, default=500000.0, mutable=True)
     model.genMaxInstalledCapRaw = Param(model.Node, model.Technology, default=0.0, mutable=True)
     model.genMaxInstalledCap = Param(model.Node, model.Technology, model.Period, default=0.0, mutable=True)
+    # Mandated build-out floor per node (sparse; 0 = no mandate, unlike the max limits above).
+    model.genMinBuiltCap = Param(model.Node, model.Technology, model.Period, default=0.0, mutable=True)
+    # Country-level (national) limits, enforced on sums over NodesOfCountry. Sparse sheets:
+    # the -1 sentinel marks "no row provided" = unconstrained, so that an explicit 0 remains
+    # a valid (phase-out) limit. Note the opposite default semantics vs the nodal sheets.
+    model.genCountryMaxInstalledCapRaw = Param(model.Country, model.Technology, default=-1.0, mutable=True)
+    model.genCountryMaxInstalledCap = Param(model.Country, model.Technology, model.Period, default=-1.0, mutable=True)
+    model.genCountryMaxBuiltCap = Param(model.Country, model.Technology, model.Period, default=-1.0, mutable=True)
+    model.genCountryMinBuiltCap = Param(model.Country, model.Technology, model.Period, default=0.0, mutable=True)
     model.transmissionMaxInstalledCapRaw = Param(model.BidirectionalArc, model.Period, default=0.0)
     model.transmissionMaxInstalledCap = Param(model.BidirectionalArc, model.Period, default=0.0, mutable=True)
     model.storPWMaxInstalledCap = Param(model.StoragesOfNode, model.Period, default=0.0, mutable=True)
@@ -313,11 +355,17 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     model.sloadAnnualDemand = Param(model.Node, model.Period, default=0.0, mutable=True)
     model.sload = Param(model.Node, model.Operationalhour, model.Period, model.Scenario, default=0.0, mutable=True)
     model.genCapAvailTypeRaw = Param(model.Generator, default=1.0, mutable=True)
+    # Per-node yearly availability derating from the optional 'YearlyAvailability' sheet of
+    # Generator.xlsx. 0 forces a technology off in that node/period; 1.0 (default) leaves it alone.
+    model.genYearlyAvailability = Param(model.GeneratorsOfNode, model.Period, default=1.0, mutable=True)
     model.genCapAvailStochRaw = Param(model.GeneratorsOfNode, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
     model.genCapAvail = Param(model.GeneratorsOfNode, model.Operationalhour, model.Scenario, model.Period, default=0.0, mutable=True)
     model.maxRegHydroGenRaw = Param(model.Node, model.Period, model.HoursOfSeason, model.Scenario, default=0.0, mutable=True)
     model.maxRegHydroGen = Param(model.Node, model.Period, model.Season, model.Scenario, default=0.0, mutable=True)
     model.maxHydroNode = Param(model.Node, default=0.0, mutable=True)
+    # Reference annual biomass electricity production (MWh) per node and period, from the optional
+    # 'BiomassMaxAnnualActivity' sheet of Node.xlsx. Only used by the biomass usage limit.
+    model.maxBiomassNode = Param(model.Node, model.Period, default=0.0, mutable=True)
     model.storOperationalInit = Param(model.Storage, default=0.0, mutable=True) #Percentage of installed energy capacity initially
 
     if EMISSION_CAP:
@@ -342,9 +390,43 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     data.load(filename=str(tab_file_path / 'Generator_MaxBuiltCapacity.tab'), param=model.genMaxBuiltCap, format="table")#?
     data.load(filename=str(tab_file_path / 'Generator_MaxInstalledCapacity.tab'), param=model.genMaxInstalledCapRaw, format="table")#maximum_capacity_constraint_040317_high
     data.load(filename=str(tab_file_path / 'Generator_CO2Content.tab'), param=model.genCO2TypeFactor, format="table")
+    _captured_co2_tab = tab_file_path / 'Generator_CapturedCO2Content.tab'
+    if _captured_co2_tab.exists():
+        _captured_co2_data = pd.read_csv(_captured_co2_tab, sep='\t')
+        if not _captured_co2_data.empty:
+            _captured_co2_values = pd.to_numeric(
+                _captured_co2_data.iloc[:, -1], errors='raise'
+            )
+            if (_captured_co2_values < 0).any():
+                raise ValueError(
+                    "Generator_CapturedCO2Content.tab contains a negative captured-CO2 factor."
+                )
+            data.load(filename=str(_captured_co2_tab), param=model.genCapturedCO2Factor, format="table")
     data.load(filename=str(tab_file_path / 'Generator_RampRate.tab'), param=model.genRampUpCap, format="table")
     data.load(filename=str(tab_file_path / 'Generator_GeneratorTypeAvailability.tab'), param=model.genCapAvailTypeRaw, format="table")
-    data.load(filename=str(tab_file_path / 'Generator_Lifetime.tab'), param=model.genLifetime, format="table") 
+    data.load(filename=str(tab_file_path / 'Generator_Lifetime.tab'), param=model.genLifetime, format="table")
+
+    # Optional per-node yearly availability; absent tab leaves every entry at 1.0 (no derating),
+    # in which case the factor is left out of the max-production constraint entirely.
+    _yearly_avail_tab = tab_file_path / 'Generator_YearlyAvailability.tab'
+    yearly_availability_active = False
+    if _yearly_avail_tab.exists() and not pd.read_csv(_yearly_avail_tab, sep='\t').empty:
+        data.load(filename=str(_yearly_avail_tab), param=model.genYearlyAvailability, format="table")
+        yearly_availability_active = True
+        logger.info("Per-node yearly generator availability enabled.")
+
+    # Optional limit tabs (nodal mandated build-out and national limits); sparse sheets,
+    # so an absent or empty tab simply leaves the parameter at its default. The Country-
+    # indexed tabs are only loadable when the country level was enabled above.
+    _optional_limit_tabs = [('Generator_MinBuiltCapacity.tab', model.genMinBuiltCap)]
+    if country_level:
+        _optional_limit_tabs += [('Generator_MaxInstalledCapacityCountry.tab', model.genCountryMaxInstalledCapRaw),
+                                 ('Generator_MaxBuiltCapacityCountry.tab', model.genCountryMaxBuiltCap),
+                                 ('Generator_MinBuiltCapacityCountry.tab', model.genCountryMinBuiltCap)]
+    for _tab_name, _param in _optional_limit_tabs:
+        _tab = tab_file_path / _tab_name
+        if _tab.exists() and not pd.read_csv(_tab, sep='\t').empty:
+            data.load(filename=str(_tab), param=_param, format="table")
 
     logger.info("Reading parameters for Transmission...")
     data.load(filename=str(tab_file_path / 'Transmission_InitialCapacity.tab'), param=model.transmissionInitCap, format="table")
@@ -395,8 +477,18 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     logger.info("Reading parameters for Node...")
     data.load(filename=str(tab_file_path / 'Node_NodeLostLoadCost.tab'), param=model.nodeLostLoadCost, format="table")
     data.load(filename=str(tab_file_path / 'Node_ElectricAnnualDemand.tab'), param=model.sloadAnnualDemand, format="table") 
-    data.load(filename=str(tab_file_path / 'Node_HydroGenMaxAnnualProduction.tab'), param=model.maxHydroNode, format="table") 
-    
+    data.load(filename=str(tab_file_path / 'Node_HydroGenMaxAnnualProduction.tab'), param=model.maxHydroNode, format="table")
+
+    # Optional biomass availability; drives the biomass usage limit. An absent or empty tab
+    # leaves the parameter at its default and switches the constraint off entirely.
+    _biomass_tab = tab_file_path / 'Node_BiomassMaxAnnualActivity.tab'
+    biomass_limit_active = False
+    if BIOMASS_LIMIT and _biomass_tab.exists() and not pd.read_csv(_biomass_tab, sep='\t').empty:
+        data.load(filename=str(_biomass_tab), param=model.maxBiomassNode, format="table")
+        biomass_limit_active = True
+    elif BIOMASS_LIMIT:
+        logger.info("No BiomassMaxAnnualActivity data found; biomass usage limit disabled.")
+
     logger.info("Reading parameters for Stochastic...")
 
     if OUT_OF_SAMPLE:
@@ -443,11 +535,26 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
         #Generator 
         for g in model.Generator:
+            is_ccs = ('CCS',g) in model.GeneratorsOfTechnology
+            captured_co2_factor = 0.0
+            if is_ccs:
+                explicit_factor = value(model.genCapturedCO2Factor[g])
+                captured_co2_factor = resolve_captured_co2_factor(
+                    net_co2_factor=value(model.genCO2TypeFactor[g]),
+                    capture_rate=value(model.CCSRemFrac),
+                    explicit_captured_co2_factor=(
+                        None if explicit_factor < 0 else explicit_factor
+                    ),
+                )
             for i in model.PeriodActive:
                 costperyear=(model.WACC/(1-((1+model.WACC)**(-model.genLifetime[g]))))*model.genCapitalCost[g,i]+model.genFixedOMCost[g,i]
                 costperperiod=costperyear*1000*(1-(1+model.discountrate)**-(min(value((len(model.PeriodActive)-i+1)*LeapYearsInvestment), value(model.genLifetime[g]))))/(1-(1/(1+model.discountrate)))
-                if ('CCS',g) in model.GeneratorsOfTechnology:
-                    costperperiod+=model.CCSCostTSFix*model.CCSRemFrac*model.genCO2TypeFactor[g]*(3.6/model.genEfficiency[g,i])
+                if is_ccs:
+                    costperperiod += ccs_fixed_cost_eur_per_mw(
+                        fixed_cost_coefficient=value(model.CCSCostTSFix),
+                        captured_co2_factor=captured_co2_factor,
+                        efficiency=value(model.genEfficiency[g,i]),
+                    )
                 model.genInvCost[g,i]=costperperiod
 
         #Storage
@@ -475,14 +582,29 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         #Build generator short term marginal costs
 
         for g in model.Generator:
+            is_ccs = ('CCS',g) in model.GeneratorsOfTechnology
+            captured_co2_factor = 0.0
+            if is_ccs:
+                explicit_factor = value(model.genCapturedCO2Factor[g])
+                captured_co2_factor = resolve_captured_co2_factor(
+                    net_co2_factor=value(model.genCO2TypeFactor[g]),
+                    capture_rate=value(model.CCSRemFrac),
+                    explicit_captured_co2_factor=(
+                        None if explicit_factor < 0 else explicit_factor
+                    ),
+                )
             for i in model.PeriodActive:
-                if ('CCS',g) in model.GeneratorsOfTechnology:
-                    costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+(1-model.CCSRemFrac)*model.genCO2TypeFactor[g]*model.CO2price[i])+ \
-                    (3.6/model.genEfficiency[g,i])*(model.CCSRemFrac*model.genCO2TypeFactor[g]*model.CCSCostTSVariable[i])+ \
-                    model.genVariableOMCost[g]
-                else:
-                    costperenergyunit=(3.6/model.genEfficiency[g,i])*(model.genFuelCost[g,i]+model.genCO2TypeFactor[g]*model.CO2price[i])+ \
-                    model.genVariableOMCost[g]
+                costperenergyunit = generator_marginal_cost_eur_per_mwh(
+                    fuel_cost_eur_per_gj=value(model.genFuelCost[g,i]),
+                    variable_om_eur_per_mwh=value(model.genVariableOMCost[g]),
+                    efficiency=value(model.genEfficiency[g,i]),
+                    net_co2_factor=value(model.genCO2TypeFactor[g]),
+                    co2_price_eur_per_ton=value(model.CO2price[i]),
+                    captured_co2_factor=captured_co2_factor,
+                    ccs_variable_cost_eur_per_ton=(
+                        value(model.CCSCostTSVariable[i]) if is_ccs else 0.0
+                    ),
+                )
                 model.genMargCost[g,i]=costperenergyunit
 
     model.build_OperationalCostGen = BuildAction(rule=prepOperationalCostGen_rule)
@@ -528,6 +650,26 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                         model.genMaxInstalledCap[n,t,i]=model.genMaxInstalledCapRaw[n,t]
                         
     model.build_genMaxInstalledCap = BuildAction(rule=prepGenMaxInstalledCap_rule)
+
+    def prepGenCountryMaxInstalledCap_rule(model):
+        #Build national resource limits for all periods, mirroring the nodal clamp above:
+        #avoid infeasibility if a national limit is below the country's initially installed
+        #capacity (existing plants live out their lifetime, nothing new is built).
+        #Pairs without a sheet row keep the -1 sentinel = no national limit.
+
+        for c in model.Country:
+            country_nodes = [n for (cc,n) in model.NodesOfCountry if cc == c]
+            for t in model.Technology:
+                if value(model.genCountryMaxInstalledCapRaw[c,t]) < 0:
+                    continue
+                for i in model.PeriodActive:
+                    initCap = sum(value(model.genInitCap[n,g,i]) for n in country_nodes for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology)
+                    if value(model.genCountryMaxInstalledCapRaw[c,t]) <= initCap:
+                        model.genCountryMaxInstalledCap[c,t,i] = initCap
+                    else:
+                        model.genCountryMaxInstalledCap[c,t,i] = model.genCountryMaxInstalledCapRaw[c,t]
+
+    model.build_genCountryMaxInstalledCap = BuildAction(rule=prepGenCountryMaxInstalledCap_rule)
 
     def storENMaxInstalledCap_rule(model):
         #Build installed limit (resource limit) for storEN
@@ -722,6 +864,8 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     #################################################################
 
     def genMaxProd_rule(model, n, g, h, i, w):
+            if yearly_availability_active:
+                return model.genOperational[n,g,h,i,w] - model.genYearlyAvailability[n,g,i]*model.genCapAvail[n,g,h,w,i]*model.genInstalledCap[n,g,i] <= 0
             return model.genOperational[n,g,h,i,w] - model.genCapAvail[n,g,h,w,i]*model.genInstalledCap[n,g,i] <= 0
     model.maxGenProduction = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=genMaxProd_rule)
 
@@ -739,6 +883,25 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         model.ramping = Constraint(model.GeneratorsOfNode, model.Operationalhour, model.PeriodActive, model.Scenario, rule=ramping_rule)
     else:
         logger.info("Ramping constraints disabled (use_ramping=False)...")
+
+    #################################################################
+
+    if GEN_GROWTH_LIMIT:
+        #Node-level generation growth cap: total generation summed over ALL technologies at a
+        #node in period i may not exceed (1+GEN_GROWTH_RATE) times the previous period's
+        #expected (scenario-probability-weighted) total generation. Aggregate limit, not
+        #per-technology. Skipped for the first active period (no prior period to compare to).
+        growth_multiplier = 1.0 + GEN_GROWTH_RATE
+        logger.info("Node generation growth limit enabled (max %.0f%% growth per period)...", GEN_GROWTH_RATE * 100)
+        def node_generation_growth_rule(model, n, i, w):
+            if (i - 1) not in model.PeriodActive:
+                return Constraint.Skip
+            currentGen = sum(model.seasScale[s] * model.genOperational[n,g,h,i,w]
+                for g in model.Generator if (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason)
+            previousAvgGen = sum(model.sceProbab[w2] * model.seasScale[s] * model.genOperational[n,g,h,i-1,w2]
+                for g in model.Generator if (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason for w2 in model.Scenario)
+            return currentGen - growth_multiplier * previousAvgGen <= 0
+        model.node_generation_growth = Constraint(model.Node, model.PeriodActive, model.Scenario, rule=node_generation_growth_rule)
 
     #################################################################
 
@@ -793,6 +956,68 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         return sum(model.genOperational[n,g,h,i,w]*model.seasScale[s]*model.sceProbab[w] for g in model.HydroGenerator if (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason for w in model.Scenario) - model.maxHydroNode[n] <= 0   #
     model.hydro_node_limit = Constraint(model.Node, model.PeriodActive, rule=hydro_node_limit_rule)
 
+    #################################################################
+
+    if biomass_limit_active:
+        #Biomass usage limit: expected annual electricity production from all biomass generators
+        #in a period may not exceed BIOMASS_LIMIT_FACTOR times the reference biomass availability
+        #supplied per node/period in Node.xlsx. Keeps the model from leaning on cheap biomass
+        #beyond what the resource assessment supports.
+        #
+        #Scope "country" (default) enforces the limit nationally: production and availability are
+        #both summed over the nodes of one country, so biomass may be traded between a country's
+        #NUTS regions but not across borders. A node that no Countries/NodesOfCountry entry covers
+        #forms its own group, which is the correct reading for datasets where one node is one
+        #country. Scope "system" pools every node into a single row per period instead, which is
+        #what the reference EMPIRE core does.
+        logger.info("Biomass usage limit enabled (max %.0f%% of supplied biomass availability, scope: %s)...",
+                    BIOMASS_LIMIT_FACTOR * 100, BIOMASS_LIMIT_SCOPE)
+
+        _logged_biomass_generators = []
+
+        def _biomass_generators(model):
+            #Biomass generators are identified by name prefix so that Bio, BioCCS and Bioexisting
+            #are all covered; whitespace is already stripped from generator names by the reader.
+            #NB: a co-firing unit named e.g. 'Bio10cofiring' would be counted at its full output.
+            generators = [g for g in model.Generator if str(g).lower().startswith("bio")]
+            if generators and not _logged_biomass_generators:
+                _logged_biomass_generators.extend(generators)
+                logger.info("Biomass usage limit applies to generators: %s", ", ".join(generators))
+            return generators
+
+        def _biomass_expression(model, nodes, i, generators):
+            production = sum(
+                model.seasScale[s] * model.sceProbab[w] * model.genOperational[n,g,h,i,w]
+                for (n,g) in model.GeneratorsOfNode if n in nodes and g in generators
+                for (s,h) in model.HoursOfSeason for w in model.Scenario)
+            reference = sum(model.maxBiomassNode[n,i] for n in nodes)
+            return production - BIOMASS_LIMIT_FACTOR * reference <= 0
+
+        if BIOMASS_LIMIT_SCOPE == "system":
+            def biomass_usage_rule(model, i):
+                generators = _biomass_generators(model)
+                if not generators:
+                    return Constraint.Skip
+                return _biomass_expression(model, list(model.Node), i, generators)
+            model.biomass_usage_limit = Constraint(model.PeriodActive, rule=biomass_usage_rule)
+        else:
+            def _biomass_group(model, n):
+                #Nodes of n's country, or just n when no country covers it.
+                countries = [c for (c,nn) in model.NodesOfCountry if nn == n]
+                if not countries:
+                    return [n]
+                return [nn for (cc,nn) in model.NodesOfCountry if cc == countries[0]]
+
+            def biomass_usage_rule(model, n, i):
+                generators = _biomass_generators(model)
+                if not generators:
+                    return Constraint.Skip
+                group = _biomass_group(model, n)
+                #One row per country: only the group's first node emits the constraint.
+                if group[0] != n:
+                    return Constraint.Skip
+                return _biomass_expression(model, group, i, generators)
+            model.biomass_usage_limit = Constraint(model.Node, model.PeriodActive, rule=biomass_usage_rule)
 
     #################################################################
 
@@ -929,6 +1154,15 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
         ############################################################
 
+        def investment_gen_min_rule(model, t, n, i):
+            #Mandated build-out floor per node; sparse (0 = no mandate, constraint skipped).
+            if value(model.genMinBuiltCap[n,t,i]) <= 0:
+                return Constraint.Skip
+            return sum(model.genInvCap[n,g,i] for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology) - model.genMinBuiltCap[n,t,i] >= 0
+        model.investment_gen_min = Constraint(model.Technology, model.Node, model.PeriodActive, rule=investment_gen_min_rule)
+
+        ############################################################
+
         def investment_trans_cap_rule(model, n1, n2, i):
             if BOUNDARY_CONDITIONS and (n1 in BOUNDARY_FIXED_NODES or n2 in BOUNDARY_FIXED_NODES):
                 return Constraint.Skip  # corridor sums pinned to original EMPIRE results instead
@@ -958,6 +1192,34 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                 return Constraint.Skip  # capacity pinned to original EMPIRE results instead
             return sum(model.genInstalledCap[n,g,i] for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology) - model.genMaxInstalledCap[n,t,i] <= 0
         model.installed_gen_cap = Constraint(model.Technology, model.Node, model.PeriodActive, rule=installed_gen_cap_rule)
+
+        ############################################################
+
+        #National (country-level) limits: sums of a technology over all nodes of a country
+        #(NodesOfCountry). Only (country, technology[, period]) rows provided in the dataset
+        #are enforced; the sentinel/zero defaults skip everything else. Empty Country set
+        #(no Countries sheet) generates no constraints at all.
+
+        def _countryTechSum(model, c, t, i, nodeVar):
+            return sum(nodeVar[n,g,i] for (cc,n) in model.NodesOfCountry if cc == c for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology)
+
+        def installed_country_gen_cap_rule(model, c, t, i):
+            if value(model.genCountryMaxInstalledCap[c,t,i]) < 0:
+                return Constraint.Skip
+            return _countryTechSum(model, c, t, i, model.genInstalledCap) - model.genCountryMaxInstalledCap[c,t,i] <= 0
+        model.installed_country_gen_cap = Constraint(model.Country, model.Technology, model.PeriodActive, rule=installed_country_gen_cap_rule)
+
+        def investment_country_gen_cap_rule(model, c, t, i):
+            if value(model.genCountryMaxBuiltCap[c,t,i]) < 0:
+                return Constraint.Skip
+            return _countryTechSum(model, c, t, i, model.genInvCap) - model.genCountryMaxBuiltCap[c,t,i] <= 0
+        model.investment_country_gen_cap = Constraint(model.Country, model.Technology, model.PeriodActive, rule=investment_country_gen_cap_rule)
+
+        def investment_country_gen_min_rule(model, c, t, i):
+            if value(model.genCountryMinBuiltCap[c,t,i]) <= 0:
+                return Constraint.Skip
+            return _countryTechSum(model, c, t, i, model.genInvCap) - model.genCountryMinBuiltCap[c,t,i] >= 0
+        model.investment_country_gen_min = Constraint(model.Country, model.Technology, model.PeriodActive, rule=investment_country_gen_min_rule)
 
         ############################################################
 

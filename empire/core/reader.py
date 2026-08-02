@@ -143,6 +143,17 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     if not os.path.exists(tab_file_path):
         os.makedirs(tab_file_path)
 
+    # Remove any model tab files left over from a previous run before regenerating.
+    # Optional sheets (e.g. 'YearlyAvailability') that were since removed from the
+    # dataset would otherwise leave an orphaned .tab behind, which the model still
+    # loads -> stale/invalid indices at instance creation. Scenario tabs
+    # (Stochastic_*, sampling_key.csv, LoadchangeModule/) are generated separately
+    # beforehand and must be preserved, so only clear the model-owned prefixes.
+    _model_tab_prefixes = {"Sets", "Generator", "Transmission", "Node", "General"}
+    for existing in Path(tab_file_path).glob("*.tab"):
+        if existing.name.split("_", 1)[0] in _model_tab_prefixes:
+            existing.unlink()
+
     logger.info("Reading Sets.xlsx")
     SetsExcelData = pd.read_excel(file_path / "Sets.xlsx", sheet_name=None)
     read_sets(SetsExcelData, 'Nodes', tab_file_path, "Sets")
@@ -157,6 +168,13 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     read_file(SetsExcelData, 'GeneratorsOfTechnology', [0, 1], tab_file_path, "Sets", skipheaders=2)
     read_file(SetsExcelData, 'DirectionalLines', [0, 1], tab_file_path, "Sets", skipheaders=2)
     read_file(SetsExcelData, 'LineTypeOfDirectionalLines', [0, 1, 2], tab_file_path, "Sets", skipheaders=2)
+
+    # Country level for national limits on NUTS-disaggregated datasets. Optional sheets:
+    # absent sheets produce no tab files, which disables the feature in the model.
+    if 'Countries' in SetsExcelData:
+        read_sets(SetsExcelData, 'Countries', tab_file_path, "Sets")
+    if 'NodesOfCountry' in SetsExcelData:
+        read_file(SetsExcelData, 'NodesOfCountry', [0, 1], tab_file_path, "Sets", skipheaders=2)
 
     # Reading GeneratorPeriod
     logger.info("Reading Generator.xlsx")
@@ -175,7 +193,31 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     read_file(GeneratorExcelData, 'RampRate', [0, 1], tab_file_path, "Generator", skipheaders=2)
     read_file(GeneratorExcelData, 'GeneratorTypeAvailability', [0, 1], tab_file_path, "Generator", skipheaders=2)
     read_file(GeneratorExcelData, 'CO2Content', [0, 1], tab_file_path, "Generator", skipheaders=2)
+    if 'CapturedCO2Content' in GeneratorExcelData:
+        read_file(
+            GeneratorExcelData,
+            'CapturedCO2Content',
+            [0, 1],
+            tab_file_path,
+            "Generator",
+            skipheaders=2,
+        )
     read_file(GeneratorExcelData, 'Lifetime', [0, 1], tab_file_path, "Generator", skipheaders=2)
+
+    # Optional limit sheets: nodal mandated build-out and country-level (national) limits.
+    # Per-node yearly availability derating (0 forces a technology off in that node/period).
+    # Optional sheet: when absent no tab file is written and availability stays at 1.0.
+    if 'YearlyAvailability' in GeneratorExcelData:
+        read_file(GeneratorExcelData, 'YearlyAvailability', [0, 1, 2, 3], tab_file_path, "Generator", skipheaders=2)
+
+    if 'MinBuiltCapacity' in GeneratorExcelData:
+        read_file(GeneratorExcelData, 'MinBuiltCapacity', [0, 1, 2, 3], tab_file_path, "Generator", skipheaders=2)
+    if 'MaxInstalledCapacityCountry' in GeneratorExcelData:
+        read_file(GeneratorExcelData, 'MaxInstalledCapacityCountry', [0, 1, 2], tab_file_path, "Generator", skipheaders=2)
+    if 'MaxBuiltCapacityCountry' in GeneratorExcelData:
+        read_file(GeneratorExcelData, 'MaxBuiltCapacityCountry', [0, 1, 2, 3], tab_file_path, "Generator", skipheaders=2)
+    if 'MinBuiltCapacityCountry' in GeneratorExcelData:
+        read_file(GeneratorExcelData, 'MinBuiltCapacityCountry', [0, 1, 2, 3], tab_file_path, "Generator", skipheaders=2)
 
     #Reading InterConnector
     logger.info("Reading Transmission.xlsx")
@@ -221,6 +263,11 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     read_file(NodeExcelData , 'ElectricAnnualDemand', [0, 1, 2],tab_file_path,  "Node", skipheaders=2)
     read_file(NodeExcelData , 'NodeLostLoadCost', [0, 1, 2],tab_file_path,  "Node", skipheaders=2)
     read_file(NodeExcelData , 'HydroGenMaxAnnualProduction', [0, 1],tab_file_path,  "Node", skipheaders=2)
+
+    # Biomass availability per node and period for the system-wide biomass usage limit.
+    # Optional sheet: when absent no tab file is written, which disables the constraint.
+    if 'BiomassMaxAnnualActivity' in NodeExcelData:
+        read_file(NodeExcelData, 'BiomassMaxAnnualActivity', [0, 1, 2], tab_file_path, "Node", skipheaders=2)
 
     #Reading Season
     logger.info("Reading General.xlsx")
