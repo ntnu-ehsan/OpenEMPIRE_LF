@@ -42,6 +42,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                LOPF_FLAG: bool = False, LOPF_METHOD: str = "kirchhoff",
                LOPF_KWARGS: dict | None = None,
                BOUNDARY_CONDITIONS: bool = False, BOUNDARY_BOUND_TYPE: str = "fixed",
+               BOUNDARY_INCLUDE_SPAIN: bool = True,
                solver_method: int = 2, solver_crossover: int | None = None,
                solver_presolve: int | None = None, solver_threads: int | None = None,
                solver_scaleflag: int | None = None, solver_numericfocus: int | None = None,
@@ -1267,6 +1268,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             model,
             boundary_path=Path(workbook_path) / "BoundaryConditions",
             bound_type=BOUNDARY_BOUND_TYPE,
+            include_spain=BOUNDARY_INCLUDE_SPAIN,
         )
 
     #################################################################

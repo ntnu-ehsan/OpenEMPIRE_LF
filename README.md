@@ -172,8 +172,91 @@ For more details, please refer to the software documentation in the repository.
     <td>False</td>
     <td>Whether the north sea is modelled or not. </td>
   </tr>
+  <tr>
+    <td>use_boundary_conditions</td>
+    <td>True/False</td>
+    <td>False</td>
+    <td>If true, capacities outside the study region are fixed to the results of an earlier aggregated run. See <a href="#spanish-case-boundary-conditions">Spanish-case boundary conditions</a>. </td>
+  </tr>
+  <tr>
+    <td>boundary_bound_type</td>
+    <td>String</td>
+    <td>"fixed"</td>
+    <td>How the generation and storage boundaries are applied: "fixed" (=) or "upper" (&lt;=). Transmission corridors are always fixed. </td>
+  </tr>
+  <tr>
+    <td>boundary_include_spain</td>
+    <td>True/False</td>
+    <td>True</td>
+    <td>If true, Spain's national totals are fixed as well, so only the location of capacity inside Spain stays free. Set to false to let Spain invest freely under its national limits. </td>
+  </tr>
 </table>
 
+
+# Spanish-case boundary conditions
+
+When Spain is split into NUTS3 regions, the rest of Europe is still modelled as a few large
+nodes. If the whole system is left free to re-optimise, the results differ from an aggregated
+run for two reasons at once: the finer Spanish grid, and the rest of Europe simply investing
+differently. Boundary conditions remove the second reason, so the Spanish split can be studied
+on its own.
+
+Switching on `use_boundary_conditions` fixes capacities to the results of an earlier aggregated
+run (`Results/basic_run/dataset_Agg_*`). The numbers are read from a `BoundaryConditions` folder
+inside the dataset, which you create first:
+
+```shell
+python scripts/extract_boundary_conditions.py \
+    --results "Results/basic_run/dataset_Agg_NECPEssentials" \
+    --dataset "Data handler/LF_ES_NECPEssentials"
+```
+
+Note this script also rewrites `InitialCapacity` for the border lines in the dataset's
+`Transmission.xlsx`, scaling each line so the corridor totals match the aggregated run. Without
+that the model can be infeasible, because installed capacity can never fall below initial
+capacity. The rescaling is proportional and can be run again safely.
+
+## What gets fixed
+
+| Constraint | What it holds |
+| --- | --- |
+| `bc_gen_direct` | France, Portugal and EU generation, per node |
+| `bc_stor_pw_direct`, `bc_stor_en_direct` | France, Portugal and EU storage, per node |
+| `bc_gen_spain` | Spain's generation total, summed over all `ES*` nodes |
+| `bc_stor_pw_spain`, `bc_stor_en_spain` | Spain's storage total, summed over all `ES*` nodes |
+| `bc_transmission` | Border corridor totals (ES–France, ES–Portugal, EU–France) |
+
+Lines inside Spain are always free to expand.
+
+## Choosing the experiment
+
+`boundary_include_spain` picks between the two runs you are likely to want:
+
+- **`True` (default)** — Spain's national totals are held at the aggregated run's values. Spain
+  builds the same amount as before, and the only open question is *where inside Spain* it goes.
+  This measures the effect of the spatial split by itself.
+- **`False`** — the three Spanish constraints are dropped and Spain invests freely. Its build-out
+  is then governed by the national limits in the `MaxInstalledCapacityCountry` and
+  `MaxBuiltCapacityCountry` sheets. Everything outside Spain stays fixed.
+
+The two settings are not interchangeable, so it is worth being clear about which one a given
+result came from.
+
+## Boundary conditions together with national limits
+
+Both features can limit the same quantity: the sum of installed capacity over Spain's nodes. They
+do not clash in a dangerous way, because the national limits are inequalities (`<=`, or `>=` for
+minimum build) while the Spanish boundary constraints are equalities. Either the equality already
+satisfies the limit, or the model is infeasible — and infeasible is immediately visible.
+
+The case to watch is the run that *succeeds*. With `boundary_include_spain: True`, the equality
+always wins, so whatever value is placed in `MaxInstalledCapacityCountry` for Spain has no effect
+on the answer. This is structural, not a matter of luck: `bc_gen_spain` works per generator, while
+`installed_country_gen_cap` works per technology, which is the coarser grouping, so pinning every
+generator also pins every technology total.
+
+In short: if the national limits are meant to shape the result, `boundary_include_spain` must be
+`False`.
 
 # Test Run
 

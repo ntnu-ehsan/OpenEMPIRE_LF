@@ -54,6 +54,7 @@ lopf_kwargs:                                           # Options for the LOPF / 
 #   python scripts/extract_boundary_conditions.py --results "Results/basic_run/dataset_Agg_<X>" --dataset "Data handler/LF_ES_<X>"
 use_boundary_conditions: True                          # Enable Spanish-case boundary conditions
 boundary_bound_type: "fixed"                           # "fixed" (=) or "upper" (<=) for generation/storage; transmission is always fixed
+boundary_include_spain: True                           # True = pin Spain's national totals too (only the location inside Spain stays free). False = Spain invests freely, governed by MaxInstalledCapacityCountry instead. France/Portugal/EU and border corridors stay fixed either way
 
 # Solver (Gurobi) performance options. Leave a value commented/absent to use the Gurobi default.
 # Speed: these are the accelerators — use them for large runs.

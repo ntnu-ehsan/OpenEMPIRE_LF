@@ -6,7 +6,7 @@ investment results of an original aggregated EMPIRE run (``Results/basic_run/dat
 - ``France``, ``Portugal``, ``EU``: node generation / storage capacities set to the original
   results (EU = sum of all original nodes except Spain, France, Portugal).
 - Spanish NUTS3 nodes: the SUM over all ES* nodes per generator/storage type is constrained to
-  Spain's national value from the original run.
+  Spain's national value from the original run. Optional — see ``include_spain``.
 - Transmission: corridor sums fixed — sum of ES*-France border lines to the original Spain-France
   capacity, likewise ES*-Portugal, and the single EU-France line to the sum of France's original
   non-Spanish corridors. Internal Spanish lines remain freely expandable.
@@ -17,6 +17,18 @@ Boundary data is read from ``BoundaryConditions/*.csv`` in the dataset folder, p
 ``bound_type`` selects equality (``"fixed"``, default) or upper bounds (``"upper"``). Note that
 equality can render the model infeasible if the LF_ES initial capacities exceed the original
 results for some node/technology/period.
+
+``include_spain`` selects which experiment is being run:
+
+- ``True`` (default) — Spain's national totals are pinned to the original run as well, so the
+  only remaining freedom is *where inside Spain* capacity is built. This isolates the effect of
+  the spatial (NUTS3) split on its own.
+- ``False`` — the three Spanish constraints are dropped and Spain invests freely. Use this when
+  Spain's build-out should instead be governed by the national limits from the
+  ``MaxInstalledCapacityCountry`` / ``MaxBuiltCapacityCountry`` sheets. Note those national
+  limits are inequalities (``<=``) while the Spanish boundary constraints are equalities, so
+  leaving both active is not an error — but the equality always wins and the national limits
+  can never bind. Border corridors stay fixed either way.
 """
 
 import logging
@@ -92,7 +104,9 @@ def load_boundary_data(boundary_path: Path) -> dict:
     return data
 
 
-def add_boundary_conditions(model, boundary_path: Path, bound_type: str = "fixed"):
+def add_boundary_conditions(
+    model, boundary_path: Path, bound_type: str = "fixed", include_spain: bool = True
+):
     """Attach boundary-condition constraints to the (abstract) EMPIRE model."""
     bound_type = str(bound_type).lower()
     if bound_type not in ("fixed", "upper"):
@@ -101,7 +115,11 @@ def add_boundary_conditions(model, boundary_path: Path, bound_type: str = "fixed
     bc = load_boundary_data(boundary_path)
     periods = bc["periods"]
 
-    logger.info("Adding Spanish-case boundary conditions (bound type: %s)...", bound_type)
+    logger.info(
+        "Adding Spanish-case boundary conditions (bound type: %s, Spanish national totals: %s)...",
+        bound_type,
+        "pinned" if include_spain else "free",
+    )
 
     # --- Generation: France / Portugal / EU fixed per node ---------------------------------
     def bc_gen_direct_rule(model, n, g, i):
@@ -115,8 +133,10 @@ def add_boundary_conditions(model, boundary_path: Path, bound_type: str = "fixed
     model.bc_gen_direct = Constraint(model.GeneratorsOfNode, model.PeriodActive, rule=bc_gen_direct_rule)
 
     # --- Generation: Spain national bound on the sum over NUTS3 nodes ----------------------
+    # Skipped entirely when include_spain is False, leaving Spain's national total to the
+    # MaxInstalledCapacityCountry / MaxBuiltCapacityCountry sheets instead.
     def bc_gen_spain_rule(model, g, i):
-        if i not in periods:
+        if not include_spain or i not in periods:
             return Constraint.Skip
         nodes = [n for n in model.Node if str(n).startswith(SPAIN_PREFIX) and (n, g) in model.GeneratorsOfNode]
         target = bc["gen"].get((SPAIN_NODE, g, i))
@@ -163,8 +183,9 @@ def add_boundary_conditions(model, boundary_path: Path, bound_type: str = "fixed
     model.bc_stor_en_direct = Constraint(model.StoragesOfNode, model.PeriodActive, rule=bc_stor_en_direct_rule)
 
     # --- Storage: Spain national bound on the sum over NUTS3 nodes -------------------------
+    # Also skipped when include_spain is False, see bc_gen_spain_rule above.
     def bc_stor_pw_spain_rule(model, b, i):
-        if i not in periods:
+        if not include_spain or i not in periods:
             return Constraint.Skip
         nodes = [n for n in model.Node if str(n).startswith(SPAIN_PREFIX) and (n, b) in model.StoragesOfNode]
         if not nodes:
@@ -183,7 +204,7 @@ def add_boundary_conditions(model, boundary_path: Path, bound_type: str = "fixed
     model.bc_stor_pw_spain = Constraint(model.Storage, model.PeriodActive, rule=bc_stor_pw_spain_rule)
 
     def bc_stor_en_spain_rule(model, b, i):
-        if i not in periods:
+        if not include_spain or i not in periods:
             return Constraint.Skip
         nodes = [n for n in model.Node if str(n).startswith(SPAIN_PREFIX) and (n, b) in model.StoragesOfNode]
         if not nodes:

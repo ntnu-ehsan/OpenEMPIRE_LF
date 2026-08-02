@@ -61,6 +61,7 @@ class EmpireConfiguration:
         lopf_kwargs: dict | None = None,
         use_boundary_conditions: bool = False,
         boundary_bound_type: str = "fixed",
+        boundary_include_spain: bool = True,
         solver_method: int = 2,
         solver_crossover: int | None = None,
         solver_presolve: int | None = None,
@@ -133,6 +134,18 @@ class EmpireConfiguration:
             line reactance from line length when no lineReactance sheet/.tab is provided. Constraint options are
             forwarded to the formulation (e.g. "reactance_param_name", "reactance_from_susceptance",
             "dc_line_types" = list of transmission types to treat as HVDC/controllable, excluded from KVL).
+        :param use_boundary_conditions: If true, constrain the run to the investment results of an
+            original aggregated EMPIRE run, read from the dataset's 'BoundaryConditions' folder
+            (produced by scripts/extract_boundary_conditions.py). Default false.
+        :param boundary_bound_type: "fixed" (default) applies the generation/storage boundaries as
+            equalities, "upper" as upper bounds. Transmission corridors are always equalities.
+        :param boundary_include_spain: If true (default), Spain's national totals are pinned to the
+            original run as well, so only the distribution of capacity *within* Spain stays free -
+            this isolates the effect of the NUTS3 spatial split. Set false to let Spain invest
+            freely and be governed by the national limits from the MaxInstalledCapacityCountry /
+            MaxBuiltCapacityCountry sheets instead; those limits are inequalities and can never
+            bind while the Spanish equalities are active. France/Portugal/EU and the border
+            corridors stay fixed either way.
         :param solver_method: Gurobi 'Method' parameter (algorithm). 2 = barrier, best for large LPs.
         :param solver_crossover: Gurobi 'Crossover' parameter. 0 skips the crossover tail for faster
             barrier solves (interior-point solution only; duals/prices become approximate). None leaves the solver default.
@@ -200,6 +213,7 @@ class EmpireConfiguration:
         # data in the dataset's 'BoundaryConditions' folder, see scripts/extract_boundary_conditions.py)
         self.use_boundary_conditions = use_boundary_conditions
         self.boundary_bound_type = boundary_bound_type
+        self.boundary_include_spain = boundary_include_spain
 
         # Solver (Gurobi) performance options
         self.solver_method = solver_method
