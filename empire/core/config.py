@@ -55,6 +55,7 @@ class EmpireConfiguration:
         biomass_limit_flag: bool = True,
         biomass_limit_factor: float = 1.2,
         biomass_limit_scope: str = "country",
+        bioccs_capacity_limit_factor: float = 1.0,
         transmission_availability: float = 1.0,
         lopf_flag: bool = False,
         lopf_method: str = "kirchhoff",
@@ -116,6 +117,11 @@ class EmpireConfiguration:
             so a country disaggregated into NUTS regions is still limited as one country; a node no country covers
             forms its own group. "system" pools every node into one constraint per period, matching the reference
             EMPIRE core - use it for like-for-like comparison runs against that model.
+        :param bioccs_capacity_limit_factor: Multiplier on BioCCS capacity within node- and country-level maximum
+            built and maximum installed CCS capacity limits. For example, 1.2 lets one MW of BioCCS consume only
+            1/1.2 MW of the applicable CCS capacity budget, so an all-BioCCS build may reach 120% of the supplied
+            limit. Other CCS generators continue to consume the capacity budget one-for-one. Default 1.0 preserves
+            the supplied limits exactly.
         :param transmission_availability: Fraction (0-1) of each line's installed capacity that may be used in any
             operational hour. Values below 1.0 reserve a reliability/operational margin on every line (e.g. 0.8 = 80%
             usable). Default 1.0 leaves the full installed capacity available.
@@ -187,6 +193,7 @@ class EmpireConfiguration:
         self.biomass_limit_flag = biomass_limit_flag
         self.biomass_limit_factor = biomass_limit_factor
         self.biomass_limit_scope = biomass_limit_scope
+        self.bioccs_capacity_limit_factor = bioccs_capacity_limit_factor
         self.transmission_availability = transmission_availability
 
         # Linear Optimal Power Flow (DC-OPF) options
@@ -230,6 +237,11 @@ class EmpireConfiguration:
         if self.biomass_limit_scope not in ("country", "system"):
             raise ValueError(
                 f'biomass_limit_scope must be "country" or "system", got {self.biomass_limit_scope!r}.'
+            )
+        if self.bioccs_capacity_limit_factor <= 0:
+            raise ValueError(
+                "bioccs_capacity_limit_factor must be > 0, "
+                f"got {self.bioccs_capacity_limit_factor}."
             )
 
     @classmethod

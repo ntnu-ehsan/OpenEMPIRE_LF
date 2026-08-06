@@ -23,6 +23,15 @@ from pyomo.environ import *
 logger = logging.getLogger(__name__)
 
 
+def _capacity_limit_contribution(capacity, generator, bioccs_capacity_limit_factor):
+    """Return the amount of a technology capacity budget consumed by a generator."""
+    # Discount only BioCCS on the left-hand side so other generators sharing the CCS
+    # technology limit retain their original one-for-one capacity accounting.
+    if str(generator).strip().lower() == "bioccs":
+        return capacity / bioccs_capacity_limit_factor
+    return capacity
+
+
 def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_path,
                solver, temp_dir, FirstHoursOfRegSeason, FirstHoursOfPeakSeason, lengthRegSeason,
                lengthPeakSeason, Period, Operationalhour, Scenario, Season, HoursOfSeason,
@@ -36,6 +45,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                BIOMASS_LIMIT: bool = True,
                BIOMASS_LIMIT_FACTOR: float = 1.2,
                BIOMASS_LIMIT_SCOPE: str = "country",
+               BIOCCS_CAPACITY_LIMIT_FACTOR: float = 1.0,
                TRANSMISSION_AVAILABILITY: float = 1.0,
                LOPF_FLAG: bool = False, LOPF_METHOD: str = "kirchhoff",
                LOPF_KWARGS: dict | None = None,
@@ -43,6 +53,12 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                solver_presolve: int | None = None, solver_threads: int | None = None,
                solver_scaleflag: int | None = None, solver_numericfocus: int | None = None,
                solver_barhomogeneous: int | None = None) -> None | float:
+
+    if BIOCCS_CAPACITY_LIMIT_FACTOR <= 0:
+        raise ValueError(
+            "BIOCCS_CAPACITY_LIMIT_FACTOR must be > 0, "
+            f"got {BIOCCS_CAPACITY_LIMIT_FACTOR}."
+        )
 
     if USE_TEMP_DIR:
         TempfileManager.tempdir = temp_dir
@@ -1110,8 +1126,20 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
         ############################################################
 
+        logger.info(
+            "BioCCS capacity limit factor: %s (applies to maximum built and installed capacity budgets)",
+            BIOCCS_CAPACITY_LIMIT_FACTOR,
+        )
+
+        def _nodeTechCapacitySum(model, t, n, i, nodeVar):
+            return sum(
+                _capacity_limit_contribution(nodeVar[n,g,i], g, BIOCCS_CAPACITY_LIMIT_FACTOR)
+                for g in model.Generator
+                if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology
+            )
+
         def investment_gen_cap_rule(model, t, n, i):
-            return sum(model.genInvCap[n,g,i] for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology) - model.genMaxBuiltCap[n,t,i] <= 0
+            return _nodeTechCapacitySum(model, t, n, i, model.genInvCap) - model.genMaxBuiltCap[n,t,i] <= 0
         model.investment_gen_cap = Constraint(model.Technology, model.Node, model.PeriodActive, rule=investment_gen_cap_rule)
 
         ############################################################
@@ -1144,7 +1172,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         ############################################################
 
         def installed_gen_cap_rule(model, t, n, i):
-            return sum(model.genInstalledCap[n,g,i] for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology) - model.genMaxInstalledCap[n,t,i] <= 0
+            return _nodeTechCapacitySum(model, t, n, i, model.genInstalledCap) - model.genMaxInstalledCap[n,t,i] <= 0
         model.installed_gen_cap = Constraint(model.Technology, model.Node, model.PeriodActive, rule=installed_gen_cap_rule)
 
         ############################################################
@@ -1155,7 +1183,12 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         #(no Countries sheet) generates no constraints at all.
 
         def _countryTechSum(model, c, t, i, nodeVar):
-            return sum(nodeVar[n,g,i] for (cc,n) in model.NodesOfCountry if cc == c for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology)
+            return sum(
+                _capacity_limit_contribution(nodeVar[n,g,i], g, BIOCCS_CAPACITY_LIMIT_FACTOR)
+                for (cc,n) in model.NodesOfCountry if cc == c
+                for g in model.Generator
+                if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology
+            )
 
         def installed_country_gen_cap_rule(model, c, t, i):
             if value(model.genCountryMaxInstalledCap[c,t,i]) < 0:

@@ -35,6 +35,7 @@ generation_growth_limit_rate: 0.3                      # Max fractional growth p
 biomass_limit_flag: True                               # Cap system-wide annual biomass generation using the optional 'BiomassMaxAnnualActivity' sheet in Node.xlsx. Datasets without that sheet are unaffected
 biomass_limit_factor: 1.2                              # Allowed multiple of the supplied biomass availability when the flag is on (1.2 = up to 20% above the reference)
 biomass_limit_scope: "country"                         # "country" = national limit, summed over each country's nodes (NUTS regions of one country share one limit); "system" = one pooled limit over all nodes (reference-model behaviour)
+bioccs_capacity_limit_factor: 1.2                       # BioCCS may use 1.2x the supplied CCS maximum-built/installed capacity budget; other CCS technologies remain at 1.0x
 transmission_availability: 1.0                          # Usable share (0-1) of each line's installed capacity per hour, for reliability margins (e.g. 0.8 = 80% usable). 1.0 = full capacity
 
 # Linear (DC) Optimal Power Flow -- adds Kirchhoff cycle-based DC-OPF constraints to the network
