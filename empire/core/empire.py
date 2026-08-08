@@ -346,6 +346,11 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     # Reference annual biomass electricity production (MWh) per node and period, from the optional
     # 'BiomassMaxAnnualActivity' sheet of Node.xlsx. Only used by the biomass usage limit.
     model.maxBiomassNode = Param(model.Node, model.Period, default=0.0, mutable=True)
+    # National counterpart from the optional 'BiomassMaxAnnualActivityCountry' sheet, for
+    # NUTS-disaggregated countries whose regions carry no nodal entry. A negative sentinel
+    # means the country was not supplied, so the nodal sum is used instead; that keeps a
+    # genuine zero ("no biomass here") distinguishable from a missing row.
+    model.maxBiomassCountry = Param(model.Country, model.Period, default=-1.0, mutable=True)
     model.storOperationalInit = Param(model.Storage, default=0.0, mutable=True) #Percentage of installed energy capacity initially
 
     if EMISSION_CAP:
@@ -462,11 +467,22 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     # Optional biomass availability; drives the biomass usage limit. An absent or empty tab
     # leaves the parameter at its default and switches the constraint off entirely.
     _biomass_tab = tab_file_path / 'Node_BiomassMaxAnnualActivity.tab'
+    _biomass_country_tab = tab_file_path / 'Node_BiomassMaxAnnualActivityCountry.tab'
     biomass_limit_active = False
     if BIOMASS_LIMIT and _biomass_tab.exists() and not pd.read_csv(_biomass_tab, sep='\t').empty:
         data.load(filename=str(_biomass_tab), param=model.maxBiomassNode, format="table")
         biomass_limit_active = True
-    elif BIOMASS_LIMIT:
+    # National availability for NUTS-disaggregated countries. Needs the country level, since
+    # the parameter is indexed over Country; without it the nodal sheet is the only source.
+    if BIOMASS_LIMIT and country_level and _biomass_country_tab.exists() \
+            and not pd.read_csv(_biomass_country_tab, sep='\t').empty:
+        data.load(filename=str(_biomass_country_tab), param=model.maxBiomassCountry, format="table")
+        biomass_limit_active = True
+        logger.info("National biomass availability loaded from BiomassMaxAnnualActivityCountry.")
+    elif BIOMASS_LIMIT and _biomass_country_tab.exists() and not country_level:
+        logger.warning("BiomassMaxAnnualActivityCountry found but the country level is off "
+                       "(no Countries/NodesOfCountry sheets); national biomass availability ignored.")
+    if BIOMASS_LIMIT and not biomass_limit_active:
         logger.info("No BiomassMaxAnnualActivity data found; biomass usage limit disabled.")
 
     logger.info("Reading parameters for Stochastic...")
@@ -965,28 +981,71 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                 logger.info("Biomass usage limit applies to generators: %s", ", ".join(generators))
             return generators
 
-        def _biomass_expression(model, nodes, i, generators):
+        def _country_of_node(model, n):
+            #The country covering n, or None when no Countries/NodesOfCountry entry does.
+            for (c,nn) in model.NodesOfCountry:
+                if nn == n:
+                    return c
+            return None
+
+        def _national_reference(model, c, i):
+            #Supplied national availability, or None when the country is not in the sheet.
+            #A national figure wins over the nodal sum: the NUTS regions of a disaggregated
+            #country have no nodal entry of their own, so summing them would give zero.
+            if value(model.maxBiomassCountry[c,i]) < 0:
+                return None
+            return model.maxBiomassCountry[c,i]
+
+        _warned_empty_biomass = set()
+
+        def _warn_if_no_availability(model, label, nodes, i, generators, reference):
+            #A zero reference silently forbids all Bio/BioCCS output in the group, which looks
+            #like an ordinary infeasibility hours into a solve. Say so at build time instead.
+            if label in _warned_empty_biomass or value(reference) > 0:
+                return
+            if not any((n,g) in model.GeneratorsOfNode for n in nodes for g in generators):
+                return
+            _warned_empty_biomass.add(label)
+            logger.warning("Biomass availability for '%s' is zero in period %s, so the biomass "
+                           "usage limit forbids all Bio/BioCCS production there. Check that "
+                           "Node.xlsx covers it in BiomassMaxAnnualActivity (per node) or "
+                           "BiomassMaxAnnualActivityCountry (per country).", label, i)
+
+        def _biomass_expression(model, nodes, i, generators, reference):
             production = sum(
                 model.seasScale[s] * model.sceProbab[w] * model.genOperational[n,g,h,i,w]
                 for (n,g) in model.GeneratorsOfNode if n in nodes and g in generators
                 for (s,h) in model.HoursOfSeason for w in model.Scenario)
-            reference = sum(model.maxBiomassNode[n,i] for n in nodes)
             return production - BIOMASS_LIMIT_FACTOR * reference <= 0
 
         if BIOMASS_LIMIT_SCOPE == "system":
+            def _system_reference(model, i):
+                #Countries with a national figure contribute it once; their nodes are then
+                #excluded from the nodal sum so nothing is counted twice.
+                total = 0.0
+                covered = set()
+                for c in model.Country:
+                    national = _national_reference(model, c, i)
+                    if national is not None:
+                        total += national
+                        covered.update(nn for (cc,nn) in model.NodesOfCountry if cc == c)
+                return total + sum(model.maxBiomassNode[n,i] for n in model.Node if n not in covered)
+
             def biomass_usage_rule(model, i):
                 generators = _biomass_generators(model)
                 if not generators:
                     return Constraint.Skip
-                return _biomass_expression(model, list(model.Node), i, generators)
+                reference = _system_reference(model, i)
+                _warn_if_no_availability(model, "system", list(model.Node), i, generators, reference)
+                return _biomass_expression(model, list(model.Node), i, generators, reference)
             model.biomass_usage_limit = Constraint(model.PeriodActive, rule=biomass_usage_rule)
         else:
             def _biomass_group(model, n):
                 #Nodes of n's country, or just n when no country covers it.
-                countries = [c for (c,nn) in model.NodesOfCountry if nn == n]
-                if not countries:
+                country = _country_of_node(model, n)
+                if country is None:
                     return [n]
-                return [nn for (cc,nn) in model.NodesOfCountry if cc == countries[0]]
+                return [nn for (cc,nn) in model.NodesOfCountry if cc == country]
 
             def biomass_usage_rule(model, n, i):
                 generators = _biomass_generators(model)
@@ -996,7 +1055,12 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                 #One row per country: only the group's first node emits the constraint.
                 if group[0] != n:
                     return Constraint.Skip
-                return _biomass_expression(model, group, i, generators)
+                country = _country_of_node(model, n)
+                reference = None if country is None else _national_reference(model, country, i)
+                if reference is None:
+                    reference = sum(model.maxBiomassNode[nn,i] for nn in group)
+                _warn_if_no_availability(model, str(country or n), group, i, generators, reference)
+                return _biomass_expression(model, group, i, generators, reference)
             model.biomass_usage_limit = Constraint(model.Node, model.PeriodActive, rule=biomass_usage_rule)
 
     #################################################################
@@ -1359,10 +1423,31 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     if solver == "GLPK":
         opt = SolverFactory("glpk", Verbose=True)
 
-    results = opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{name}.log")#, keepfiles=True, symbolic_solver_labels=True)
+    # load_solutions=False so that a bad solver status reaches the checks below. Pyomo's
+    # default loading raises ValueError("bad status") first, which used to throw away a
+    # multi-hour run and skip the IIS path entirely.
+    results = opt.solve(instance, tee=True, load_solutions=False,
+                        logfile=result_file_path / f"logfile_{name}.log")#, keepfiles=True, symbolic_solver_labels=True)
 
-    if results.solver.termination_condition == TerminationCondition.infeasible:
-        logger.error("Model is infeasible!")
+    _termination = results.solver.termination_condition
+    logger.info("Solver finished: status=%s, termination condition=%s",
+                results.solver.status, _termination)
+
+    # Barrier without crossover reports "numerical trouble" (an error status) for models that
+    # are structurally infeasible or unbounded, so those cases land here rather than in the
+    # infeasible branch. Route them to the same diagnosis.
+    _bad_terminations = {TerminationCondition.infeasible,
+                         TerminationCondition.infeasibleOrUnbounded,
+                         TerminationCondition.unbounded,
+                         TerminationCondition.error,
+                         TerminationCondition.internalSolverError}
+
+    if _termination in _bad_terminations:
+        logger.error("Solver did not return a usable solution (%s).", _termination)
+        if _termination in (TerminationCondition.error, TerminationCondition.internalSolverError):
+            logger.error("Gurobi reported numerical trouble. With Method=2 and Crossover=0 this "
+                         "is how an infeasible or unbounded model usually surfaces; the IIS "
+                         "below tells the two apart.")
         if solver == "Gurobi":
             logger.info("Computing IIS (Irreducible Infeasible Subsystem)...")
             lp_path = result_file_path / f"infeasible_{name}.lp"
@@ -1371,9 +1456,19 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             try:
                 import gurobipy as gp
                 m = gp.read(str(lp_path))
-                m.computeIIS()
-                m.write(str(iis_path))
-                logger.info("IIS written to %s", iis_path)
+                # DualReductions=0 makes Gurobi commit to INFEASIBLE or UNBOUNDED instead of
+                # the ambiguous INF_OR_UNBD, and an IIS only exists for the infeasible case.
+                m.Params.DualReductions = 0
+                m.Params.Method = 1
+                m.optimize()
+                if m.Status == gp.GRB.UNBOUNDED:
+                    logger.error("Model is UNBOUNDED, not infeasible: some variable can improve "
+                                 "the objective without limit. Look for a missing capacity bound "
+                                 "or a negative cost, not for a conflicting constraint.")
+                else:
+                    m.computeIIS()
+                    m.write(str(iis_path))
+                    logger.info("IIS written to %s", iis_path)
             except ImportError:
                 logger.info("gurobipy not available, trying gurobi_cl...")
                 import subprocess
@@ -1396,8 +1491,13 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         if OUT_OF_SAMPLE:
             return float('inf')
         raise RuntimeError(
-            f"Model is infeasible. Check the IIS file in {result_file_path} for details."
+            f"Solver returned '{_termination}' and no usable solution. "
+            f"Check the IIS/LP files in {result_file_path} for details."
         )
+
+    # The solve succeeded, so pull the solution into the instance that every result writer
+    # below reads from. Skipped above for the failure cases, where there is nothing to load.
+    instance.solutions.load_from(results)
 
     # Load flow (DC-OPF) diagnostics and detailed results
     if LOPF_FLAG:

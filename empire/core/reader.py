@@ -269,6 +269,13 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     if 'BiomassMaxAnnualActivity' in NodeExcelData:
         read_file(NodeExcelData, 'BiomassMaxAnnualActivity', [0, 1, 2], tab_file_path, "Node", skipheaders=2)
 
+    # National counterpart of the sheet above, for NUTS-disaggregated countries. Their NUTS
+    # regions carry no entry in BiomassMaxAnnualActivity, so without this sheet the nodal
+    # parameter would default to zero and the biomass limit would forbid all Bio/BioCCS
+    # production in those countries. Optional: only the listed countries are covered.
+    if 'BiomassMaxAnnualActivityCountry' in NodeExcelData:
+        read_file(NodeExcelData, 'BiomassMaxAnnualActivityCountry', [0, 1, 2], tab_file_path, "Node", skipheaders=2)
+
     #Reading Season
     logger.info("Reading General.xlsx")
     GeneralExcelData = pd.read_excel(file_path / "General.xlsx", sheet_name=None)
