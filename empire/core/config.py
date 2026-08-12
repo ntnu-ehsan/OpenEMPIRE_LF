@@ -51,9 +51,10 @@ class EmpireConfiguration:
         time_format: str = "%d/%m/%Y %H:%M",
         use_ramping: bool = True,
         generation_growth_limit_flag: bool = False,
-        generation_growth_limit_rate: float = 0.2,
+        generation_growth_limit_rate: float = 0.04,
         biomass_limit_flag: bool = True,
         biomass_limit_factor: float = 1.2,
+        biomass_system_limit_factor: float = 1.04,
         biomass_limit_scope: str = "country",
         bioccs_capacity_limit_factor: float = 1.0,
         transmission_availability: float = 1.0,
@@ -102,21 +103,30 @@ class EmpireConfiguration:
             false removes the inter-hour ramping constraints (fewer rows, less temporal coupling for thermal units);
             only do this if ramping is non-binding at your time resolution, as it is a physical modelling assumption.
         :param generation_growth_limit_flag: If true, add a node-level generation growth cap: total generation
-            (summed over all technologies) at each node in a period may not exceed (1 + generation_growth_limit_rate)
-            times the previous period's expected total generation. Default false leaves generation growth unconstrained.
-        :param generation_growth_limit_rate: Maximum allowed fractional growth per period when
-            generation_growth_limit_flag is true (e.g. 0.2 = at most 20% above the previous period). Default 0.2.
+            (summed over all technologies) at each node in a period may not exceed
+            (1 + leap_years_investment * rate) times the previous period's expected total generation.
+            Default false leaves generation growth unconstrained.
+        :param generation_growth_limit_rate: Maximum allowed growth per YEAR when
+            generation_growth_limit_flag is true, scaled linearly over the years in a period: 0.06 with
+            five-year periods allows at most 30% above the previous period. Used only as a fallback -
+            the optional 'GenerationGrowthRate' sheet of General.xlsx overrides it per period whenever
+            present. Default 0.04, the reference EMPIRE core's default.
         :param biomass_limit_flag: If true (default), cap system-wide annual biomass generation in each period at
             biomass_limit_factor times the biomass availability given in the optional 'BiomassMaxAnnualActivity'
             sheet of Node.xlsx. The constraint is data-driven: datasets without that sheet are unaffected, so the
             default only takes effect where the data exists. Set false to disable it even when the sheet is present.
         :param biomass_limit_factor: Slack multiplier on the supplied biomass availability when biomass_limit_flag
-            is true (e.g. 1.2 = allow at most 20% above the reference value). Default 1.2.
+            is true (e.g. 1.2 = allow at most 20% above the reference value). Under scope "both" this is the
+            national multiplier only. Default 1.2.
+        :param biomass_system_limit_factor: Slack multiplier for the system-wide row under scope "both". Ignored
+            by the other scopes. Default 1.04, matching the reference EMPIRE core.
         :param biomass_limit_scope: Spatial scope of the biomass limit. "country" (default) enforces it nationally,
             summing production and availability over the nodes of each country given by Countries/NodesOfCountry,
             so a country disaggregated into NUTS regions is still limited as one country; a node no country covers
-            forms its own group. "system" pools every node into one constraint per period, matching the reference
-            EMPIRE core - use it for like-for-like comparison runs against that model.
+            forms its own group. "system" pools every node into one constraint per period. "both" enforces the two
+            together - a loose national ceiling (biomass_limit_factor) plus a tight system-wide one
+            (biomass_system_limit_factor) - which is how the reference EMPIRE core is run; use it for
+            like-for-like comparison runs against that model.
         :param bioccs_capacity_limit_factor: Multiplier on BioCCS capacity within node- and country-level maximum
             built and maximum installed CCS capacity limits. For example, 1.2 lets one MW of BioCCS consume only
             1/1.2 MW of the applicable CCS capacity budget, so an all-BioCCS build may reach 120% of the supplied
@@ -192,6 +202,7 @@ class EmpireConfiguration:
         self.generation_growth_limit_rate = generation_growth_limit_rate
         self.biomass_limit_flag = biomass_limit_flag
         self.biomass_limit_factor = biomass_limit_factor
+        self.biomass_system_limit_factor = biomass_system_limit_factor
         self.biomass_limit_scope = biomass_limit_scope
         self.bioccs_capacity_limit_factor = bioccs_capacity_limit_factor
         self.transmission_availability = transmission_availability
@@ -234,9 +245,14 @@ class EmpireConfiguration:
             raise ValueError(
                 f"biomass_limit_factor must be >= 0, got {self.biomass_limit_factor}."
             )
-        if self.biomass_limit_scope not in ("country", "system"):
+        if self.biomass_system_limit_factor < 0:
             raise ValueError(
-                f'biomass_limit_scope must be "country" or "system", got {self.biomass_limit_scope!r}.'
+                f"biomass_system_limit_factor must be >= 0, got {self.biomass_system_limit_factor}."
+            )
+        if self.biomass_limit_scope not in ("country", "system", "both"):
+            raise ValueError(
+                'biomass_limit_scope must be "country", "system" or "both", '
+                f"got {self.biomass_limit_scope!r}."
             )
         if self.bioccs_capacity_limit_factor <= 0:
             raise ValueError(

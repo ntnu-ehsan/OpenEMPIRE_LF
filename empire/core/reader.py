@@ -282,6 +282,12 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     read_file(GeneralExcelData, 'seasonScale', [0, 1], tab_file_path, "General", skipheaders=2)
     read_file(GeneralExcelData, 'CO2Cap', [0, 1], tab_file_path, "General", skipheaders=2)
     read_file(GeneralExcelData, 'CO2Price', [0, 1], tab_file_path, "General", skipheaders=2)
+
+    # Per-year generation growth rate per period, driving the node generation growth limit.
+    # Optional sheet: when absent the model falls back to the rate given in the run config.
+    if 'GenerationGrowthRate' in GeneralExcelData:
+        read_file(GeneralExcelData, 'GenerationGrowthRate', [0, 1], tab_file_path, "General", skipheaders=2)
+
     # Per-unit system base (MW) for LOPF. Optional: only present in per-unit datasets.
     if 'Sbase' in GeneralExcelData:
         write_scalar_tab(GeneralExcelData['Sbase'], tab_file_path, 'General_Sbase', 'sBase')
