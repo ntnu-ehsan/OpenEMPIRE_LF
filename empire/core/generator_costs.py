@@ -5,18 +5,37 @@ def resolve_captured_co2_factor(
     net_co2_factor: float,
     capture_rate: float,
     explicit_captured_co2_factor: float | None = None,
+    gross_co2_factor: float | None = None,
 ) -> float:
     """Return a non-negative captured-CO2 factor in tCO2/GJ.
 
-    New datasets should provide ``explicit_captured_co2_factor`` directly.
-    For backwards compatibility, legacy positive factors are treated as
-    residual post-capture emissions, while a negative factor is treated as a
-    net removal whose magnitude equals the captured amount.
+    The captured amount is the CO2 that enters the plant with the fuel but never
+    reaches the atmosphere, i.e. ``gross - net``. Three sources are used, in
+    order of decreasing accuracy:
+
+    1. ``explicit_captured_co2_factor`` -- supplied directly by the dataset.
+    2. ``gross_co2_factor`` -- the fuel's CO2 content taken from the generator's
+       non-CCS counterpart. This needs no assumption about the capture rate, so
+       it stays exact when a plant's real rate differs from ``capture_rate``.
+    3. ``capture_rate`` -- last resort, assuming the net factor is exactly the
+       residual left after capturing that fraction of the gross.
+
+    A negative net factor is a net removal (biogenic CO2 stored underground);
+    with no gross figure available its magnitude is the captured amount.
     """
     if explicit_captured_co2_factor is not None:
         if explicit_captured_co2_factor < 0:
             raise ValueError("Captured CO2 factors must be non-negative.")
         return explicit_captured_co2_factor
+
+    if gross_co2_factor is not None:
+        captured = gross_co2_factor - net_co2_factor
+        if captured < 0:
+            raise ValueError(
+                "The non-CCS counterpart's CO2 factor is below the CCS generator's, "
+                "which would imply negative capture."
+            )
+        return captured
 
     if not 0 <= capture_rate <= 1:
         raise ValueError("The CCS capture rate must be between zero and one.")
@@ -29,8 +48,7 @@ def resolve_captured_co2_factor(
             "A positive residual CO2 factor is inconsistent with a 100% capture rate."
         )
 
-    gross_co2_factor = net_co2_factor / (1 - capture_rate)
-    return gross_co2_factor * capture_rate
+    return (net_co2_factor / (1 - capture_rate)) * capture_rate
 
 
 def co2_intensity_ton_per_mwh(co2_factor: float, efficiency: float) -> float:

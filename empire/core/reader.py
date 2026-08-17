@@ -269,12 +269,25 @@ def generate_tab_files(file_path, tab_file_path, lopf_kwargs=None):
     if 'BiomassMaxAnnualActivity' in NodeExcelData:
         read_file(NodeExcelData, 'BiomassMaxAnnualActivity', [0, 1, 2], tab_file_path, "Node", skipheaders=2)
 
+    # National counterpart of the sheet above, for NUTS-disaggregated countries. Their NUTS
+    # regions carry no entry in BiomassMaxAnnualActivity, so without this sheet the nodal
+    # parameter would default to zero and the biomass limit would forbid all Bio/BioCCS
+    # production in those countries. Optional: only the listed countries are covered.
+    if 'BiomassMaxAnnualActivityCountry' in NodeExcelData:
+        read_file(NodeExcelData, 'BiomassMaxAnnualActivityCountry', [0, 1, 2], tab_file_path, "Node", skipheaders=2)
+
     #Reading Season
     logger.info("Reading General.xlsx")
     GeneralExcelData = pd.read_excel(file_path / "General.xlsx", sheet_name=None)
     read_file(GeneralExcelData, 'seasonScale', [0, 1], tab_file_path, "General", skipheaders=2)
     read_file(GeneralExcelData, 'CO2Cap', [0, 1], tab_file_path, "General", skipheaders=2)
     read_file(GeneralExcelData, 'CO2Price', [0, 1], tab_file_path, "General", skipheaders=2)
+
+    # Per-year generation growth rate per period, driving the node generation growth limit.
+    # Optional sheet: when absent the model falls back to the rate given in the run config.
+    if 'GenerationGrowthRate' in GeneralExcelData:
+        read_file(GeneralExcelData, 'GenerationGrowthRate', [0, 1], tab_file_path, "General", skipheaders=2)
+
     # Per-unit system base (MW) for LOPF. Optional: only present in per-unit datasets.
     if 'Sbase' in GeneralExcelData:
         write_scalar_tab(GeneralExcelData['Sbase'], tab_file_path, 'General_Sbase', 'sBase')

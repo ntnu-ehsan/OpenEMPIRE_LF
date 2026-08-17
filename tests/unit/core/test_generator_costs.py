@@ -25,6 +25,56 @@ def test_legacy_fossil_ccs_factor_is_treated_as_residual_emissions():
     assert captured_factor == pytest.approx(0.11682537984)
 
 
+def test_gross_factor_gives_exact_capture_without_assuming_the_capture_rate():
+    # GoRES LigniteCCS: the real capture rate is 88%, not the hard-coded 90%, so the
+    # capture-rate fallback overstates the captured amount by 23%. The fuel's gross
+    # factor, taken from the non-CCS counterpart, removes the assumption entirely.
+    captured_from_gross = resolve_captured_co2_factor(
+        net_co2_factor=0.013296,
+        capture_rate=0.9,
+        gross_co2_factor=0.1108,
+    )
+    captured_from_rate = resolve_captured_co2_factor(
+        net_co2_factor=0.013296,
+        capture_rate=0.9,
+    )
+
+    assert captured_from_gross == pytest.approx(0.097504)
+    assert captured_from_rate == pytest.approx(0.119664)
+
+
+def test_gross_factor_captures_the_full_removal_of_a_negative_net_factor():
+    # GoRES BioCCS: gross biogenic combustion counts as zero, so the whole net
+    # removal is captured CO2.
+    captured_factor = resolve_captured_co2_factor(
+        net_co2_factor=-0.050851,
+        capture_rate=0.9,
+        gross_co2_factor=0.0,
+    )
+
+    assert captured_factor == pytest.approx(0.050851)
+
+
+def test_gross_factor_below_net_factor_is_rejected():
+    with pytest.raises(ValueError, match="negative capture"):
+        resolve_captured_co2_factor(
+            net_co2_factor=0.05,
+            capture_rate=0.9,
+            gross_co2_factor=0.01,
+        )
+
+
+def test_explicit_captured_co2_factor_wins_over_the_gross_factor():
+    captured_factor = resolve_captured_co2_factor(
+        net_co2_factor=0.013296,
+        capture_rate=0.9,
+        explicit_captured_co2_factor=0.09,
+        gross_co2_factor=0.1108,
+    )
+
+    assert captured_factor == pytest.approx(0.09)
+
+
 def test_explicit_captured_co2_factor_is_used_without_capture_rate_again():
     captured_factor = resolve_captured_co2_factor(
         net_co2_factor=-0.1,

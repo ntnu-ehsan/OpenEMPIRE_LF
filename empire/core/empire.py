@@ -25,6 +25,35 @@ from pyomo.environ import *
 logger = logging.getLogger(__name__)
 
 
+def _gross_co2_factor_of_ccs_generator(model, generator):
+    """Return the fuel's CO2 content for a CCS generator, or None if not identifiable.
+
+    The gross figure lives on the generator's non-CCS counterpart, whose name is the
+    CCS name without the suffix ('CoalCCS' -> 'Coal'). Gas is the one case where the
+    counterpart is not a plain prefix ('GasCCS' -> 'GasCCGT'). Returning None when no
+    counterpart exists lets the caller fall back to the capture-rate assumption rather
+    than aborting the run, which is what a dataset with a standalone CCS technology needs.
+    """
+    name = str(generator)
+    if not name.endswith("CCS"):
+        return None
+    twin = name.removesuffix("CCS")
+    if twin == "Gas":
+        twin = "GasCCGT"
+    if twin not in model.Generator:
+        return None
+    return value(model.genCO2TypeFactor[twin])
+
+
+def _capacity_limit_contribution(capacity, generator, bioccs_capacity_limit_factor):
+    """Return the amount of a technology capacity budget consumed by a generator."""
+    # Discount only BioCCS on the left-hand side so other generators sharing the CCS
+    # technology limit retain their original one-for-one capacity accounting.
+    if str(generator).strip().lower() == "bioccs":
+        return capacity / bioccs_capacity_limit_factor
+    return capacity
+
+
 def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_path,
                solver, temp_dir, FirstHoursOfRegSeason, FirstHoursOfPeakSeason, lengthRegSeason,
                lengthPeakSeason, Period, Operationalhour, Scenario, Season, HoursOfSeason,
@@ -34,10 +63,12 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                OUT_OF_SAMPLE: bool = False, sample_file_path: Path | None = None,
                RAMPING: bool = True,
                GEN_GROWTH_LIMIT: bool = False,
-               GEN_GROWTH_RATE: float = 0.2,
+               GEN_GROWTH_RATE: float = 0.04,
                BIOMASS_LIMIT: bool = True,
                BIOMASS_LIMIT_FACTOR: float = 1.2,
+               BIOMASS_SYSTEM_LIMIT_FACTOR: float = 1.04,
                BIOMASS_LIMIT_SCOPE: str = "country",
+               BIOCCS_CAPACITY_LIMIT_FACTOR: float = 1.0,
                TRANSMISSION_AVAILABILITY: float = 1.0,
                LOPF_FLAG: bool = False, LOPF_METHOD: str = "kirchhoff",
                LOPF_KWARGS: dict | None = None,
@@ -47,6 +78,12 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                solver_presolve: int | None = None, solver_threads: int | None = None,
                solver_scaleflag: int | None = None, solver_numericfocus: int | None = None,
                solver_barhomogeneous: int | None = None) -> None | float:
+
+    if BIOCCS_CAPACITY_LIMIT_FACTOR <= 0:
+        raise ValueError(
+            "BIOCCS_CAPACITY_LIMIT_FACTOR must be > 0, "
+            f"got {BIOCCS_CAPACITY_LIMIT_FACTOR}."
+        )
 
     if USE_TEMP_DIR:
         TempfileManager.tempdir = temp_dir
@@ -273,6 +310,10 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     model.CCSCostTSFix = Param(initialize=1149873.72) #NB! Hard-coded
     model.CCSCostTSVariable = Param(model.Period, default=0.0, mutable=True)
     model.CCSRemFrac = Param(initialize=0.9)
+    # Per-year allowed growth in a node's total generation, per period. The optional
+    # 'GenerationGrowthRate' sheet of General.xlsx fills this in; periods the sheet does not
+    # cover - and every period when the sheet is absent - fall back to the run-config rate.
+    model.generationGrowthRate = Param(model.Period, default=GEN_GROWTH_RATE, mutable=True)
 
     #Node dependent technology limitations
 
@@ -367,6 +408,11 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     # Reference annual biomass electricity production (MWh) per node and period, from the optional
     # 'BiomassMaxAnnualActivity' sheet of Node.xlsx. Only used by the biomass usage limit.
     model.maxBiomassNode = Param(model.Node, model.Period, default=0.0, mutable=True)
+    # National counterpart from the optional 'BiomassMaxAnnualActivityCountry' sheet, for
+    # NUTS-disaggregated countries whose regions carry no nodal entry. A negative sentinel
+    # means the country was not supplied, so the nodal sum is used instead; that keeps a
+    # genuine zero ("no biomass here") distinguishable from a missing row.
+    model.maxBiomassCountry = Param(model.Country, model.Period, default=-1.0, mutable=True)
     model.storOperationalInit = Param(model.Storage, default=0.0, mutable=True) #Percentage of installed energy capacity initially
 
     if EMISSION_CAP:
@@ -483,11 +529,22 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     # Optional biomass availability; drives the biomass usage limit. An absent or empty tab
     # leaves the parameter at its default and switches the constraint off entirely.
     _biomass_tab = tab_file_path / 'Node_BiomassMaxAnnualActivity.tab'
+    _biomass_country_tab = tab_file_path / 'Node_BiomassMaxAnnualActivityCountry.tab'
     biomass_limit_active = False
     if BIOMASS_LIMIT and _biomass_tab.exists() and not pd.read_csv(_biomass_tab, sep='\t').empty:
         data.load(filename=str(_biomass_tab), param=model.maxBiomassNode, format="table")
         biomass_limit_active = True
-    elif BIOMASS_LIMIT:
+    # National availability for NUTS-disaggregated countries. Needs the country level, since
+    # the parameter is indexed over Country; without it the nodal sheet is the only source.
+    if BIOMASS_LIMIT and country_level and _biomass_country_tab.exists() \
+            and not pd.read_csv(_biomass_country_tab, sep='\t').empty:
+        data.load(filename=str(_biomass_country_tab), param=model.maxBiomassCountry, format="table")
+        biomass_limit_active = True
+        logger.info("National biomass availability loaded from BiomassMaxAnnualActivityCountry.")
+    elif BIOMASS_LIMIT and _biomass_country_tab.exists() and not country_level:
+        logger.warning("BiomassMaxAnnualActivityCountry found but the country level is off "
+                       "(no Countries/NodesOfCountry sheets); national biomass availability ignored.")
+    if BIOMASS_LIMIT and not biomass_limit_active:
         logger.info("No BiomassMaxAnnualActivity data found; biomass usage limit disabled.")
 
     logger.info("Reading parameters for Stochastic...")
@@ -507,6 +564,15 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
     logger.info("Reading parameters for General...")
     data.load(filename=str(tab_file_path / 'General_seasonScale.tab'), param=model.seasScale, format="table")
+
+    # Per-period generation growth rates. The dataset sheet wins where it has rows; every
+    # other period keeps the run-config rate carried by the parameter's default above.
+    _growth_tab = tab_file_path / 'General_GenerationGrowthRate.tab'
+    growth_rate_from_data = False
+    if GEN_GROWTH_LIMIT and _growth_tab.exists() and not pd.read_csv(_growth_tab, sep='\t').empty:
+        data.load(filename=str(_growth_tab), param=model.generationGrowthRate, format="table")
+        growth_rate_from_data = True
+        logger.info("Generation growth rates loaded from General.xlsx 'GenerationGrowthRate'.")
 
     # Per-unit system base (MW) for LOPF. Only present in per-unit datasets.
     if (tab_file_path / 'General_Sbase.tab').exists():
@@ -546,6 +612,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                     explicit_captured_co2_factor=(
                         None if explicit_factor < 0 else explicit_factor
                     ),
+                    gross_co2_factor=_gross_co2_factor_of_ccs_generator(model, g),
                 )
             for i in model.PeriodActive:
                 costperyear=(model.WACC/(1-((1+model.WACC)**(-model.genLifetime[g]))))*model.genCapitalCost[g,i]+model.genFixedOMCost[g,i]
@@ -593,6 +660,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                     explicit_captured_co2_factor=(
                         None if explicit_factor < 0 else explicit_factor
                     ),
+                    gross_co2_factor=_gross_co2_factor_of_ccs_generator(model, g),
                 )
             for i in model.PeriodActive:
                 costperenergyunit = generator_marginal_cost_eur_per_mwh(
@@ -889,11 +957,17 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
     if GEN_GROWTH_LIMIT:
         #Node-level generation growth cap: total generation summed over ALL technologies at a
-        #node in period i may not exceed (1+GEN_GROWTH_RATE) times the previous period's
-        #expected (scenario-probability-weighted) total generation. Aggregate limit, not
-        #per-technology. Skipped for the first active period (no prior period to compare to).
-        growth_multiplier = 1.0 + GEN_GROWTH_RATE
-        logger.info("Node generation growth limit enabled (max %.0f%% growth per period)...", GEN_GROWTH_RATE * 100)
+        #node in period i may not exceed (1 + LeapYearsInvestment*rate[i]) times the previous
+        #period's expected (scenario-probability-weighted) total generation. The rate is a
+        #per-year fraction scaled linearly over the years in a period, matching the reference
+        #EMPIRE core. Aggregate limit, not per-technology. Skipped for the first active period
+        #(no prior period to compare to).
+        if growth_rate_from_data:
+            logger.info("Node generation growth limit enabled (per-period rates from dataset, %s-year periods)...",
+                        LeapYearsInvestment)
+        else:
+            logger.info("Node generation growth limit enabled (config rate %.3f/year -> factor %.3f per %s-year period)...",
+                        GEN_GROWTH_RATE, 1.0 + LeapYearsInvestment * GEN_GROWTH_RATE, LeapYearsInvestment)
         def node_generation_growth_rule(model, n, i, w):
             if (i - 1) not in model.PeriodActive:
                 return Constraint.Skip
@@ -901,7 +975,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                 for g in model.Generator if (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason)
             previousAvgGen = sum(model.sceProbab[w2] * model.seasScale[s] * model.genOperational[n,g,h,i-1,w2]
                 for g in model.Generator if (n,g) in model.GeneratorsOfNode for (s,h) in model.HoursOfSeason for w2 in model.Scenario)
-            return currentGen - growth_multiplier * previousAvgGen <= 0
+            return currentGen - (1 + model.LeapYearsInvestment * model.generationGrowthRate[i]) * previousAvgGen <= 0
         model.node_generation_growth = Constraint(model.Node, model.PeriodActive, model.Scenario, rule=node_generation_growth_rule)
 
     #################################################################
@@ -970,9 +1044,16 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         #NUTS regions but not across borders. A node that no Countries/NodesOfCountry entry covers
         #forms its own group, which is the correct reading for datasets where one node is one
         #country. Scope "system" pools every node into a single row per period instead, which is
-        #what the reference EMPIRE core does.
-        logger.info("Biomass usage limit enabled (max %.0f%% of supplied biomass availability, scope: %s)...",
-                    BIOMASS_LIMIT_FACTOR * 100, BIOMASS_LIMIT_SCOPE)
+        #what the reference EMPIRE core does. Scope "both" enforces the two together - a loose
+        #national ceiling plus a tight system-wide one - which is how the reference core is
+        #actually run; the two then use separate factors.
+        if BIOMASS_LIMIT_SCOPE == "both":
+            logger.info("Biomass usage limit enabled, scope: both (national max %.0f%%, system-wide max %.0f%% "
+                        "of supplied biomass availability)...",
+                        BIOMASS_LIMIT_FACTOR * 100, BIOMASS_SYSTEM_LIMIT_FACTOR * 100)
+        else:
+            logger.info("Biomass usage limit enabled (max %.0f%% of supplied biomass availability, scope: %s)...",
+                        BIOMASS_LIMIT_FACTOR * 100, BIOMASS_LIMIT_SCOPE)
 
         _logged_biomass_generators = []
 
@@ -986,28 +1067,82 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                 logger.info("Biomass usage limit applies to generators: %s", ", ".join(generators))
             return generators
 
-        def _biomass_expression(model, nodes, i, generators):
+        def _country_of_node(model, n):
+            #The country covering n, or None when no Countries/NodesOfCountry entry does.
+            for (c,nn) in model.NodesOfCountry:
+                if nn == n:
+                    return c
+            return None
+
+        def _national_reference(model, c, i):
+            #Supplied national availability, or None when the country is not in the sheet.
+            #A national figure wins over the nodal sum: the NUTS regions of a disaggregated
+            #country have no nodal entry of their own, so summing them would give zero.
+            if value(model.maxBiomassCountry[c,i]) < 0:
+                return None
+            return model.maxBiomassCountry[c,i]
+
+        _warned_empty_biomass = set()
+
+        def _warn_if_no_availability(model, label, nodes, i, generators, reference):
+            #A zero reference silently forbids all Bio/BioCCS output in the group, which looks
+            #like an ordinary infeasibility hours into a solve. Say so at build time instead.
+            if label in _warned_empty_biomass or value(reference) > 0:
+                return
+            if not any((n,g) in model.GeneratorsOfNode for n in nodes for g in generators):
+                return
+            _warned_empty_biomass.add(label)
+            logger.warning("Biomass availability for '%s' is zero in period %s, so the biomass "
+                           "usage limit forbids all Bio/BioCCS production there. Check that "
+                           "Node.xlsx covers it in BiomassMaxAnnualActivity (per node) or "
+                           "BiomassMaxAnnualActivityCountry (per country).", label, i)
+
+        def _biomass_expression(model, nodes, i, generators, reference, factor):
             production = sum(
                 model.seasScale[s] * model.sceProbab[w] * model.genOperational[n,g,h,i,w]
                 for (n,g) in model.GeneratorsOfNode if n in nodes and g in generators
                 for (s,h) in model.HoursOfSeason for w in model.Scenario)
-            reference = sum(model.maxBiomassNode[n,i] for n in nodes)
-            return production - BIOMASS_LIMIT_FACTOR * reference <= 0
+            return production - factor * reference <= 0
 
-        if BIOMASS_LIMIT_SCOPE == "system":
-            def biomass_usage_rule(model, i):
+        def _system_reference(model, i):
+            #Countries with a national figure contribute it once; their nodes are then
+            #excluded from the nodal sum so nothing is counted twice.
+            total = 0.0
+            covered = set()
+            for c in model.Country:
+                national = _national_reference(model, c, i)
+                if national is not None:
+                    total += national
+                    covered.update(nn for (cc,nn) in model.NodesOfCountry if cc == c)
+            return total + sum(model.maxBiomassNode[n,i] for n in model.Node if n not in covered)
+
+        if BIOMASS_LIMIT_SCOPE in ("system", "both"):
+            #Under "both" the system row uses its own (tighter) factor; under "system" it keeps
+            #using BIOMASS_LIMIT_FACTOR so the single-scope behaviour is unchanged.
+            system_factor = BIOMASS_SYSTEM_LIMIT_FACTOR if BIOMASS_LIMIT_SCOPE == "both" else BIOMASS_LIMIT_FACTOR
+
+            def biomass_system_usage_rule(model, i):
                 generators = _biomass_generators(model)
                 if not generators:
                     return Constraint.Skip
-                return _biomass_expression(model, list(model.Node), i, generators)
-            model.biomass_usage_limit = Constraint(model.PeriodActive, rule=biomass_usage_rule)
-        else:
+                reference = _system_reference(model, i)
+                _warn_if_no_availability(model, "system", list(model.Node), i, generators, reference)
+                return _biomass_expression(model, list(model.Node), i, generators, reference, system_factor)
+
+            if BIOMASS_LIMIT_SCOPE == "system":
+                model.biomass_usage_limit = Constraint(model.PeriodActive, rule=biomass_system_usage_rule)
+            else:
+                #"both" keeps biomass_usage_limit for the national rows built below, so the
+                #system-wide row needs its own component name.
+                model.biomass_system_usage_limit = Constraint(model.PeriodActive, rule=biomass_system_usage_rule)
+
+        if BIOMASS_LIMIT_SCOPE in ("country", "both"):
             def _biomass_group(model, n):
                 #Nodes of n's country, or just n when no country covers it.
-                countries = [c for (c,nn) in model.NodesOfCountry if nn == n]
-                if not countries:
+                country = _country_of_node(model, n)
+                if country is None:
                     return [n]
-                return [nn for (cc,nn) in model.NodesOfCountry if cc == countries[0]]
+                return [nn for (cc,nn) in model.NodesOfCountry if cc == country]
 
             def biomass_usage_rule(model, n, i):
                 generators = _biomass_generators(model)
@@ -1017,7 +1152,12 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
                 #One row per country: only the group's first node emits the constraint.
                 if group[0] != n:
                     return Constraint.Skip
-                return _biomass_expression(model, group, i, generators)
+                country = _country_of_node(model, n)
+                reference = None if country is None else _national_reference(model, country, i)
+                if reference is None:
+                    reference = sum(model.maxBiomassNode[nn,i] for nn in group)
+                _warn_if_no_availability(model, str(country or n), group, i, generators, reference)
+                return _biomass_expression(model, group, i, generators, reference, BIOMASS_LIMIT_FACTOR)
             model.biomass_usage_limit = Constraint(model.Node, model.PeriodActive, rule=biomass_usage_rule)
 
     #################################################################
@@ -1147,10 +1287,22 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
 
         ############################################################
 
+        logger.info(
+            "BioCCS capacity limit factor: %s (applies to maximum built and installed capacity budgets)",
+            BIOCCS_CAPACITY_LIMIT_FACTOR,
+        )
+
+        def _nodeTechCapacitySum(model, t, n, i, nodeVar):
+            return sum(
+                _capacity_limit_contribution(nodeVar[n,g,i], g, BIOCCS_CAPACITY_LIMIT_FACTOR)
+                for g in model.Generator
+                if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology
+            )
+
         def investment_gen_cap_rule(model, t, n, i):
             if BOUNDARY_CONDITIONS and n in BOUNDARY_FIXED_NODES:
                 return Constraint.Skip  # capacity pinned to original EMPIRE results instead
-            return sum(model.genInvCap[n,g,i] for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology) - model.genMaxBuiltCap[n,t,i] <= 0
+            return _nodeTechCapacitySum(model, t, n, i, model.genInvCap) - model.genMaxBuiltCap[n,t,i] <= 0
         model.investment_gen_cap = Constraint(model.Technology, model.Node, model.PeriodActive, rule=investment_gen_cap_rule)
 
         ############################################################
@@ -1191,7 +1343,7 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         def installed_gen_cap_rule(model, t, n, i):
             if BOUNDARY_CONDITIONS and n in BOUNDARY_FIXED_NODES:
                 return Constraint.Skip  # capacity pinned to original EMPIRE results instead
-            return sum(model.genInstalledCap[n,g,i] for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology) - model.genMaxInstalledCap[n,t,i] <= 0
+            return _nodeTechCapacitySum(model, t, n, i, model.genInstalledCap) - model.genMaxInstalledCap[n,t,i] <= 0
         model.installed_gen_cap = Constraint(model.Technology, model.Node, model.PeriodActive, rule=installed_gen_cap_rule)
 
         ############################################################
@@ -1202,7 +1354,12 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         #(no Countries sheet) generates no constraints at all.
 
         def _countryTechSum(model, c, t, i, nodeVar):
-            return sum(nodeVar[n,g,i] for (cc,n) in model.NodesOfCountry if cc == c for g in model.Generator if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology)
+            return sum(
+                _capacity_limit_contribution(nodeVar[n,g,i], g, BIOCCS_CAPACITY_LIMIT_FACTOR)
+                for (cc,n) in model.NodesOfCountry if cc == c
+                for g in model.Generator
+                if (n,g) in model.GeneratorsOfNode and (t,g) in model.GeneratorsOfTechnology
+            )
 
         def installed_country_gen_cap_rule(model, c, t, i):
             if value(model.genCountryMaxInstalledCap[c,t,i]) < 0:
@@ -1395,10 +1552,31 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
     if solver == "GLPK":
         opt = SolverFactory("glpk", Verbose=True)
 
-    results = opt.solve(instance, tee=True, logfile=result_file_path / f"logfile_{name}.log")#, keepfiles=True, symbolic_solver_labels=True)
+    # load_solutions=False so that a bad solver status reaches the checks below. Pyomo's
+    # default loading raises ValueError("bad status") first, which used to throw away a
+    # multi-hour run and skip the IIS path entirely.
+    results = opt.solve(instance, tee=True, load_solutions=False,
+                        logfile=result_file_path / f"logfile_{name}.log")#, keepfiles=True, symbolic_solver_labels=True)
 
-    if results.solver.termination_condition == TerminationCondition.infeasible:
-        logger.error("Model is infeasible!")
+    _termination = results.solver.termination_condition
+    logger.info("Solver finished: status=%s, termination condition=%s",
+                results.solver.status, _termination)
+
+    # Barrier without crossover reports "numerical trouble" (an error status) for models that
+    # are structurally infeasible or unbounded, so those cases land here rather than in the
+    # infeasible branch. Route them to the same diagnosis.
+    _bad_terminations = {TerminationCondition.infeasible,
+                         TerminationCondition.infeasibleOrUnbounded,
+                         TerminationCondition.unbounded,
+                         TerminationCondition.error,
+                         TerminationCondition.internalSolverError}
+
+    if _termination in _bad_terminations:
+        logger.error("Solver did not return a usable solution (%s).", _termination)
+        if _termination in (TerminationCondition.error, TerminationCondition.internalSolverError):
+            logger.error("Gurobi reported numerical trouble. With Method=2 and Crossover=0 this "
+                         "is how an infeasible or unbounded model usually surfaces; the IIS "
+                         "below tells the two apart.")
         if solver == "Gurobi":
             logger.info("Computing IIS (Irreducible Infeasible Subsystem)...")
             lp_path = result_file_path / f"infeasible_{name}.lp"
@@ -1407,9 +1585,19 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
             try:
                 import gurobipy as gp
                 m = gp.read(str(lp_path))
-                m.computeIIS()
-                m.write(str(iis_path))
-                logger.info("IIS written to %s", iis_path)
+                # DualReductions=0 makes Gurobi commit to INFEASIBLE or UNBOUNDED instead of
+                # the ambiguous INF_OR_UNBD, and an IIS only exists for the infeasible case.
+                m.Params.DualReductions = 0
+                m.Params.Method = 1
+                m.optimize()
+                if m.Status == gp.GRB.UNBOUNDED:
+                    logger.error("Model is UNBOUNDED, not infeasible: some variable can improve "
+                                 "the objective without limit. Look for a missing capacity bound "
+                                 "or a negative cost, not for a conflicting constraint.")
+                else:
+                    m.computeIIS()
+                    m.write(str(iis_path))
+                    logger.info("IIS written to %s", iis_path)
             except ImportError:
                 logger.info("gurobipy not available, trying gurobi_cl...")
                 import subprocess
@@ -1432,8 +1620,13 @@ def run_empire(name, tab_file_path: Path, result_file_path: Path, scenario_data_
         if OUT_OF_SAMPLE:
             return float('inf')
         raise RuntimeError(
-            f"Model is infeasible. Check the IIS file in {result_file_path} for details."
+            f"Solver returned '{_termination}' and no usable solution. "
+            f"Check the IIS/LP files in {result_file_path} for details."
         )
+
+    # The solve succeeded, so pull the solution into the instance that every result writer
+    # below reads from. Skipped above for the failure cases, where there is nothing to load.
+    instance.solutions.load_from(results)
 
     # Load flow (DC-OPF) diagnostics and detailed results
     if LOPF_FLAG:
